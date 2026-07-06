@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Client Backbone — P&M Apparel</title>
+<title>BackBone — P&M Apparel</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -88,7 +88,7 @@ textarea.field{min-height:60px;resize:vertical}
   <div class="logo">
     <div class="logomark">B</div>
     <div>
-      <div class="hdr-title">Client Backbone</div>
+      <div class="hdr-title">BackBone</div>
       <div class="hdr-sub">P&M Apparel</div>
     </div>
   </div>
@@ -310,13 +310,54 @@ function hasEnrichment(rec) {
   return e && Object.values(e).some(function(v) { return v && v.toString().trim() !== ""; });
 }
 
+// Industry -> Account Manager routing, per the Skill Hub AM Industry Assignments doc.
+// Fallback rule (per doc): unmatched clients default to Abby Penton under Corporate / Small
+// Business, EXCEPT dog-themed or sports-related clients, which go to Hannah Posey. That
+// exception needs a human judgment call, so it isn't automated here -- it's called out as a
+// prompt in the UI instead of silently reassigned.
+const INDUSTRY_LANES = [
+  { industry: "Blue Collar / Agriculture", am: "Alexis Davis", initials: "AD" },
+  { industry: "Cities and Associations", am: "Alexis Davis", initials: "AD" },
+  { industry: "City Fire, EMS and Police", am: "Alexis Davis", initials: "AD" },
+  { industry: "Contract", am: "Alexis Davis", initials: "AD" },
+  { industry: "Healthcare and Wellness", am: "Alexis Davis", initials: "AD" },
+  { industry: "Military / Reserve", am: "Alexis Davis", initials: "AD" },
+  { industry: "Church", am: "Abby Penton", initials: "AP" },
+  { industry: "Clubs - Non Sports", am: "Abby Penton", initials: "AP" },
+  { industry: "Dance", am: "Abby Penton", initials: "AP" },
+  { industry: "Events", am: "Abby Penton", initials: "AP" },
+  { industry: "FART: Fun Activities and Rec", am: "Abby Penton", initials: "AP" },
+  { industry: "Marketing Firms", am: "Abby Penton", initials: "AP" },
+  { industry: "Music and Entertainment", am: "Abby Penton", initials: "AP" },
+  { industry: "Real Estate", am: "Abby Penton", initials: "AP" },
+  { industry: "Lifestyle Brands", am: "Abby Penton", initials: "AP" },
+  { industry: "Food and Hospitality", am: "Hannah Posey", initials: "HP" },
+  { industry: "Club Sports and School Athletics", am: "Hannah Posey", initials: "HP" },
+  { industry: "Higher Education / Universities", am: "Hannah Posey", initials: "HP" },
+  { industry: "K-12", am: "Hannah Posey", initials: "HP" },
+  { industry: "PTO / Boosters", am: "Hannah Posey", initials: "HP" },
+  { industry: "Corporate / Small Business", am: "Abby Penton", initials: "AP" }
+];
+
+function getAssignedAM(industry) {
+  if (!industry) return null;
+  const lane = INDUSTRY_LANES.find(function(l) { return l.industry === industry; });
+  if (lane) return lane;
+  // "Other / Not Listed" or anything unrecognized falls back to Abby Penton per the doc's
+  // default rule -- except sports/dog-themed clients, which is a judgment call flagged in the UI.
+  return { industry: "Other / Not Listed", am: "Abby Penton", initials: "AP", isFallback: true };
+}
+
 const ENRICHMENT_FIELDS = [
   { key: "contact_first_name", label: "Contact first name" },
   { key: "contact_last_name", label: "Contact last name" },
   { key: "contact_email", label: "Contact email" },
   { key: "contact_phone", label: "Contact phone" },
   { key: "contact_title", label: "Contact title" },
-  { key: "industry", label: "Industry" },
+  { key: "industry", label: "Industry (auto-assigns AM below)", type: "select", options: [["", "Not set"]].concat(
+      INDUSTRY_LANES.map(function(l) { return [l.industry, l.industry + " — " + l.am]; })
+    ).concat([["Other / Not Listed", "Other / Not Listed — falls back to Abby Penton (or Hannah Posey if sports/dog-themed)"]])
+  },
   { key: "employees", label: "Employee count" },
   { key: "annual_revenue_range", label: "Annual revenue range" },
   { key: "website_url", label: "Website" },
@@ -459,16 +500,20 @@ function render() {
   if (rows.length === 0) {
     wrap.innerHTML = '<div class="empty-state">No matches.</div>';
   } else {
-    let html = "<table><thead><tr><th>Company</th><th>Revenue</th><th>Invoices</th><th>Last invoice</th><th>Days since</th><th>Enrichment</th></tr></thead><tbody>";
+    let html = "<table><thead><tr><th>Company</th><th>Revenue</th><th>Invoices</th><th>Last invoice</th><th>Days since</th><th>Industry</th><th>Assigned AM</th><th>Enrichment</th></tr></thead><tbody>";
     rows.forEach(function(r) {
       const overdueColor = r.days_since > 180 ? "#DC2626" : r.days_since > 90 ? "#D97706" : "#374151";
       const filled = hasEnrichment(r);
+      const industry = (state.enrichment[r.customer_id] || {}).industry || "";
+      const lane = getAssignedAM(industry);
       html += '<tr class="row" data-id="' + r.customer_id + '">' +
         '<td class="company-cell">' + r.company_name + '</td>' +
         '<td>' + fmtMoney(r.total_revenue) + '</td>' +
         '<td>' + r.invoice_count + '</td>' +
         '<td>' + fmtDate(r.last_invoice_date) + '</td>' +
         '<td style="color:' + overdueColor + '">' + r.days_since + '</td>' +
+        '<td>' + (industry || '<span style="color:#9CA3AF">—</span>') + '</td>' +
+        '<td>' + (lane ? '<span' + (lane.isFallback ? ' title="Fallback assignment — verify this isn\'t sports/dog-themed, which goes to Hannah Posey"' : '') + '>' + lane.am + (lane.isFallback ? ' *' : '') + '</span>' : '<span style="color:#9CA3AF">—</span>') + '</td>' +
         '<td><span class="dot ' + (filled ? "dot-filled" : "dot-empty") + '"></span></td>' +
         '</tr>';
     });
@@ -613,6 +658,21 @@ function openDetail(customerId) {
     wrapDiv.appendChild(label);
     wrapDiv.appendChild(input);
     grid.appendChild(wrapDiv);
+    if (f.key === "industry") {
+      const amDiv = document.createElement("div");
+      amDiv.className = "enrich-field wide";
+      amDiv.id = "amAssignmentDisplay";
+      amDiv.style.cssText = "background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;padding:8px 10px;font-size:12px;color:#374151";
+      grid.appendChild(amDiv);
+      const updateAmDisplay = function() {
+        const lane = getAssignedAM(input.value);
+        amDiv.textContent = lane
+          ? "Assigned Account Manager: " + lane.am + (lane.isFallback ? " (fallback — sports/dog-themed clients go to Hannah Posey instead)" : "")
+          : "Assigned Account Manager: — (pick an industry above)";
+      };
+      input.addEventListener("change", updateAmDisplay);
+      updateAmDisplay();
+    }
   });
 
   document.getElementById("saveStatus").textContent = "";
