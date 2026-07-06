@@ -126,6 +126,12 @@ textarea.field{min-height:60px;resize:vertical}
         <h3>Customer roster</h3>
       </div>
       <div class="card-bd">
+        <div class="help">
+          Amber "Suggested" pills are a best guess from the company name alone (e.g. "Dance Studio" → Dance,
+          "CSD"/"High School" → K-12). Click one to accept it — nothing is auto-applied without a click,
+          since name-based guessing can misfire (a "Fire Protection" contractor isn't a fire department).
+          Always sanity-check before accepting.
+        </div>
         <div class="toolbar">
           <input class="search" id="searchBox" placeholder="Search company name"/>
           <div class="sort-group">
@@ -254,6 +260,54 @@ const SEED_CUSTOMERS = [
   { customer_id: "8193829", company_name: "Ankeny Heritage Elementary PTO", invoice_count: 9, last_invoice_date: "2025-10-31", total_revenue: 18710.39, median_gap_days: 41.316 }
 ];
 
+// Real industry + AM assignments pulled directly from the "🏢 Company Profiles" Monday.com
+// export, matched by Printavo customer ID (Company ID column in that sheet). This is ground
+// truth, not a guess -- backfilled on load into any customer missing these fields, without ever
+// overwriting a value an AM has already entered manually.
+const MONDAY_SEED_ENRICHMENT = {
+  "5860474": { industry: "Corporate/Small Business", account_manager: "Hannah Posey" },
+  "6597606": { industry: "Blue Collar/Agriculture", account_manager: "Alexis Davis" },
+  "5860983": { industry: "Heathcare & Wellness", account_manager: "Alexis Davis" },
+  "5859922": { industry: "Club Sports/School Athletics", account_manager: "Hannah Posey" },
+  "5860580": { industry: "Corporate/Small Business", account_manager: "Alexis Davis" },
+  "5859953": { industry: "K-12", account_manager: "Hannah Posey" },
+  "5861005": { industry: "Dance", account_manager: "Megan Griffith" },
+  "5860185": { industry: "Club Sports/School Athletics", account_manager: "Hannah Posey" },
+  "5889827": { industry: "Corporate/Small Business", account_manager: "Alexis Davis" },
+  "9539992": { industry: "Higher Education/Universities", account_manager: "Hannah Posey" },
+  "5860762": { industry: "Corporate/Small Business", account_manager: "Hannah Posey" },
+  "5860612": { industry: "Dance", account_manager: "Abby Penton" },
+  "5860053": { industry: "Corporate/Small Business", account_manager: "Abby Penton" },
+  "9552510": { industry: "Corporate/Small Business", account_manager: "Alexis Davis", notes: "Monday.com lists multiple AMs on this account: Megan Griffith, Ryan Toney, Alexis Davis. Confirm current owner." },
+  "6399404": { industry: "Personal Order", account_manager: "Hannah Posey" },
+  "5861360": { industry: "Heathcare & Wellness", account_manager: "Alexis Davis" },
+  "5725610": { industry: "Blue Collar/Agriculture", account_manager: "Alexis Davis" },
+  "5860536": { industry: "Contract", account_manager: "Alexis Davis" },
+  "5872360": { industry: "Club Sports/School Athletics", account_manager: "Hannah Posey" },
+  "5859952": { industry: "Club Sports/School Athletics", account_manager: "Hannah Posey" },
+  "5861449": { industry: "Blue Collar/Agriculture", account_manager: "Alexis Davis" },
+  "5860572": { industry: "Blue Collar/Agriculture", account_manager: "Alexis Davis" },
+  "6275361": { industry: "Dance", account_manager: "Abby Penton" },
+  "5863604": { industry: "Corporate/Small Business", account_manager: "Alexis Davis" },
+  "5860373": { industry: "Cities/Associations", account_manager: "Abby Penton" },
+  "5861145": { industry: "Contract", account_manager: "Alexis Davis" },
+  "5861019": { industry: "Corporate/Small Business", account_manager: "Alexis Davis" },
+  "6965863": { industry: "Corporate/Small Business", account_manager: "Alexis Davis" },
+  "7712830": { industry: "Higher Education/Universities", account_manager: "Hannah Posey" },
+  "8193829": { industry: "PTO/Boosters", account_manager: "Ryan Toney" }
+};
+
+function backfillMondaySeed(enrichment) {
+  Object.keys(MONDAY_SEED_ENRICHMENT).forEach(function(customerId) {
+    const seed = MONDAY_SEED_ENRICHMENT[customerId];
+    if (!enrichment[customerId]) enrichment[customerId] = {};
+    Object.keys(seed).forEach(function(key) {
+      if (!enrichment[customerId][key]) enrichment[customerId][key] = seed[key];
+    });
+  });
+  return enrichment;
+}
+
 let state = { synced: [], enrichment: {}, lastSynced: null };
 let sortMode = "overdue";
 let searchQuery = "";
@@ -273,6 +327,8 @@ async function loadData() {
   } catch (e) {
     state = { synced: SEED_CUSTOMERS, enrichment: {}, lastSynced: null };
   }
+  state.enrichment = backfillMondaySeed(state.enrichment || {});
+  saveEnrichment(state.enrichment).catch(function() {});
   render();
 }
 
@@ -310,43 +366,80 @@ function hasEnrichment(rec) {
   return e && Object.values(e).some(function(v) { return v && v.toString().trim() !== ""; });
 }
 
-// Industry -> Account Manager routing, per the Skill Hub AM Industry Assignments doc.
-// Fallback rule (per doc): unmatched clients default to Abby Penton under Corporate / Small
-// Business, EXCEPT dog-themed or sports-related clients, which go to Hannah Posey. That
-// exception needs a human judgment call, so it isn't automated here -- it's called out as a
-// prompt in the UI instead of silently reassigned.
+// Industry Classification -> Account Manager, rebuilt from the real "🏢 Company Profiles"
+// Monday.com export (3,233 client records) rather than the older Skill Hub doc. Spellings match
+// the actual system exactly (e.g. "Heathcare & Wellness" is misspelled in the real data --
+// preserved as-is so this reconciles cleanly if the sheet is ever re-imported).
+// "am" here is the MAJORITY assignment across existing accounts in that industry, used only as a
+// default suggestion for a NEW client with no AM set yet. It is not a hard rule: real accounts are
+// assigned by relationship/history as much as by industry, and two industries below have no
+// reliable single-AM default at all (flagged with varies: true).
 const INDUSTRY_LANES = [
-  { industry: "Blue Collar / Agriculture", am: "Alexis Davis", initials: "AD" },
-  { industry: "Cities and Associations", am: "Alexis Davis", initials: "AD" },
-  { industry: "City Fire, EMS and Police", am: "Alexis Davis", initials: "AD" },
-  { industry: "Contract", am: "Alexis Davis", initials: "AD" },
-  { industry: "Healthcare and Wellness", am: "Alexis Davis", initials: "AD" },
-  { industry: "Military / Reserve", am: "Alexis Davis", initials: "AD" },
-  { industry: "Church", am: "Abby Penton", initials: "AP" },
-  { industry: "Clubs - Non Sports", am: "Abby Penton", initials: "AP" },
-  { industry: "Dance", am: "Abby Penton", initials: "AP" },
-  { industry: "Events", am: "Abby Penton", initials: "AP" },
-  { industry: "FART: Fun Activities and Rec", am: "Abby Penton", initials: "AP" },
-  { industry: "Marketing Firms", am: "Abby Penton", initials: "AP" },
-  { industry: "Music and Entertainment", am: "Abby Penton", initials: "AP" },
-  { industry: "Real Estate", am: "Abby Penton", initials: "AP" },
-  { industry: "Lifestyle Brands", am: "Abby Penton", initials: "AP" },
-  { industry: "Food and Hospitality", am: "Hannah Posey", initials: "HP" },
-  { industry: "Club Sports and School Athletics", am: "Hannah Posey", initials: "HP" },
-  { industry: "Higher Education / Universities", am: "Hannah Posey", initials: "HP" },
-  { industry: "K-12", am: "Hannah Posey", initials: "HP" },
-  { industry: "PTO / Boosters", am: "Hannah Posey", initials: "HP" },
-  { industry: "Corporate / Small Business", am: "Abby Penton", initials: "AP" }
+  { industry: "Blue Collar/Agriculture", am: "Alexis Davis" },
+  { industry: "Cities/Associations", am: "Abby Penton" },
+  { industry: "City Fire, EMS & Police", am: "Alexis Davis" },
+  { industry: "Contract", am: "Alexis Davis" },
+  { industry: "Military/Reserve", am: "Alexis Davis" },
+  { industry: "Heathcare & Wellness", am: null, varies: true }, // 55 Alexis / 57 Abby -- essentially a coin flip in real data
+  { industry: "Church", am: "Abby Penton" },
+  { industry: "Clubs - Non sports", am: "Abby Penton" },
+  { industry: "Dance", am: "Abby Penton" },
+  { industry: "Events", am: "Abby Penton" },
+  { industry: "FART: Fun Activities & Rec", am: "Abby Penton" },
+  { industry: "Marketing Firm", am: "Abby Penton" },
+  { industry: "Music & Entertainment", am: "Abby Penton" },
+  { industry: "Real Estate", am: "Abby Penton" },
+  { industry: "Lifestyle Brands", am: "Abby Penton" },
+  { industry: "Food & Hospitality", am: "Abby Penton" },
+  { industry: "Club Sports/School Athletics", am: "Hannah Posey" },
+  { industry: "Higher Education/Universities", am: "Hannah Posey" },
+  { industry: "K-12", am: "Hannah Posey" },
+  { industry: "PTO/Boosters", am: "Hannah Posey" },
+  { industry: "Star wars - pew pew", am: "Ryan Toney" }, // 48 of 49 real accounts -- essentially Ryan's own lane
+  { industry: "Corporate/Small Business", am: null, varies: true }, // largest bucket, split across every AM
+  { industry: "Personal Order", am: null, varies: true } // one-off/personal orders, split across every AM
 ];
+
+// Real AM roster, per the Monday.com export -- includes two people the Skill Hub doc doesn't
+// mention at all: Jacob Whitman (Sales Director, largest single book of business) and Ryan Toney.
+const ACCOUNT_MANAGERS = ["Alexis Davis", "Abby Penton", "Hannah Posey", "Jacob Whitman", "Ryan Toney", "Megan Griffith"];
 
 function getAssignedAM(industry) {
   if (!industry) return null;
   const lane = INDUSTRY_LANES.find(function(l) { return l.industry === industry; });
-  if (lane) return lane;
-  // "Other / Not Listed" or anything unrecognized falls back to Abby Penton per the doc's
-  // default rule -- except sports/dog-themed clients, which is a judgment call flagged in the UI.
-  return { industry: "Other / Not Listed", am: "Abby Penton", initials: "AP", isFallback: true };
+  if (lane) {
+    if (lane.varies) return { industry: lane.industry, am: "Varies by account", varies: true };
+    return { industry: lane.industry, am: lane.am };
+  }
+  return { industry: "Other / Not Listed", am: "Abby Penton", isFallback: true };
 }
+
+// Best-guess industry from company name alone -- used only as a fallback for clients NOT found in
+// the Monday.com Client Profiles export (e.g. brand new prospects). Never applied without a click.
+const INDUSTRY_NAME_RULES = [
+  { keywords: ["pto", "booster"], industry: "PTO/Boosters" },
+  { keywords: ["little league", "basketball club", "basketball", "volleyball club", "soccer club", "football club", "athletics"], industry: "Club Sports/School Athletics" },
+  { keywords: ["dance studio", "dance academy", "ballet", "dance"], industry: "Dance" },
+  { keywords: ["dmacc", "community college", "university", " college"], industry: "Higher Education/Universities" },
+  { keywords: ["csd", "high school", "elementary", "middle school", "academy"], industry: "K-12" },
+  { keywords: ["medical center", "hospital", "clinic", "wellness", "rehab"], industry: "Heathcare & Wellness" },
+  { keywords: ["fire department", "fire dept", "sheriff", " ems "], industry: "City Fire, EMS & Police" },
+  { keywords: ["construction", "contractors", "builders", "excavat", "concrete"], industry: "Blue Collar/Agriculture" },
+  { keywords: ["church", "ministries", "parish"], industry: "Church" },
+  { keywords: ["farmers market", "festival"], industry: "Events" }
+];
+
+function suggestIndustry(companyName) {
+  const name = " " + companyName.toLowerCase() + " ";
+  for (let i = 0; i < INDUSTRY_NAME_RULES.length; i++) {
+    const rule = INDUSTRY_NAME_RULES[i];
+    for (let j = 0; j < rule.keywords.length; j++) {
+      if (name.indexOf(rule.keywords[j]) !== -1) return rule.industry;
+    }
+  }
+  return null;
+}
+
 
 const ENRICHMENT_FIELDS = [
   { key: "contact_first_name", label: "Contact first name" },
@@ -354,9 +447,13 @@ const ENRICHMENT_FIELDS = [
   { key: "contact_email", label: "Contact email" },
   { key: "contact_phone", label: "Contact phone" },
   { key: "contact_title", label: "Contact title" },
-  { key: "industry", label: "Industry (auto-assigns AM below)", type: "select", options: [["", "Not set"]].concat(
-      INDUSTRY_LANES.map(function(l) { return [l.industry, l.industry + " — " + l.am]; })
+  { key: "industry", label: "Industry Classification", type: "select", options: [["", "Not set"]].concat(
+      INDUSTRY_LANES.map(function(l) { return [l.industry, l.industry + (l.varies ? " (varies by account)" : " — usually " + l.am)]; })
     ).concat([["Other / Not Listed", "Other / Not Listed — falls back to Abby Penton (or Hannah Posey if sports/dog-themed)"]])
+  },
+  { key: "account_manager", label: "Account Manager (authoritative — set directly, not derived)", type: "select", options: [["", "Not set"]].concat(
+      ACCOUNT_MANAGERS.map(function(a) { return [a, a]; })
+    )
   },
   { key: "employees", label: "Employee count" },
   { key: "annual_revenue_range", label: "Annual revenue range" },
@@ -500,25 +597,48 @@ function render() {
   if (rows.length === 0) {
     wrap.innerHTML = '<div class="empty-state">No matches.</div>';
   } else {
-    let html = "<table><thead><tr><th>Company</th><th>Revenue</th><th>Invoices</th><th>Last invoice</th><th>Days since</th><th>Industry</th><th>Assigned AM</th><th>Enrichment</th></tr></thead><tbody>";
+    let html = "<table><thead><tr><th>Company</th><th>Revenue</th><th>Invoices</th><th>Last invoice</th><th>Days since</th><th>Industry Classification</th><th>Account Manager</th><th>Enrichment</th></tr></thead><tbody>";
     rows.forEach(function(r) {
       const overdueColor = r.days_since > 180 ? "#DC2626" : r.days_since > 90 ? "#D97706" : "#374151";
       const filled = hasEnrichment(r);
-      const industry = (state.enrichment[r.customer_id] || {}).industry || "";
-      const lane = getAssignedAM(industry);
+      const rEnrich = state.enrichment[r.customer_id] || {};
+      const industry = rEnrich.industry || "";
+      const explicitAM = rEnrich.account_manager || "";
+      const suggestion = !industry ? suggestIndustry(r.company_name) : null;
+      const industryCell = industry
+        ? industry
+        : suggestion
+          ? '<span class="badge badge-amber" data-suggest-id="' + r.customer_id + '" data-suggest-value="' + suggestion + '" style="cursor:pointer" title="Click to accept this suggestion">Suggested: ' + suggestion + ' ✓</span>'
+          : '<span style="color:#9CA3AF">—</span>';
+      let amCell;
+      if (explicitAM) {
+        amCell = explicitAM;
+      } else {
+        const lane = getAssignedAM(industry);
+        amCell = !lane
+          ? '<span style="color:#9CA3AF">—</span>'
+          : '<span style="color:#D97706" title="Not explicitly set — suggested from industry only">' +
+            (lane.varies ? "Varies — set directly" : lane.am + (lane.isFallback ? " *" : "")) + '</span>';
+      }
       html += '<tr class="row" data-id="' + r.customer_id + '">' +
         '<td class="company-cell">' + r.company_name + '</td>' +
         '<td>' + fmtMoney(r.total_revenue) + '</td>' +
         '<td>' + r.invoice_count + '</td>' +
         '<td>' + fmtDate(r.last_invoice_date) + '</td>' +
         '<td style="color:' + overdueColor + '">' + r.days_since + '</td>' +
-        '<td>' + (industry || '<span style="color:#9CA3AF">—</span>') + '</td>' +
-        '<td>' + (lane ? '<span' + (lane.isFallback ? ' title="Fallback assignment — verify this isn\'t sports/dog-themed, which goes to Hannah Posey"' : '') + '>' + lane.am + (lane.isFallback ? ' *' : '') + '</span>' : '<span style="color:#9CA3AF">—</span>') + '</td>' +
+        '<td>' + industryCell + '</td>' +
+        '<td>' + amCell + '</td>' +
         '<td><span class="dot ' + (filled ? "dot-filled" : "dot-empty") + '"></span></td>' +
         '</tr>';
     });
     html += "</tbody></table>";
     wrap.innerHTML = html;
+    wrap.querySelectorAll("[data-suggest-id]").forEach(function(el) {
+      el.addEventListener("click", function(e) {
+        e.stopPropagation();
+        handleInlineEnrichmentChange(el.dataset.suggestId, "industry", el.dataset.suggestValue);
+      });
+    });
     wrap.querySelectorAll("tr.row").forEach(function(tr) {
       tr.addEventListener("click", function() { openDetail(tr.dataset.id); });
     });
@@ -662,13 +782,15 @@ function openDetail(customerId) {
       const amDiv = document.createElement("div");
       amDiv.className = "enrich-field wide";
       amDiv.id = "amAssignmentDisplay";
-      amDiv.style.cssText = "background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;padding:8px 10px;font-size:12px;color:#374151";
+      amDiv.style.cssText = "background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;padding:8px 10px;font-size:12px;color:#6B7280";
       grid.appendChild(amDiv);
       const updateAmDisplay = function() {
         const lane = getAssignedAM(input.value);
-        amDiv.textContent = lane
-          ? "Assigned Account Manager: " + lane.am + (lane.isFallback ? " (fallback — sports/dog-themed clients go to Hannah Posey instead)" : "")
-          : "Assigned Account Manager: — (pick an industry above)";
+        amDiv.textContent = !lane
+          ? "Pick an industry above to see a suggested AM."
+          : lane.varies
+            ? "No reliable default for \"" + lane.industry + "\" — it's split across every AM in real data. Set Account Manager below directly."
+            : "Suggested AM based on industry: " + lane.am + (lane.isFallback ? " (fallback — sports/dog-themed clients go to Hannah Posey instead)" : ". Set the field below if this account differs.");
       };
       input.addEventListener("change", updateAmDisplay);
       updateAmDisplay();
