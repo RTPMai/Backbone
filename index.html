@@ -95,6 +95,7 @@ textarea.field{min-height:60px;resize:vertical}
   <div class="hdr-right">
     <div class="nav">
       <button class="nav-btn active" data-page="roster">Roster</button>
+      <button class="nav-btn" data-page="scorecard">Scorecard</button>
       <button class="nav-btn" data-page="settings">Settings</button>
     </div>
     <span class="last-updated" id="lastUpdated"></span>
@@ -133,6 +134,34 @@ textarea.field{min-height:60px;resize:vertical}
           </div>
         </div>
         <div id="tableWrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="page-scorecard" class="page">
+    <div class="kpi-grid" id="tierKpiGrid"></div>
+
+    <div class="card">
+      <div class="card-hd">
+        <h3>Client tiering &amp; weighted scorecard</h3>
+      </div>
+      <div class="card-bd">
+        <div class="help">
+          Score = weighted average across 8 criteria (1–5 each). Revenue, invoice count, and average
+          invoice are computed automatically from synced data. Employees, growth potential, client
+          communication, CSR needs, and order frequency come from the enrichment fields on each
+          client &mdash; fill those in on the Roster tab to complete a score. Missing criteria are
+          excluded and the remaining weights are re-normalized, so partial scores are still comparable.
+        </div>
+        <div class="toolbar">
+          <input class="search" id="scoreSearchBox" placeholder="Search company name"/>
+          <div class="sort-group">
+            <button class="sort-btn active" data-scoresort="score">Highest score</button>
+            <button class="sort-btn" data-scoresort="completeness">Most complete</button>
+            <button class="sort-btn" data-scoresort="revenue">Highest revenue</button>
+          </div>
+        </div>
+        <div id="scoreTableWrap"></div>
       </div>
     </div>
   </div>
@@ -211,6 +240,8 @@ const SEED_CUSTOMERS = [
 let state = { synced: [], enrichment: {}, lastSynced: null };
 let sortMode = "overdue";
 let searchQuery = "";
+let scoreSortMode = "score";
+let scoreSearchQuery = "";
 let activeCustomerId = null;
 
 async function loadData() {
@@ -274,8 +305,107 @@ const ENRICHMENT_FIELDS = [
   { key: "website_url", label: "Website" },
   { key: "linkedin_company_page", label: "LinkedIn page" },
   { key: "persona", label: "Persona / ABM tag" },
+  { key: "growth_potential", label: "Growth potential (scorecard)", type: "select", options: [
+    ["", "Not set"],
+    ["5", "5 – Uses all services (catalog, pop-up, bulk, screen print, embroidery)"],
+    ["4", "4 – Catalog store + consistent bulk ordering"],
+    ["3", "3 – Pop-up stores, few other needs"],
+    ["2", "2 – One or two online stores or a Christmas order"],
+    ["1", "1 – Personal orders / one-time small group"]
+  ]},
+  { key: "client_communication", label: "Client communication (scorecard)", type: "select", options: [
+    ["", "Not set"],
+    ["5", "5 – Excellent"],
+    ["4", "4 – Good"],
+    ["3", "3 – Average"],
+    ["2", "2 – Below average"],
+    ["1", "1 – Poor"]
+  ]},
+  { key: "csr_needs", label: "CSR needs / online store traffic (scorecard)", type: "select", options: [
+    ["", "Not set"],
+    ["5", "5 – Gold: year-round catalog store, daily assistance"],
+    ["4", "4 – Silver: short open store, occasional assistance"],
+    ["3", "3 – Bronze: 1–2 online stores/year for a team"],
+    ["2", "2 – Valuable Dirt: no stores or end customers"],
+    ["1", "1 – Minimal / none"]
+  ]},
+  { key: "order_frequency_monthly", label: "Order frequency (scorecard)", type: "select", options: [
+    ["", "Not set"],
+    ["5", "5 – 10+ orders/month"],
+    ["4", "4 – 5–9 orders/month"],
+    ["3", "3 – 3–4 orders/month"],
+    ["2", "2 – 1–2 orders/month"],
+    ["1", "1 – One-time"]
+  ]},
   { key: "notes", label: "Notes", wide: true }
 ];
+
+// ---- Weighted Scorecard ----
+const SCORECARD_WEIGHTS = {
+  revenue: 0.20,
+  invoices: 0.20,
+  avg_invoice: 0.12,
+  frequency: 0.12,
+  growth: 0.08,
+  employees: 0.12,
+  communication: 0.08,
+  csr: 0.08
+};
+
+function starForRevenue(v) { return v >= 80000 ? 5 : v >= 50000 ? 4 : v >= 20000 ? 3 : v >= 5000 ? 2 : 1; }
+function starForInvoices(v) { return v >= 100 ? 5 : v >= 50 ? 4 : v >= 20 ? 3 : v >= 6 ? 2 : 1; }
+function starForAvgInvoice(v) { return v >= 1500 ? 5 : v >= 1000 ? 4 : v >= 500 ? 3 : v >= 100 ? 2 : 1; }
+function starForEmployees(v) { return v >= 1000 ? 5 : v >= 500 ? 4 : v >= 100 ? 3 : v >= 10 ? 2 : 1; }
+
+function computeScorecard(customer, enrichment) {
+  enrichment = enrichment || {};
+  const avgInvoice = customer.invoice_count > 0 ? customer.total_revenue / customer.invoice_count : 0;
+  const empVal = parseFloat(enrichment.employees);
+  const growthVal = parseInt(enrichment.growth_potential, 10);
+  const commVal = parseInt(enrichment.client_communication, 10);
+  const csrVal = parseInt(enrichment.csr_needs, 10);
+  const freqVal = parseInt(enrichment.order_frequency_monthly, 10);
+
+  const criteria = {
+    revenue: { label: "Annual Revenue", score: starForRevenue(customer.total_revenue), available: true },
+    invoices: { label: "Total Invoices", score: starForInvoices(customer.invoice_count), available: true },
+    avg_invoice: { label: "Avg Invoice", score: starForAvgInvoice(avgInvoice), available: true },
+    employees: { label: "# Employees", score: isNaN(empVal) ? null : starForEmployees(empVal), available: !isNaN(empVal) },
+    growth: { label: "Growth Potential", score: isNaN(growthVal) ? null : growthVal, available: !isNaN(growthVal) },
+    communication: { label: "Client Communication", score: isNaN(commVal) ? null : commVal, available: !isNaN(commVal) },
+    csr: { label: "CSR Needs", score: isNaN(csrVal) ? null : csrVal, available: !isNaN(csrVal) },
+    frequency: { label: "Order Frequency", score: isNaN(freqVal) ? null : freqVal, available: !isNaN(freqVal) }
+  };
+
+  let weightedSum = 0, weightTotal = 0, availableCount = 0;
+  Object.keys(criteria).forEach(function(k) {
+    const c = criteria[k];
+    const w = SCORECARD_WEIGHTS[k];
+    if (c.available) {
+      weightedSum += w * c.score;
+      weightTotal += w;
+      availableCount++;
+    }
+  });
+
+  const total = weightTotal > 0 ? weightedSum / weightTotal : 0;
+  let tier;
+  if (total >= 4.5) tier = "Platinum";
+  else if (total >= 3.5) tier = "Gold";
+  else if (total >= 2.5) tier = "Silver";
+  else if (total >= 1.5) tier = "Bronze";
+  else tier = "Valuable Dirt";
+
+  return { criteria: criteria, total: total, tier: tier, completeness: availableCount + "/8" };
+}
+
+const TIER_COLORS = {
+  "Platinum": "#6B7280",
+  "Gold": "#D97706",
+  "Silver": "#6B7280",
+  "Bronze": "#B45309",
+  "Valuable Dirt": "#9CA3AF"
+};
 
 function getRows() {
   let rows = state.synced.map(function(c) {
@@ -301,24 +431,77 @@ function render() {
   const wrap = document.getElementById("tableWrap");
   if (rows.length === 0) {
     wrap.innerHTML = '<div class="empty-state">No matches.</div>';
+  } else {
+    let html = "<table><thead><tr><th>Company</th><th>Revenue</th><th>Invoices</th><th>Last invoice</th><th>Days since</th><th>Enrichment</th></tr></thead><tbody>";
+    rows.forEach(function(r) {
+      const overdueColor = r.days_since > 180 ? "#DC2626" : r.days_since > 90 ? "#D97706" : "#374151";
+      const filled = hasEnrichment(r);
+      html += '<tr class="row" data-id="' + r.customer_id + '">' +
+        '<td class="company-cell">' + r.company_name + '</td>' +
+        '<td>' + fmtMoney(r.total_revenue) + '</td>' +
+        '<td>' + r.invoice_count + '</td>' +
+        '<td>' + fmtDate(r.last_invoice_date) + '</td>' +
+        '<td style="color:' + overdueColor + '">' + r.days_since + '</td>' +
+        '<td><span class="dot ' + (filled ? "dot-filled" : "dot-empty") + '"></span></td>' +
+        '</tr>';
+    });
+    html += "</tbody></table>";
+    wrap.innerHTML = html;
+    wrap.querySelectorAll("tr.row").forEach(function(tr) {
+      tr.addEventListener("click", function() { openDetail(tr.dataset.id); });
+    });
+  }
+
+  renderScorecard();
+}
+
+function renderScorecard() {
+  const scored = state.synced.map(function(c) {
+    const sc = computeScorecard(c, state.enrichment[c.customer_id]);
+    return Object.assign({}, c, sc);
+  });
+
+  const tierCounts = { "Platinum": 0, "Gold": 0, "Silver": 0, "Bronze": 0, "Valuable Dirt": 0 };
+  scored.forEach(function(s) { tierCounts[s.tier]++; });
+  const kpiGrid = document.getElementById("tierKpiGrid");
+  kpiGrid.innerHTML = Object.keys(tierCounts).map(function(t) {
+    return '<div class="kpi"><div class="kpi-lbl">' + t + '</div><div class="kpi-val">' + tierCounts[t] + '</div></div>';
+  }).join("");
+
+  let rows = scored;
+  if (scoreSearchQuery.trim()) {
+    const q = scoreSearchQuery.trim().toLowerCase();
+    rows = rows.filter(function(r) { return r.company_name.toLowerCase().indexOf(q) !== -1; });
+  }
+  if (scoreSortMode === "score") rows.sort(function(a, b) { return b.total - a.total; });
+  else if (scoreSortMode === "completeness") rows.sort(function(a, b) { return parseInt(b.completeness) - parseInt(a.completeness); });
+  else rows.sort(function(a, b) { return b.total_revenue - a.total_revenue; });
+
+  const wrap = document.getElementById("scoreTableWrap");
+  if (rows.length === 0) {
+    wrap.innerHTML = '<div class="empty-state">No matches.</div>';
     return;
   }
-  let html = "<table><thead><tr><th>Company</th><th>Revenue</th><th>Invoices</th><th>Last invoice</th><th>Days since</th><th>Enrichment</th></tr></thead><tbody>";
+  let html = "<table><thead><tr><th>Company</th><th>Score</th><th>Tier</th><th>Criteria used</th>" +
+    "<th>Revenue</th><th>Avg Invoice</th><th>Growth</th><th>Comm.</th><th>CSR</th><th>Freq.</th></tr></thead><tbody>";
   rows.forEach(function(r) {
-    const overdueColor = r.days_since > 180 ? "#DC2626" : r.days_since > 90 ? "#D97706" : "#374151";
-    const filled = hasEnrichment(r);
+    const avgInv = r.criteria.avg_invoice.score ? fmtMoney(r.total_revenue / (r.invoice_count || 1)) : "—";
+    const color = TIER_COLORS[r.tier] || "#374151";
     html += '<tr class="row" data-id="' + r.customer_id + '">' +
       '<td class="company-cell">' + r.company_name + '</td>' +
+      '<td>' + r.total.toFixed(2) + '</td>' +
+      '<td><span class="badge" style="background:#F3F4F6;color:' + color + '">' + r.tier + '</span></td>' +
+      '<td>' + r.completeness + '</td>' +
       '<td>' + fmtMoney(r.total_revenue) + '</td>' +
-      '<td>' + r.invoice_count + '</td>' +
-      '<td>' + fmtDate(r.last_invoice_date) + '</td>' +
-      '<td style="color:' + overdueColor + '">' + r.days_since + '</td>' +
-      '<td><span class="dot ' + (filled ? "dot-filled" : "dot-empty") + '"></span></td>' +
+      '<td>' + avgInv + '</td>' +
+      '<td>' + (r.criteria.growth.score || "—") + '</td>' +
+      '<td>' + (r.criteria.communication.score || "—") + '</td>' +
+      '<td>' + (r.criteria.csr.score || "—") + '</td>' +
+      '<td>' + (r.criteria.frequency.score || "—") + '</td>' +
       '</tr>';
   });
   html += "</tbody></table>";
   wrap.innerHTML = html;
-
   wrap.querySelectorAll("tr.row").forEach(function(tr) {
     tr.addEventListener("click", function() { openDetail(tr.dataset.id); });
   });
@@ -346,9 +529,19 @@ function openDetail(customerId) {
     const label = document.createElement("label");
     label.className = "field-lbl";
     label.textContent = f.label;
-    const input = f.key === "notes" ? document.createElement("textarea") : document.createElement("input");
+    const input = f.key === "notes" ? document.createElement("textarea")
+      : f.type === "select" ? document.createElement("select")
+      : document.createElement("input");
     input.className = "field";
     input.dataset.key = f.key;
+    if (f.type === "select") {
+      f.options.forEach(function(opt) {
+        const o = document.createElement("option");
+        o.value = opt[0];
+        o.textContent = opt[1];
+        input.appendChild(o);
+      });
+    }
     input.value = enrichment[f.key] || "";
     wrapDiv.appendChild(label);
     wrapDiv.appendChild(input);
@@ -432,10 +625,10 @@ document.querySelectorAll(".nav-btn").forEach(function(btn) {
     document.getElementById("page-" + btn.dataset.page).classList.add("active");
   });
 });
-document.querySelectorAll(".sort-btn").forEach(function(btn) {
+document.querySelectorAll(".sort-btn[data-sort]").forEach(function(btn) {
   btn.addEventListener("click", function() {
     sortMode = btn.dataset.sort;
-    document.querySelectorAll(".sort-btn").forEach(function(b) { b.classList.remove("active"); });
+    document.querySelectorAll(".sort-btn[data-sort]").forEach(function(b) { b.classList.remove("active"); });
     btn.classList.add("active");
     render();
   });
@@ -443,6 +636,18 @@ document.querySelectorAll(".sort-btn").forEach(function(btn) {
 document.getElementById("searchBox").addEventListener("input", function(e) {
   searchQuery = e.target.value;
   render();
+});
+document.getElementById("scoreSearchBox").addEventListener("input", function(e) {
+  scoreSearchQuery = e.target.value;
+  renderScorecard();
+});
+document.querySelectorAll("[data-scoresort]").forEach(function(btn) {
+  btn.addEventListener("click", function() {
+    scoreSortMode = btn.dataset.scoresort;
+    document.querySelectorAll("[data-scoresort]").forEach(function(b) { b.classList.remove("active"); });
+    btn.classList.add("active");
+    renderScorecard();
+  });
 });
 document.getElementById("detailClose").addEventListener("click", closeDetail);
 document.getElementById("detailOverlay").addEventListener("click", function(e) {
