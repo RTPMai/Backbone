@@ -175,6 +175,13 @@ textarea.field{min-height:60px;resize:vertical}
           with <code>customer_id, company_name, invoice_count, last_invoice_date, total_revenue</code>
           for each record. Paste it below. This replaces synced fields only — enrichment fields
           you've entered are never touched by this.
+          <br/><br/>
+          Optional 6th field: <code>median_gap_days</code> &mdash; ask Claude to also run Apparelytics'
+          reorder-cadence report and include it. When present, the Order Frequency criterion on the
+          Scorecard tab computes automatically from real order history instead of needing a manual
+          estimate. Caveat: for customers with very few orders clustered on the same day (or long-dormant
+          accounts with only a couple of orders ever), this can read as artificially high-frequency —
+          worth a manual sanity check on any account you know is inactive.
         </div>
         <div id="importErr"></div>
         <textarea class="import-textarea" id="importBox" placeholder='[{"customer_id":"123","company_name":"Acme","invoice_count":10,"last_invoice_date":"2026-06-01","total_revenue":5000}]'></textarea>
@@ -215,26 +222,36 @@ textarea.field{min-height:60px;resize:vertical}
 
 <script>
 const SEED_CUSTOMERS = [
-  { customer_id: "5860474", company_name: "Foth & VanDyke LLC", invoice_count: 378, last_invoice_date: "2026-07-01", total_revenue: 465300.17 },
-  { customer_id: "6597606", company_name: "MH Equipment", invoice_count: 282, last_invoice_date: "2026-07-06", total_revenue: 428208.73 },
-  { customer_id: "5860983", company_name: "ON WITH LIFE", invoice_count: 112, last_invoice_date: "2026-07-06", total_revenue: 170359.02 },
-  { customer_id: "5859922", company_name: "ALL IOWA ATTACK", invoice_count: 100, last_invoice_date: "2026-05-12", total_revenue: 155527.40 },
-  { customer_id: "5860580", company_name: "HOUSBY", invoice_count: 239, last_invoice_date: "2026-07-06", total_revenue: 154740.80 },
-  { customer_id: "5859953", company_name: "Ankeny Christian Academy - CSD", invoice_count: 81, last_invoice_date: "2026-06-30", total_revenue: 147700.46 },
-  { customer_id: "5861005", company_name: "PAT BARTON DANCE STUDIO", invoice_count: 49, last_invoice_date: "2026-06-01", total_revenue: 133925.31 },
-  { customer_id: "5860185", company_name: "ANKENY CENTENNIAL HIGH SCHOOL - CSD", invoice_count: 75, last_invoice_date: "2026-07-06", total_revenue: 128194.02 },
-  { customer_id: "5889827", company_name: "Iowa Donor Network", invoice_count: 218, last_invoice_date: "2026-07-06", total_revenue: 125463.21 },
-  { customer_id: "9539992", company_name: "DMACC - Public and Community Service Pathway", invoice_count: 75, last_invoice_date: "2026-05-26", total_revenue: 120852.86 },
-  { customer_id: "5860762", company_name: "Lean Techniques", invoice_count: 95, last_invoice_date: "2026-06-12", total_revenue: 118487.50 },
-  { customer_id: "5860612", company_name: "INSPIRING DANCE", invoice_count: 75, last_invoice_date: "2026-06-17", total_revenue: 118311.16 },
-  { customer_id: "5860053", company_name: "BARILLA AMERICA - CITY", invoice_count: 172, last_invoice_date: "2026-06-29", total_revenue: 103718.12 },
-  { customer_id: "9552510", company_name: "Lifespace Communities", invoice_count: 5, last_invoice_date: "2026-06-09", total_revenue: 102400.91 },
-  { customer_id: "6399404", company_name: "Grandview Little League", invoice_count: 46, last_invoice_date: "2024-07-31", total_revenue: 99333.40 },
-  { customer_id: "5861360", company_name: "Van Diest Medical Center", invoice_count: 130, last_invoice_date: "2026-06-30", total_revenue: 93181.87 },
-  { customer_id: "5725610", company_name: "V3 Companies", invoice_count: 23, last_invoice_date: "2026-04-02", total_revenue: 81946.64 },
-  { customer_id: "5860536", company_name: "GTG Construction", invoice_count: 29, last_invoice_date: "2026-06-26", total_revenue: 79993.68 },
-  { customer_id: "5872360", company_name: "Emerge Academy", invoice_count: 57, last_invoice_date: "2026-06-17", total_revenue: 79114.01 },
-  { customer_id: "5859952", company_name: "ANKENY CENTENNIAL BASKETBALL CLUB", invoice_count: 25, last_invoice_date: "2026-01-05", total_revenue: 75103.38 }
+  { customer_id: "5860474", company_name: "Foth & VanDyke LLC", invoice_count: 378, last_invoice_date: "2026-07-01", total_revenue: 465300.17, median_gap_days: 2.777 },
+  { customer_id: "6597606", company_name: "MH Equipment", invoice_count: 282, last_invoice_date: "2026-07-06", total_revenue: 428208.73, median_gap_days: 0.0015 },
+  { customer_id: "5860983", company_name: "ON WITH LIFE", invoice_count: 112, last_invoice_date: "2026-07-06", total_revenue: 170359.02, median_gap_days: 10.521 },
+  { customer_id: "5859922", company_name: "ALL IOWA ATTACK", invoice_count: 100, last_invoice_date: "2026-05-12", total_revenue: 155527.40, median_gap_days: 7.954 },
+  { customer_id: "5860580", company_name: "HOUSBY", invoice_count: 239, last_invoice_date: "2026-07-06", total_revenue: 154740.80, median_gap_days: 4 },
+  { customer_id: "5859953", company_name: "Ankeny Christian Academy - CSD", invoice_count: 81, last_invoice_date: "2026-06-30", total_revenue: 147700.46, median_gap_days: 14 },
+  { customer_id: "5861005", company_name: "PAT BARTON DANCE STUDIO", invoice_count: 49, last_invoice_date: "2026-06-01", total_revenue: 133925.31, median_gap_days: 20.484 },
+  { customer_id: "5860185", company_name: "ANKENY CENTENNIAL HIGH SCHOOL - CSD", invoice_count: 75, last_invoice_date: "2026-07-06", total_revenue: 128194.02, median_gap_days: 14.551 },
+  { customer_id: "5889827", company_name: "Iowa Donor Network", invoice_count: 218, last_invoice_date: "2026-07-06", total_revenue: 125463.21, median_gap_days: 6 },
+  { customer_id: "9539992", company_name: "DMACC - Public and Community Service Pathway", invoice_count: 75, last_invoice_date: "2026-05-26", total_revenue: 120852.86, median_gap_days: 13.578 },
+  { customer_id: "5860762", company_name: "Lean Techniques", invoice_count: 95, last_invoice_date: "2026-06-12", total_revenue: 118487.50, median_gap_days: 8.845 },
+  { customer_id: "5860612", company_name: "INSPIRING DANCE", invoice_count: 75, last_invoice_date: "2026-06-17", total_revenue: 118311.16, median_gap_days: 11.913 },
+  { customer_id: "5860053", company_name: "BARILLA AMERICA - CITY", invoice_count: 172, last_invoice_date: "2026-06-29", total_revenue: 103718.12, median_gap_days: 6 },
+  { customer_id: "9552510", company_name: "Lifespace Communities", invoice_count: 5, last_invoice_date: "2026-06-09", total_revenue: 102400.91, median_gap_days: 57.491 },
+  { customer_id: "6399404", company_name: "Grandview Little League", invoice_count: 46, last_invoice_date: "2024-07-31", total_revenue: 99333.40, median_gap_days: 0.472 },
+  { customer_id: "5861360", company_name: "Van Diest Medical Center", invoice_count: 130, last_invoice_date: "2026-06-30", total_revenue: 93181.87, median_gap_days: 5 },
+  { customer_id: "5725610", company_name: "V3 Companies", invoice_count: 23, last_invoice_date: "2026-04-02", total_revenue: 81946.64, median_gap_days: 29.473 },
+  { customer_id: "5860536", company_name: "GTG Construction", invoice_count: 29, last_invoice_date: "2026-06-26", total_revenue: 79993.68, median_gap_days: 22.345 },
+  { customer_id: "5872360", company_name: "Emerge Academy", invoice_count: 57, last_invoice_date: "2026-06-17", total_revenue: 79114.01, median_gap_days: 17.948 },
+  { customer_id: "5859952", company_name: "ANKENY CENTENNIAL BASKETBALL CLUB", invoice_count: 25, last_invoice_date: "2026-01-05", total_revenue: 75103.38, median_gap_days: 1.780 },
+  { customer_id: "5861449", company_name: "WRH, INC", invoice_count: 13, last_invoice_date: "2025-03-07", total_revenue: 70576.47, median_gap_days: 67.176 },
+  { customer_id: "5860572", company_name: "Home Solutions Iowa", invoice_count: 14, last_invoice_date: "2025-02-10", total_revenue: 41000.51, median_gap_days: 21.982 },
+  { customer_id: "6275361", company_name: "School of Classical Ballet", invoice_count: 16, last_invoice_date: "2025-11-25", total_revenue: 34247.93, median_gap_days: 29.138 },
+  { customer_id: "5863604", company_name: "Fire Protection Professionals", invoice_count: 19, last_invoice_date: "2025-03-04", total_revenue: 32220.61, median_gap_days: 30.594 },
+  { customer_id: "5860373", company_name: "DOWNTOWN FARMERS MARKET", invoice_count: 9, last_invoice_date: "2023-09-22", total_revenue: 32138.12, median_gap_days: 0 },
+  { customer_id: "5861145", company_name: "ROBERT HALF", invoice_count: 27, last_invoice_date: "2025-11-17", total_revenue: 29555.51, median_gap_days: 22.521 },
+  { customer_id: "5861019", company_name: "PEPSI CO", invoice_count: 11, last_invoice_date: "2025-09-04", total_revenue: 26594.69, median_gap_days: 62.710 },
+  { customer_id: "6965863", company_name: "Baker Interior Systems", invoice_count: 8, last_invoice_date: "2025-11-11", total_revenue: 23429.17, median_gap_days: 25.122 },
+  { customer_id: "7712830", company_name: "DMACC - Building Trades and Transportation Pathway", invoice_count: 21, last_invoice_date: "2026-01-05", total_revenue: 21911.73, median_gap_days: 44.160 },
+  { customer_id: "8193829", company_name: "Ankeny Heritage Elementary PTO", invoice_count: 9, last_invoice_date: "2025-10-31", total_revenue: 18710.39, median_gap_days: 41.316 }
 ];
 
 let state = { synced: [], enrichment: {}, lastSynced: null };
@@ -356,6 +373,15 @@ function starForRevenue(v) { return v >= 80000 ? 5 : v >= 50000 ? 4 : v >= 20000
 function starForInvoices(v) { return v >= 100 ? 5 : v >= 50 ? 4 : v >= 20 ? 3 : v >= 6 ? 2 : 1; }
 function starForAvgInvoice(v) { return v >= 1500 ? 5 : v >= 1000 ? 4 : v >= 500 ? 3 : v >= 100 ? 2 : 1; }
 function starForEmployees(v) { return v >= 1000 ? 5 : v >= 500 ? 4 : v >= 100 ? 3 : v >= 10 ? 2 : 1; }
+// median_gap_days comes from Apparelytics' reorder-cadence report (mean/median days between
+// consecutive orders). A gap of 0 usually means multiple invoices landed on the same day for a
+// customer with very few total orders (a data artifact, not real high-frequency ordering), so we
+// treat that as unavailable rather than silently scoring it 5-star.
+function starForFrequency(medianGapDays) {
+  if (medianGapDays === null || medianGapDays === undefined || isNaN(medianGapDays) || medianGapDays <= 0) return null;
+  const ordersPerMonth = 30 / medianGapDays;
+  return ordersPerMonth >= 10 ? 5 : ordersPerMonth >= 5 ? 4 : ordersPerMonth >= 3 ? 3 : ordersPerMonth >= 1 ? 2 : 1;
+}
 
 function computeScorecard(customer, enrichment) {
   enrichment = enrichment || {};
@@ -364,6 +390,7 @@ function computeScorecard(customer, enrichment) {
   const growthVal = parseInt(enrichment.growth_potential, 10);
   const commVal = parseInt(enrichment.client_communication, 10);
   const csrVal = parseInt(enrichment.csr_needs, 10);
+  const cadenceFreqScore = starForFrequency(customer.median_gap_days);
   const freqVal = parseInt(enrichment.order_frequency_monthly, 10);
 
   const criteria = {
@@ -374,7 +401,7 @@ function computeScorecard(customer, enrichment) {
     growth: { label: "Growth Potential", score: isNaN(growthVal) ? null : growthVal, available: !isNaN(growthVal) },
     communication: { label: "Client Communication", score: isNaN(commVal) ? null : commVal, available: !isNaN(commVal) },
     csr: { label: "CSR Needs", score: isNaN(csrVal) ? null : csrVal, available: !isNaN(csrVal) },
-    frequency: { label: "Order Frequency", score: isNaN(freqVal) ? null : freqVal, available: !isNaN(freqVal) }
+    frequency: { label: "Order Frequency", score: cadenceFreqScore !== null ? cadenceFreqScore : (isNaN(freqVal) ? null : freqVal), available: cadenceFreqScore !== null || !isNaN(freqVal), auto: cadenceFreqScore !== null }
   };
 
   let weightedSum = 0, weightTotal = 0, availableCount = 0;
@@ -488,6 +515,9 @@ function renderScorecard() {
     const avgInv = r.invoice_count > 0 ? fmtMoney(r.total_revenue / r.invoice_count) : "—";
     const color = TIER_COLORS[r.tier] || "#374151";
     const enrichment = state.enrichment[r.customer_id] || {};
+    const freqCell = r.criteria.frequency.auto
+      ? '<span title="Computed from order cadence (median ' + (r.median_gap_days !== undefined ? r.median_gap_days.toFixed(1) : "?") + ' days between orders)">' + r.criteria.frequency.score + ' ⓘ</span>'
+      : inlineSelectCell(r.customer_id, "order_frequency_monthly", enrichment.order_frequency_monthly);
     html += '<tr class="row" data-id="' + r.customer_id + '">' +
       '<td class="company-cell">' + r.company_name + '</td>' +
       '<td>' + r.total.toFixed(2) + '</td>' +
@@ -499,7 +529,7 @@ function renderScorecard() {
       '<td>' + inlineSelectCell(r.customer_id, "growth_potential", enrichment.growth_potential) + '</td>' +
       '<td>' + inlineSelectCell(r.customer_id, "client_communication", enrichment.client_communication) + '</td>' +
       '<td>' + inlineSelectCell(r.customer_id, "csr_needs", enrichment.csr_needs) + '</td>' +
-      '<td>' + inlineSelectCell(r.customer_id, "order_frequency_monthly", enrichment.order_frequency_monthly) + '</td>' +
+      '<td>' + freqCell + '</td>' +
       '</tr>';
   });
   html += "</tbody></table>";
