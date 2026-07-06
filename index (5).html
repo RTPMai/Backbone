@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Client Backbone — P&M Apparel</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#F4F6F8;color:#111827;font-family:'Inter',sans-serif;font-size:14px}
+.hdr{background:#fff;border-bottom:1px solid #E5E7EB;padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100}
+.logo{display:flex;align-items:center;gap:10px}
+.logomark{width:32px;height:32px;background:#3D9A5C;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:15px}
+.hdr-title{font-size:15px;font-weight:700}
+.hdr-sub{font-size:12px;color:#6B7280}
+.hdr-right{display:flex;align-items:center;gap:10px}
+.btn{border:none;padding:7px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600}
+.btn-green{background:#3D9A5C;color:#fff}.btn-green:hover{background:#2F7A48}
+.btn-gray{background:#F3F4F6;color:#374151;border:1px solid #E5E7EB}.btn-gray:hover{background:#E5E7EB}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.last-updated{font-size:11px;color:#9CA3AF}
+.nav{display:flex;gap:2px;background:#F3F4F6;border-radius:8px;padding:3px}
+.nav-btn{border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;background:transparent;color:#6B7280}
+.nav-btn.active{background:#fff;color:#111827;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.page{display:none}.page.active{display:block}
+.dash{padding:24px;max-width:1200px;margin:0 auto}
+
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px}
+.kpi{background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:18px 20px}
+.kpi-lbl{font-size:13px;color:#6B7280;font-weight:500;margin-bottom:5px}
+.kpi-val{font-size:26px;font-weight:700;letter-spacing:-.5px}
+.kpi-s{font-size:12px;color:#6B7280;margin-top:5px}
+
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+.badge-amber{background:#FEF3C7;color:#D97706}
+.badge-green{background:#EAF5EE;color:#3D9A5C}
+
+.card{background:#fff;border:1px solid #E5E7EB;border-radius:10px;overflow:hidden}
+.card-hd{padding:14px 20px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.card-hd h3{font-size:14px;font-weight:600}
+.card-bd{padding:16px}
+
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.search{padding:8px 10px;border:1px solid #E5E7EB;border-radius:6px;font-size:13px;min-width:220px;background:#F9FAFB}
+.sort-group{display:flex;background:#F3F4F6;border-radius:8px;padding:3px;gap:2px}
+.sort-btn{border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;background:transparent;color:#6B7280}
+.sort-btn.active{background:#fff;color:#111827;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:10px 12px;border-bottom:1px solid #E5E7EB;background:#F9FAFB;font-weight:600;color:#374151;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid #F3F4F6;white-space:nowrap}
+tr.row{cursor:pointer}
+tr.row:hover td{background:#F9FAFB}
+.company-cell{font-weight:600}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%}
+.dot-filled{background:#3D9A5C}
+.dot-empty{border:1px solid #D1D5DB}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:12px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.2);overflow:hidden}
+.modal-hd{padding:16px 20px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between}
+.modal-hd h3{font-size:16px;font-weight:700}
+.modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:#6B7280;line-height:1;padding:4px}
+.modal-bd{padding:20px;max-height:70vh;overflow-y:auto}
+.section-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6B7280;margin:16px 0 8px}
+.section-lbl:first-child{margin-top:0}
+.synced-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px;margin-bottom:8px}
+.field-lbl{font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px}
+.enrich-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.enrich-field{display:flex;flex-direction:column}
+.enrich-field.wide{grid-column:1/-1}
+input.field,textarea.field{padding:7px 9px;border:1px solid #E5E7EB;border-radius:6px;font-size:13px;font-family:inherit;background:#F9FAFB}
+textarea.field{min-height:60px;resize:vertical}
+.modal-ft{padding:14px 20px;border-top:1px solid #E5E7EB;display:flex;align-items:center;gap:10px}
+.save-status{font-size:12px;color:#6B7280}
+
+.import-textarea{width:100%;min-height:180px;padding:10px;border:1px solid #E5E7EB;border-radius:6px;font-size:12px;font-family:monospace;background:#F9FAFB;margin-bottom:10px}
+.err{background:#FEE2E2;border:1px solid #FECACA;border-radius:8px;padding:10px 14px;color:#DC2626;font-size:13px;margin-bottom:10px}
+.help{font-size:12px;color:#6B7280;margin-bottom:12px;line-height:1.5}
+.empty-state{padding:40px;text-align:center;color:#9CA3AF}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="logo">
+    <div class="logomark">B</div>
+    <div>
+      <div class="hdr-title">Client Backbone</div>
+      <div class="hdr-sub">P&M Apparel</div>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <div class="nav">
+      <button class="nav-btn active" data-page="roster">Roster</button>
+      <button class="nav-btn" data-page="settings">Settings</button>
+    </div>
+    <span class="last-updated" id="lastUpdated"></span>
+  </div>
+</div>
+
+<div class="dash">
+
+  <div id="page-roster" class="page active">
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-lbl">Total customers</div>
+        <div class="kpi-val" id="kpiTotal">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-lbl">Enriched</div>
+        <div class="kpi-val" id="kpiEnriched">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-lbl">Data source</div>
+        <div class="kpi-val" style="font-size:15px">Apparelytics</div>
+        <div class="kpi-s">Manual refresh, ~100 record cap</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hd">
+        <h3>Customer roster</h3>
+      </div>
+      <div class="card-bd">
+        <div class="toolbar">
+          <input class="search" id="searchBox" placeholder="Search company name"/>
+          <div class="sort-group">
+            <button class="sort-btn active" data-sort="overdue">Most overdue</button>
+            <button class="sort-btn" data-sort="revenue">Highest revenue</button>
+          </div>
+        </div>
+        <div id="tableWrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="page-settings" class="page">
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-hd"><h3>Refresh from Apparelytics</h3></div>
+      <div class="card-bd">
+        <div class="help">
+          Ask Claude to pull current customer data from Apparelytics and give you a JSON array
+          with <code>customer_id, company_name, invoice_count, last_invoice_date, total_revenue</code>
+          for each record. Paste it below. This replaces synced fields only — enrichment fields
+          you've entered are never touched by this.
+        </div>
+        <div id="importErr"></div>
+        <textarea class="import-textarea" id="importBox" placeholder='[{"customer_id":"123","company_name":"Acme","invoice_count":10,"last_invoice_date":"2026-06-01","total_revenue":5000}]'></textarea>
+        <button class="btn btn-green" id="importBtn">Import</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><h3>Reset</h3></div>
+      <div class="card-bd">
+        <div class="help">Clears synced data and reverts to the built-in seed set. Enrichment data is not affected.</div>
+        <button class="btn btn-gray" id="resetBtn">Reset synced data to seed</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="modal-overlay" id="detailOverlay">
+  <div class="modal">
+    <div class="modal-hd">
+      <h3 id="detailTitle"></h3>
+      <button class="modal-close" id="detailClose">&times;</button>
+    </div>
+    <div class="modal-bd">
+      <div class="section-lbl">Synced from Apparelytics</div>
+      <div class="synced-grid" id="syncedGrid"></div>
+
+      <div class="section-lbl">Manual / enrichment fields</div>
+      <div class="help">These never get overwritten by a refresh import.</div>
+      <div class="enrich-grid" id="enrichGrid"></div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-green" id="saveEnrichBtn">Save</button>
+      <span class="save-status" id="saveStatus"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+const SEED_CUSTOMERS = [
+  { customer_id: "5860474", company_name: "Foth & VanDyke LLC", invoice_count: 378, last_invoice_date: "2026-07-01", total_revenue: 465300.17 },
+  { customer_id: "6597606", company_name: "MH Equipment", invoice_count: 282, last_invoice_date: "2026-07-06", total_revenue: 428208.73 },
+  { customer_id: "5860983", company_name: "ON WITH LIFE", invoice_count: 112, last_invoice_date: "2026-07-06", total_revenue: 170359.02 },
+  { customer_id: "5859922", company_name: "ALL IOWA ATTACK", invoice_count: 100, last_invoice_date: "2026-05-12", total_revenue: 155527.40 },
+  { customer_id: "5860580", company_name: "HOUSBY", invoice_count: 239, last_invoice_date: "2026-07-06", total_revenue: 154740.80 },
+  { customer_id: "5859953", company_name: "Ankeny Christian Academy - CSD", invoice_count: 81, last_invoice_date: "2026-06-30", total_revenue: 147700.46 },
+  { customer_id: "5861005", company_name: "PAT BARTON DANCE STUDIO", invoice_count: 49, last_invoice_date: "2026-06-01", total_revenue: 133925.31 },
+  { customer_id: "5860185", company_name: "ANKENY CENTENNIAL HIGH SCHOOL - CSD", invoice_count: 75, last_invoice_date: "2026-07-06", total_revenue: 128194.02 },
+  { customer_id: "5889827", company_name: "Iowa Donor Network", invoice_count: 218, last_invoice_date: "2026-07-06", total_revenue: 125463.21 },
+  { customer_id: "9539992", company_name: "DMACC - Public and Community Service Pathway", invoice_count: 75, last_invoice_date: "2026-05-26", total_revenue: 120852.86 },
+  { customer_id: "5860762", company_name: "Lean Techniques", invoice_count: 95, last_invoice_date: "2026-06-12", total_revenue: 118487.50 },
+  { customer_id: "5860612", company_name: "INSPIRING DANCE", invoice_count: 75, last_invoice_date: "2026-06-17", total_revenue: 118311.16 },
+  { customer_id: "5860053", company_name: "BARILLA AMERICA - CITY", invoice_count: 172, last_invoice_date: "2026-06-29", total_revenue: 103718.12 },
+  { customer_id: "9552510", company_name: "Lifespace Communities", invoice_count: 5, last_invoice_date: "2026-06-09", total_revenue: 102400.91 },
+  { customer_id: "6399404", company_name: "Grandview Little League", invoice_count: 46, last_invoice_date: "2024-07-31", total_revenue: 99333.40 },
+  { customer_id: "5861360", company_name: "Van Diest Medical Center", invoice_count: 130, last_invoice_date: "2026-06-30", total_revenue: 93181.87 },
+  { customer_id: "5725610", company_name: "V3 Companies", invoice_count: 23, last_invoice_date: "2026-04-02", total_revenue: 81946.64 },
+  { customer_id: "5860536", company_name: "GTG Construction", invoice_count: 29, last_invoice_date: "2026-06-26", total_revenue: 79993.68 },
+  { customer_id: "5872360", company_name: "Emerge Academy", invoice_count: 57, last_invoice_date: "2026-06-17", total_revenue: 79114.01 },
+  { customer_id: "5859952", company_name: "ANKENY CENTENNIAL BASKETBALL CLUB", invoice_count: 25, last_invoice_date: "2026-01-05", total_revenue: 75103.38 }
+];
+
+let state = { synced: [], enrichment: {}, lastSynced: null };
+let sortMode = "overdue";
+let searchQuery = "";
+let activeCustomerId = null;
+
+async function loadData() {
+  try {
+    const r = await fetch("/api/data");
+    const d = await r.json();
+    if (d.synced && d.synced.length > 0) {
+      state = d;
+    } else {
+      state = { synced: SEED_CUSTOMERS, enrichment: {}, lastSynced: null };
+    }
+  } catch (e) {
+    state = { synced: SEED_CUSTOMERS, enrichment: {}, lastSynced: null };
+  }
+  render();
+}
+
+async function saveSynced(synced) {
+  const r = await fetch("/api/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ synced: synced })
+  });
+  return r.json();
+}
+
+async function saveEnrichment(enrichment) {
+  const r = await fetch("/api/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enrichment: enrichment })
+  });
+  return r.json();
+}
+
+function daysSince(dateStr) {
+  const then = new Date(dateStr + "T00:00:00Z").getTime();
+  return Math.floor((Date.now() - then) / 86400000);
+}
+function fmtMoney(n) {
+  return (n || 0).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+}
+function fmtDate(dateStr) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+}
+function hasEnrichment(rec) {
+  const e = state.enrichment[rec.customer_id];
+  return e && Object.values(e).some(function(v) { return v && v.toString().trim() !== ""; });
+}
+
+const ENRICHMENT_FIELDS = [
+  { key: "contact_first_name", label: "Contact first name" },
+  { key: "contact_last_name", label: "Contact last name" },
+  { key: "contact_email", label: "Contact email" },
+  { key: "contact_phone", label: "Contact phone" },
+  { key: "contact_title", label: "Contact title" },
+  { key: "industry", label: "Industry" },
+  { key: "employees", label: "Employee count" },
+  { key: "annual_revenue_range", label: "Annual revenue range" },
+  { key: "website_url", label: "Website" },
+  { key: "linkedin_company_page", label: "LinkedIn page" },
+  { key: "persona", label: "Persona / ABM tag" },
+  { key: "notes", label: "Notes", wide: true }
+];
+
+function getRows() {
+  let rows = state.synced.map(function(c) {
+    return Object.assign({}, c, { days_since: daysSince(c.last_invoice_date) });
+  });
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    rows = rows.filter(function(r) { return r.company_name.toLowerCase().indexOf(q) !== -1; });
+  }
+  if (sortMode === "overdue") rows.sort(function(a, b) { return b.days_since - a.days_since; });
+  else rows.sort(function(a, b) { return b.total_revenue - a.total_revenue; });
+  return rows;
+}
+
+function render() {
+  document.getElementById("kpiTotal").textContent = state.synced.length;
+  document.getElementById("kpiEnriched").textContent = state.synced.filter(hasEnrichment).length;
+  document.getElementById("lastUpdated").textContent = state.lastSynced
+    ? "Last refresh: " + new Date(state.lastSynced).toLocaleString()
+    : "";
+
+  const rows = getRows();
+  const wrap = document.getElementById("tableWrap");
+  if (rows.length === 0) {
+    wrap.innerHTML = '<div class="empty-state">No matches.</div>';
+    return;
+  }
+  let html = "<table><thead><tr><th>Company</th><th>Revenue</th><th>Invoices</th><th>Last invoice</th><th>Days since</th><th>Enrichment</th></tr></thead><tbody>";
+  rows.forEach(function(r) {
+    const overdueColor = r.days_since > 180 ? "#DC2626" : r.days_since > 90 ? "#D97706" : "#374151";
+    const filled = hasEnrichment(r);
+    html += '<tr class="row" data-id="' + r.customer_id + '">' +
+      '<td class="company-cell">' + r.company_name + '</td>' +
+      '<td>' + fmtMoney(r.total_revenue) + '</td>' +
+      '<td>' + r.invoice_count + '</td>' +
+      '<td>' + fmtDate(r.last_invoice_date) + '</td>' +
+      '<td style="color:' + overdueColor + '">' + r.days_since + '</td>' +
+      '<td><span class="dot ' + (filled ? "dot-filled" : "dot-empty") + '"></span></td>' +
+      '</tr>';
+  });
+  html += "</tbody></table>";
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll("tr.row").forEach(function(tr) {
+    tr.addEventListener("click", function() { openDetail(tr.dataset.id); });
+  });
+}
+
+function openDetail(customerId) {
+  const rec = state.synced.find(function(c) { return c.customer_id === customerId; });
+  if (!rec) return;
+  activeCustomerId = customerId;
+  const enrichment = state.enrichment[customerId] || {};
+
+  document.getElementById("detailTitle").textContent = rec.company_name;
+  document.getElementById("syncedGrid").innerHTML =
+    '<div><span class="field-lbl">Customer ID</span>' + rec.customer_id + '</div>' +
+    '<div><span class="field-lbl">Total revenue</span>' + fmtMoney(rec.total_revenue) + '</div>' +
+    '<div><span class="field-lbl">Invoice count</span>' + rec.invoice_count + '</div>' +
+    '<div><span class="field-lbl">Last invoice</span>' + fmtDate(rec.last_invoice_date) + '</div>' +
+    '<div><span class="field-lbl">Days since last invoice</span>' + daysSince(rec.last_invoice_date) + '</div>';
+
+  const grid = document.getElementById("enrichGrid");
+  grid.innerHTML = "";
+  ENRICHMENT_FIELDS.forEach(function(f) {
+    const wrapDiv = document.createElement("div");
+    wrapDiv.className = "enrich-field" + (f.wide ? " wide" : "");
+    const label = document.createElement("label");
+    label.className = "field-lbl";
+    label.textContent = f.label;
+    const input = f.key === "notes" ? document.createElement("textarea") : document.createElement("input");
+    input.className = "field";
+    input.dataset.key = f.key;
+    input.value = enrichment[f.key] || "";
+    wrapDiv.appendChild(label);
+    wrapDiv.appendChild(input);
+    grid.appendChild(wrapDiv);
+  });
+
+  document.getElementById("saveStatus").textContent = "";
+  document.getElementById("detailOverlay").classList.add("open");
+}
+
+function closeDetail() {
+  document.getElementById("detailOverlay").classList.remove("open");
+  activeCustomerId = null;
+}
+
+async function handleSaveEnrichment() {
+  const grid = document.getElementById("enrichGrid");
+  const values = {};
+  grid.querySelectorAll("[data-key]").forEach(function(el) {
+    values[el.dataset.key] = el.value;
+  });
+  state.enrichment[activeCustomerId] = values;
+  document.getElementById("saveStatus").textContent = "Saving...";
+  try {
+    await saveEnrichment(state.enrichment);
+    document.getElementById("saveStatus").textContent = "Saved";
+    render();
+  } catch (e) {
+    document.getElementById("saveStatus").textContent = "Save failed, try again";
+  }
+}
+
+async function handleImport() {
+  const box = document.getElementById("importBox");
+  const errEl = document.getElementById("importErr");
+  errEl.innerHTML = "";
+  let parsed;
+  try {
+    parsed = JSON.parse(box.value);
+  } catch (e) {
+    errEl.innerHTML = '<div class="err">That is not valid JSON.</div>';
+    return;
+  }
+  if (!Array.isArray(parsed)) {
+    errEl.innerHTML = '<div class="err">Expected a JSON array of customer records.</div>';
+    return;
+  }
+  const required = ["customer_id", "company_name", "invoice_count", "last_invoice_date", "total_revenue"];
+  for (let i = 0; i < parsed.length; i++) {
+    for (let j = 0; j < required.length; j++) {
+      if (!(required[j] in parsed[i])) {
+        errEl.innerHTML = '<div class="err">Missing field "' + required[j] + '" on one or more records.</div>';
+        return;
+      }
+    }
+  }
+  try {
+    await saveSynced(parsed);
+    state.synced = parsed;
+    state.lastSynced = new Date().toISOString();
+    box.value = "";
+    render();
+    document.querySelector('[data-page="roster"]').click();
+  } catch (e) {
+    errEl.innerHTML = '<div class="err">Import saved locally but failed to sync to the server.</div>';
+  }
+}
+
+async function handleReset() {
+  state.synced = SEED_CUSTOMERS;
+  state.lastSynced = null;
+  await saveSynced(SEED_CUSTOMERS);
+  render();
+}
+
+document.querySelectorAll(".nav-btn").forEach(function(btn) {
+  btn.addEventListener("click", function() {
+    document.querySelectorAll(".nav-btn").forEach(function(b) { b.classList.remove("active"); });
+    btn.classList.add("active");
+    document.querySelectorAll(".page").forEach(function(p) { p.classList.remove("active"); });
+    document.getElementById("page-" + btn.dataset.page).classList.add("active");
+  });
+});
+document.querySelectorAll(".sort-btn").forEach(function(btn) {
+  btn.addEventListener("click", function() {
+    sortMode = btn.dataset.sort;
+    document.querySelectorAll(".sort-btn").forEach(function(b) { b.classList.remove("active"); });
+    btn.classList.add("active");
+    render();
+  });
+});
+document.getElementById("searchBox").addEventListener("input", function(e) {
+  searchQuery = e.target.value;
+  render();
+});
+document.getElementById("detailClose").addEventListener("click", closeDetail);
+document.getElementById("detailOverlay").addEventListener("click", function(e) {
+  if (e.target.id === "detailOverlay") closeDetail();
+});
+document.getElementById("saveEnrichBtn").addEventListener("click", handleSaveEnrichment);
+document.getElementById("importBtn").addEventListener("click", handleImport);
+document.getElementById("resetBtn").addEventListener("click", handleReset);
+
+loadData();
+</script>
+</body>
+</html>
