@@ -1809,7 +1809,9 @@ async function handleRunQualification() {
     });
     const result = await r.json();
     if (result.error) {
-      alert("Qualification failed: " + result.error);
+      alert("Qualification failed: " + result.error +
+        (result.detail ? "\n\nDetail: " + result.detail : "") +
+        (result.raw ? "\n\nRaw model output (first 800 chars):\n" + result.raw.slice(0, 800) : ""));
       return;
     }
     lead.qualification = result;
