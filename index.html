@@ -387,6 +387,19 @@ textarea.field{min-height:60px;resize:vertical}
       <button class="modal-close" id="leadDetailClose">&times;</button>
     </div>
     <div class="modal-bd" id="leadDetailBody"></div>
+    <details style="border-top:1px solid #E5E7EB;padding:14px 20px">
+      <summary style="cursor:pointer;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6B7280">
+        Paste qualification JSON (no API key needed — ask Claude in a chat)
+      </summary>
+      <div class="help" style="margin-top:10px">
+        Give Claude the lead's info in a normal chat and ask it to research and qualify the
+        company using the BackBone lead-qualification schema — Claude will use web search under
+        your Pro subscription instead of a billed API call. Paste the JSON it returns below.
+      </div>
+      <textarea class="field" id="pasteQualBox" style="width:100%;min-height:120px;font-family:monospace;font-size:11px" placeholder="Paste the JSON object here"></textarea>
+      <button class="btn btn-gray btn-sm" id="pasteQualBtn" style="margin-top:8px">Save pasted qualification</button>
+      <span id="pasteQualErr" style="color:#DC2626;font-size:12px;margin-left:8px"></span>
+    </details>
     <div class="modal-ft" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
       <div style="display:flex;gap:10px;align-items:center">
         <label class="field-lbl" style="margin:0">Status</label>
@@ -396,7 +409,7 @@ textarea.field{min-height:60px;resize:vertical}
         </select>
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-gray btn-sm" id="rerunQualBtn">Run / re-run AI qualification</button>
+        <button class="btn btn-gray btn-sm" id="rerunQualBtn">Run / re-run AI qualification (API)</button>
         <button class="btn btn-green btn-sm" id="promoteLeadBtn">Promote to Roster</button>
       </div>
     </div>
@@ -1828,6 +1841,36 @@ async function handleRunQualification() {
   }
 }
 
+async function handlePasteQualification() {
+  const lead = state_leads.find(function(l) { return l.lead_id === activeLeadId; });
+  if (!lead) return;
+  const box = document.getElementById("pasteQualBox");
+  const errEl = document.getElementById("pasteQualErr");
+  errEl.textContent = "";
+  let parsed;
+  try {
+    parsed = JSON.parse(box.value);
+  } catch (e) {
+    errEl.textContent = "That's not valid JSON.";
+    return;
+  }
+  const required = ["company_overview", "apparel_opportunity", "growth_signals", "qualification_scoring", "routing", "red_flags", "executive_summary", "assumptions_flagged"];
+  for (let i = 0; i < required.length; i++) {
+    if (!(required[i] in parsed)) {
+      errEl.textContent = 'Missing "' + required[i] + '" — this doesn\'t match the qualification schema.';
+      return;
+    }
+  }
+  parsed.qualified_at = new Date().toISOString();
+  lead.qualification = parsed;
+  if (lead.status === "New") lead.status = "Qualified";
+  document.getElementById("leadStatusSelect").value = lead.status;
+  await saveLeads();
+  box.value = "";
+  renderLeadDetailBody(lead);
+  renderLeadsPage();
+}
+
 async function handleLeadStatusChange() {
   const lead = state_leads.find(function(l) { return l.lead_id === activeLeadId; });
   if (!lead) return;
@@ -1925,6 +1968,7 @@ document.getElementById("leadDetailOverlay").addEventListener("click", function(
   }
 });
 document.getElementById("rerunQualBtn").addEventListener("click", handleRunQualification);
+document.getElementById("pasteQualBtn").addEventListener("click", handlePasteQualification);
 document.getElementById("leadStatusSelect").addEventListener("change", handleLeadStatusChange);
 document.getElementById("promoteLeadBtn").addEventListener("click", handlePromoteToRoster);
 
