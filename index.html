@@ -1746,6 +1746,14 @@ function openLeadDetail(leadId) {
   document.getElementById("leadDetailOverlay").classList.add("open");
 }
 
+function confidenceStyle(conf) {
+  if (conf === "confirmed") return "background:#EAF5EE;color:#3D9A5C";
+  if (conf === "third-party unverified") return "background:#FEF3C7;color:#D97706";
+  if (conf === "single-source unconfirmed") return "background:#FEF3C7;color:#D97706";
+  if (conf === "not found") return "background:#FEE2E2;color:#9CA3AF";
+  return "background:#F3F4F6;color:#6B7280";
+}
+
 function renderLeadDetailBody(lead) {
   const body = document.getElementById("leadDetailBody");
   const q = lead.qualification;
@@ -1763,11 +1771,58 @@ function renderLeadDetailBody(lead) {
   }
 
   const s = q.qualification_scoring;
-  body.innerHTML = intake +
-    '<div class="qual-section"><h4>Score</h4>' +
-      '<div class="qual-score-total">' + s.total_score + '<span style="font-size:14px;color:#6B7280;font-weight:400"> / 50</span></div>' +
-      '<span class="qual-tier-badge ' + qualTierClass(s.qualification_tier) + '" style="margin-top:6px">' + s.qualification_tier + '</span>' +
-    '</div>' +
+
+  // ---- Rundown (score + at-a-glance) ----
+  let rundown = '<div class="qual-section"><h4>Rundown</h4>' +
+    '<div class="qual-score-total">' + s.total_score + '<span style="font-size:14px;color:#6B7280;font-weight:400"> / 50</span> ' +
+    '<span class="qual-tier-badge ' + qualTierClass(s.qualification_tier) + '" style="vertical-align:middle">' + s.qualification_tier + '</span></div>';
+  if (q.at_a_glance) {
+    rundown += '<div style="font-size:13px;margin-top:10px;line-height:1.5">' + (q.at_a_glance.summary || "—") + '</div>' +
+      '<div class="qual-row" style="margin-top:8px"><span>Top opportunity</span><span>' + (q.at_a_glance.top_opportunity || "—") + '</span></div>' +
+      '<div class="qual-row"><span>Top risk</span><span>' + (q.at_a_glance.top_risk || "—") + '</span></div>';
+  } else {
+    rundown += '<div style="font-size:12px;color:#9CA3AF;margin-top:8px">No at-a-glance summary on this qualification yet — re-run or re-paste to populate.</div>';
+  }
+  rundown += '</div>';
+
+  // ---- Next steps ----
+  let nextSteps = '<div class="qual-section"><h4>Next steps</h4>';
+  if (q.next_steps) {
+    nextSteps += '<div class="qual-row"><span>Recommended action</span><span>' + (q.next_steps.recommended_action || "—") + '</span></div>' +
+      '<div class="qual-row"><span>Who to contact</span><span>' + (q.next_steps.who_to_contact || "—") + '</span></div>' +
+      '<div class="qual-row"><span>Urgency</span><span>' + (q.next_steps.urgency || "—") + '</span></div>';
+  } else {
+    nextSteps += '<div class="qual-row"><span>Next action</span><span>' + (q.executive_summary.next_action || "—") + '</span></div>' +
+      '<div class="qual-row"><span>Urgency</span><span>' + (q.executive_summary.urgency || "—") + '</span></div>';
+  }
+  nextSteps += '<div class="qual-row"><span>Suggested AM (via industry table)</span><span>' + (function() {
+      const lane = q.company_overview.industry_classification ? getAssignedAM(q.company_overview.industry_classification) : null;
+      return !lane ? "—" : (lane.varies ? "Varies by account" : lane.am);
+    })() + '</span></div>' +
+    '<div class="qual-row"><span>Follow-up speed</span><span>' + q.routing.follow_up_speed + '</span></div>' +
+    '</div>';
+
+  // ---- Key contacts ----
+  let contacts = '';
+  if (q.key_contacts && q.key_contacts.length) {
+    contacts = '<div class="qual-section"><h4>Key contacts</h4>' +
+      q.key_contacts.map(function(c) {
+        const conf = c.confidence || "";
+        return '<div style="margin-bottom:10px;padding:8px 10px;background:#F9FAFB;border:1px solid #F3F4F6;border-radius:6px">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
+          '<div style="font-weight:600;font-size:13px">' + (c.name || "Name not public") + (c.title ? ' — ' + c.title : '') + '</div>' +
+          (conf ? '<span style="white-space:nowrap;padding:1px 7px;border-radius:99px;font-size:10px;font-weight:700;' + confidenceStyle(conf) + '">' + conf + '</span>' : '') +
+          '</div>' +
+          (c.relevance ? '<div style="font-size:12px;color:#6B7280;margin-top:2px">' + c.relevance + '</div>' : '') +
+          '<div style="font-size:12px;margin-top:2px">' + (c.contact_info || "No contact info found") + '</div>' +
+          (c.source ? '<div style="font-size:11px;color:#9CA3AF;margin-top:2px">Source: ' + c.source + '</div>' : '') +
+          '</div>';
+      }).join("") +
+    '</div>';
+  }
+
+  // ---- Deep-dive detail (collapsed by default) ----
+  let details = '<details style="margin-top:4px"><summary style="cursor:pointer;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6B7280;padding:6px 0">Full detail</summary>' +
     '<div class="qual-section"><h4>Company overview</h4>' +
       Object.keys(q.company_overview).map(function(k) {
         return '<div class="qual-row"><span>' + k.replace(/_/g," ") + '</span><span>' + (q.company_overview[k] || "—") + '</span></div>';
@@ -1784,11 +1839,6 @@ function renderLeadDetailBody(lead) {
       }).join("") +
     '</div>' +
     '<div class="qual-section"><h4>Routing</h4>' +
-      '<div class="qual-row"><span>Suggested AM (via industry table)</span><span>' + (function() {
-        const lane = q.company_overview.industry_classification ? getAssignedAM(q.company_overview.industry_classification) : null;
-        return !lane ? "—" : (lane.varies ? "Varies by account" : lane.am);
-      })() + '</span></div>' +
-      '<div class="qual-row"><span>Follow-up speed</span><span>' + q.routing.follow_up_speed + '</span></div>' +
       '<div class="qual-row"><span>Note</span><span>' + (q.routing.routing_note || "—") + '</span></div>' +
     '</div>' +
     (q.red_flags.red_flags_detected.length ? '<div class="qual-section"><h4>Red flags</h4><div style="font-size:13px">' + q.red_flags.red_flags_detected.join(", ") + '</div></div>' : '') +
@@ -1797,7 +1847,10 @@ function renderLeadDetailBody(lead) {
         return '<div style="margin-bottom:8px"><div class="field-lbl">' + k.replace(/_/g," ") + '</div><div style="font-size:13px">' + (q.executive_summary[k] || "—") + '</div></div>';
       }).join("") +
     '</div>' +
-    (q.assumptions_flagged.length ? '<div class="qual-section"><h4>Assumptions flagged</h4><div style="font-size:12px;color:#6B7280">' + q.assumptions_flagged.join("; ") + '</div></div>' : '');
+    (q.assumptions_flagged.length ? '<div class="qual-section"><h4>Assumptions flagged</h4><div style="font-size:12px;color:#6B7280">' + q.assumptions_flagged.join("; ") + '</div></div>' : '') +
+    '</details>';
+
+  body.innerHTML = intake + rundown + nextSteps + contacts + details;
 }
 
 async function handleRunQualification() {
