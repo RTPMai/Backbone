@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P&M Apparel — Start a Project</title>
+<style>
+  :root {
+    --bg: #F4F6F8; --card: #FFFFFF; --green: #3D9A5C; --green-dark: #2F7A48;
+    --ink: #1A2B22; --muted: #6B7A72; --line: #E3E8E5; --danger: #C0503C;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--ink); min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; padding: 24px 16px 64px;
+  }
+  header { width: 100%; max-width: 640px; margin-bottom: 20px; }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+  .brand span { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .internal-badge {
+    display: none; margin-top: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: #7B5EA7; background: #F0EBFA;
+    padding: 4px 10px; border-radius: 999px; width: fit-content;
+  }
+  .progress { width: 100%; max-width: 640px; height: 4px; background: var(--line); border-radius: 999px; margin-bottom: 20px; overflow: hidden; }
+  .progress > div { height: 100%; background: var(--green); border-radius: 999px; width: 5%; transition: width .3s ease; }
+  .card {
+    width: 100%; max-width: 640px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 28px; box-shadow: 0 1px 3px rgba(26,43,34,0.05);
+  }
+  .step-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--green); margin-bottom: 8px; }
+  h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+  .sub { font-size: 14px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+  .tiles { display: grid; gap: 10px; }
+  .tiles.two { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 480px) { .tiles.two { grid-template-columns: 1fr; } }
+  .tile {
+    text-align: left; background: var(--card); border: 1.5px solid var(--line); border-radius: 12px;
+    padding: 16px; cursor: pointer; font-family: inherit; transition: border-color .15s, background .15s;
+  }
+  .tile:hover, .tile:focus-visible { border-color: var(--green); background: #F3FAF6; outline: none; }
+  .tile b { display: block; font-size: 15px; margin-bottom: 3px; }
+  .tile small { font-size: 12.5px; color: var(--muted); line-height: 1.4; display: block; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .field .hint { font-weight: 400; color: var(--muted); }
+  input[type=text], input[type=email], input[type=tel], input[type=url], input[type=date], input[type=number], select, textarea {
+    width: 100%; font-family: inherit; font-size: 14px; padding: 10px 12px;
+    border: 1.5px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink);
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--green); }
+  textarea { min-height: 90px; resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
+  .actions { display: flex; justify-content: space-between; align-items: center; margin-top: 24px; gap: 12px; }
+  .btn {
+    font-family: inherit; font-size: 14px; font-weight: 600; padding: 11px 22px;
+    border-radius: 999px; border: none; cursor: pointer; transition: background .15s;
+  }
+  .btn-primary { background: var(--green); color: #fff; }
+  .btn-primary:hover { background: var(--green-dark); }
+  .btn-ghost { background: transparent; color: var(--muted); }
+  .btn-ghost:hover { color: var(--ink); }
+  .notice {
+    background: #F3FAF6; border: 1px solid #CFE8DA; border-radius: 10px;
+    padding: 12px 14px; font-size: 13px; line-height: 1.5; color: #2F5A41; margin-bottom: 16px;
+  }
+  .notice.warn { background: #FBF4EC; border-color: #EBD9C2; color: #7A5A32; }
+  .err { color: var(--danger); font-size: 13px; margin-top: 12px; display: none; }
+  .check { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; line-height: 1.5; }
+  .check input { margin-top: 3px; }
+  .done-icon { width: 56px; height: 56px; border-radius: 50%; background: #E7F4EC; color: var(--green); display: flex; align-items: center; justify-content: center; font-size: 26px; margin: 0 auto 16px; }
+  .center { text-align: center; }
+  .review dt { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-top: 12px; }
+  .review dd { font-size: 14px; margin: 2px 0 0; }
+  footer { margin-top: 28px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><h1>P&amp;M Apparel</h1><span>Project Inquiry</span></div>
+  <div class="internal-badge" id="internalBadge">Internal · Manual Entry</div>
+</header>
+
+<div class="progress"><div id="bar"></div></div>
+<div class="card" id="card"></div>
+<footer>Questions? Call the shop — we're happy to walk through it with you.</footer>
+
+<script>
+/* =========================================================================
+   BackBone Intake — Layer 0 front door
+   Implements Future_Inquiry_Form_Mapping.jpg:
+     Gate (existing client?) -> [Yes short form] | [source Q ->] Info Dump
+     -> Project Type wizard -> Vision Board -> Submit
+   Manual Entry (internal) unlocked with ?internal=1
+   POSTs to /api/intake  (Upstash key: backbone_intake)
+   ========================================================================= */
+
+const API = "/api/intake";
+const STATE_STORE_URL = ""; // TODO: paste the real state-store form URL; blank shows a notice instead of redirecting
+
+// Industry list mirrors INDUSTRY_LANES in the app — exact Monday.com spellings
+// (yes, "Heathcare & Wellness" is intentional; matching depends on it).
+const INDUSTRIES = [
+  "Blue Collar/Agriculture","Cities/Associations","City Fire, EMS & Police","Contract",
+  "Military/Reserve","Heathcare & Wellness","Church","Clubs - Non sports","Dance","Events",
+  "FART: Fun Activities & Rec","Marketing Firm","Music & Entertainment","Real Estate",
+  "Lifestyle Brands","Food & Hospitality","Club Sports/School Athletics",
+  "Higher Education/Universities","K-12","PTO/Boosters","Star wars - pew pew",
+  "Corporate/Small Business","Personal Order","Other / Not Listed"
+];
+
+const SOURCES = ["Social media","Event","Search engine","Word of mouth","Other"];
+const PROJECT_TYPES = [
+  { key: "live_activation", label: "Live Activation", desc: "On-site printing or merch at your event" },
+  { key: "just_a_few", label: "Just a Few Items", desc: "Printing fewer than 12 pieces" },
+  { key: "csg", label: "You Supply the Goods", desc: "We decorate garments you provide (CSG)" },
+  { key: "bulk_promo", label: "Bulk Promo", desc: "Promotional products in quantity" },
+  { key: "bulk_merch", label: "Bulk Merch", desc: "Apparel & merch in quantity" },
+  { key: "online_store", label: "Online Store", desc: "A store your people order from" }
+];
+const STORE_KINDS = [
+  { key: "state_store", label: "State Store", desc: "Ongoing storefront" },
+  { key: "pop_up", label: "Pop-Up Store", desc: "Open for a set window, then closes" },
+  { key: "catalog", label: "Catalog Store", desc: "Always-open catalog with batched ordering" }
+];
+
+const isInternal = new URLSearchParams(location.search).get("internal") === "1";
+if (isInternal) document.getElementById("internalBadge").style.display = "block";
+
+// Accumulated answers — mirrors the intake_v1 schema stored in backbone_intake
+let form = {
+  entry: { existing_client: null, source: { channel: null, detail: null } },
+  company: { name: "", industry: "" },
+  contact: { name: "", phone: "", email: "", url: "", job_title: "" },
+  project: { name: "", in_hands_date: "", type: null, store_kind: null, description: "", details: {} },
+  vision: null,
+  internal: isInternal
+};
+
+const card = document.getElementById("card");
+const bar = document.getElementById("bar");
+let history = [];
+
+function go(step, pct) {
+  history.push(step);
+  bar.style.width = pct + "%";
+  STEPS[step]();
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function back() {
+  history.pop();
+  const prev = history.pop();
+  if (prev) go(prev, parseFloat(bar.style.width) - 10);
+}
+function h(html) { card.innerHTML = html; }
+function v(id) { const el = document.getElementById(id); return el ? el.value.trim() : ""; }
+function fail(msg) { const e = document.getElementById("err"); e.textContent = msg; e.style.display = "block"; }
+function backBtn() { return '<button class="btn btn-ghost" onclick="back()">&larr; Back</button>'; }
+function industrySelect(id, val) {
+  return '<select id="' + id + '"><option value="">Select an industry…</option>' +
+    INDUSTRIES.map(i => '<option' + (val === i ? " selected" : "") + '>' + i + '</option>').join("") + '</select>';
+}
+
+/* ------------------------------------------------------------------ steps */
+const STEPS = {
+
+  /* GATE ------------------------------------------------------------ */
+  gate() {
+    h('<div class="step-label">Welcome</div>' +
+      '<h2>Are you an existing client?</h2>' +
+      '<p class="sub">This helps us route your project to the right person, fast.</p>' +
+      '<div class="tiles">' +
+      '<button class="tile" onclick="pickGate(\'yes\')"><b>Yes</b><small>We\'ve worked together before.</small></button>' +
+      '<button class="tile" onclick="pickGate(\'yes_new\')"><b>Yes, but this is something new</b><small>Existing client — new contact, location, or program.</small></button>' +
+      '<button class="tile" onclick="pickGate(\'not_sure\')"><b>Not sure</b><small>Someone here may have ordered before.</small></button>' +
+      '<button class="tile" onclick="pickGate(\'no\')"><b>No, we\'re new</b><small>First time working with P&amp;M.</small></button>' +
+      (isInternal ? '<button class="tile" style="border-color:#D8CCEC;background:#FBF9FE" onclick="pickGate(\'manual\')"><b>Manual Entry</b><small>Internal — quick capture during a call.</small></button>' : '') +
+      '</div>');
+  },
+
+  /* NO -> source question -------------------------------------------- */
+  source() {
+    h('<div class="step-label">Nice to meet you</div>' +
+      '<h2>How did you hear about us?</h2>' +
+      '<div class="field"><select id="src"><option value="">Choose one…</option>' +
+      SOURCES.map(s => '<option>' + s + '</option>').join("") + '</select></div>' +
+      '<div class="field"><label>Tell us which one <span class="hint">(event name, platform, who referred you…)</span></label>' +
+      '<input type="text" id="srcDetail" placeholder="e.g. World Pork Expo, Instagram, a friend at ACME Co."></div>' +
+      '<p class="err" id="err"></p>' +
+      '<div class="actions">' + backBtn() +
+      '<button class="btn btn-primary" onclick="saveSource()">Continue</button></div>');
+  },
+
+  /* YES -> short existing-client form --------------------------------- */
+  existing() {
+    h('<div class="step-label">Welcome back</div>' +
+      '<h2>Tell us about your project</h2>' +
+      '<div class="field"><label>Company</label><input type="text" id="company" value="' + form.company.name + '"></div>' +
+      '<div class="row">' +
+      '<div class="field"><label>Your name</label><input type="text" id="cname"></div>' +
+      '<div class="field"><label>Phone</label><input type="tel" id="cphone"></div></div>' +
+      '<div class="row">' +
+      '<div class="field"><label>Email</label><input type="email" id="cemail"></div>' +
+      '<div class="field"><label>Website <span class="hint">(optional)</span></label><input type="url" id="curl" placeholder="https://"></div></div>' +
+      '<div class="field"><label>Industry</label>' + industrySelect("industry", form.company.industry) + '</div>' +
+      '<div class="row">' +
+      '<div class="field"><label>Project name</label><input type="text" id="pname" placeholder="e.g. Staff polos 2026"></div>' +
+      '<div class="field"><label>In-hands date</label><input type="date" id="ihd"></div></div>' +
+      '<div class="field"><label>Tell us about your project</label><textarea id="pdesc" placeholder="What are you looking to do?"></textarea></div>' +
+      '<p class="err" id="err"></p>' +
+      '<div class="actions">' + backBtn() +
+      '<button class="btn btn-primary" onclick="saveExisting()">Review &amp; submit</button></div>');
+  },
+
+  /* MANUAL ENTRY (internal) -------------------------------------------- */
+  manual() {
+    h('<div class="step-label">Internal · Manual Entry</div>' +
+      '<h2>Quick capture</h2>' +
+      '<p class="sub">Minimum fields — enrich it later in the Inbox.</p>' +
+      '<div class="field"><label>Company</label><input type="text" id="company"></div>' +
+      '<div class="row">' +
+      '<div class="field"><label>Contact name</label><input type="text" id="cname"></div>' +
+      '<div class="field"><label>In-hand date</label><input type="date" id="ihd"></div></div>' +
+      '<div class="field"><label>Type of project</label><select id="ptype"><option value="">Select…</option>' +
+      PROJECT_TYPES.map(p => '<option value="' + p.key + '">' + p.label + '</option>').join("") + '</select></div>' +
+      '<div class="field"><label>Notes <span class="hint">(optional)</span></label><textarea id="pdesc"></textarea></div>' +
+      '<p class="err" id="err"></p>' +
+      '<div class="actions">' + backBtn() +
+      '<button class="btn btn-primary" onclick="saveManual()">Save inquiry</button></div>');
+  },
+
+  /* INFO DUMP ----------------------------------------------------------- */
+  infoDump() {
+    h('<div class="step-label">The basics</div>' +
+      '<h2>A little about you</h2>' +
+      '<div class="field"><label>Company name</label><input type="text" id="company" value="' + form.company.name + '"></div>' +
+      '<div class="field"><label>Select your industry</label>' + industrySelect("industry", form.company.industry) + '</div>' +
+      '<div class="row">' +
+      '<div class="field"><label>Your name</label><input type="text" id="cname" value="' + form.contact.name + '"></div>' +
+      '<div class="field"><label>Job title</label><input type="text" id="ctitle" value="' + form.contact.job_title + '"></div></div>' +
+      '<div class="row">' +
+      '<div class="field"><label>Phone</label><input type="tel" id="cphone" value="' + form.contact.phone + '"></div>' +
+      '<div class="field"><label>Email</label><input type="email" id="cemail" value="' + form.contact.email + '"></div></div>' +
+      '<div class="field"><label>Website <span class="hint">(optional)</span></label><input type="url" id="curl" placeholder="https://" value="' + form.contact.url + '"></div>' +
+      '<div class="row">' +
+      '<div class="field"><label>Project name</label><input type="text" id="pname" value="' + form.project.name + '"></div>' +
+      '<div class="field"><label>What is your in-hand date?</label><input type="date" id="ihd" value="' + form.project.in_hands_date + '"></div></div>' +
+      '<p class="err" id="err"></p>' +
+      '<div class="actions">' + backBtn() +
+      '<button class="btn btn-primary" onclick="saveInfoDump()">Continue</button></div>');
+  },
+
+  /* PROJECT TYPE ---------------------------------------------------------- */
+  projectType() {
+    h('<div class="step-label">Your project</div>' +
+      '<h2>What type of project is this?</h2>' +
+      '<div class="tiles two">' +
+      PROJECT_TYPES.map(p => '<button class="tile" onclick="pickType(\'' + p.key + '\')"><b>' + p.label + '</b><small>' + p.desc + '</small></button>').join("") +
+      '</div>' +
+      '<div class="actions">' + backBtn() + '<span></span></div>');
+  },
+
+  /* type-specific detail steps ------------------------------------------- */
+  liveActivation() {
+    h('<div class="step-label">Live Activation</div><h2>Event details</h2>' +
+      '<div class="row">' +
+      '<div class="field"><label>Audience size</label><input type="number" id="aud" min="1" placeholder="How many people?"></div>' +
+      '<div class="field"><label>Event date</label><input type="date" id="edate"></div></div>' +
+      '<div class="field"><label>Location</label><input type="text" id="eloc" placeholder="Venue, city"></div>' +
+      '<p class="err" id="err"></p>' +
+      '<div class="actions">' + backBtn() +
+      '<button class="btn btn-primary" onclick="saveDetails(\'live\', {audience_size:v(\'aud\'), event_date:v(\'edate\'), location:v(\'eloc\')}, \'review\')">Review &amp; submit</button></div>');
+  },
+
+  justAFew() {
+    h('<div class="step-label">Just a Few Items</div><h2>Quality &amp; budget</h2>' +
+      '<div class="field"><label>Quality / price point interest</label>' +
+      '<select id="qpi"><option value="">Choose…</option><option>Budget-friendly</option><option>Mid-range</option><option>Premium / retail quality</option><option>Not sure — advise me</option></select></div>' +
+      '<p class="err" id="err"></p>' +
+      '<div class="actions">' + backBtn() +
+      '<button class="btn btn-primary" onclick="saveDetails(\'few\', {quality_price_interest:v(\'qpi\')}, \'vision\')">Continue</button></div>');
+  },
+
+  csg() {
+    h('<div class="step-label">You Supply the Goods</div><h2>About your items</h2>' +
+      '<div class="notice warn"><b>Heads up:</b> when you supply the garments, P&amp;M cannot guarantee replacements for misprints or damage on customer-supplied goods, and certain fabrics may not be compatible with every decoration method. We\'ll confirm everything before production.</div>' +
+      '<div class="field"><label>Order info <span class="hint">(quantity, sizes, when we\'d receive the goods)</span></label><textarea id="oinfo"></textarea></div>' +
+      '<div class="field"><label>Preferred decoration</label>' +
+      '<select id="deco"><option value="">Choose…</option><option>Screen print</option><option>Embroidery</option><option>Heat transfer / vinyl</option><option>DTF / DTG</option><option>Not sure — advise me</option></select></div>' +
+      '<div class="field"><label>Item info <span class="hint">(brand, style, fabric content if known)</span></label><textarea id="iinfo"></textarea></div>' +
+      '<div class="field check"><input type="checkbox" id="waiver"><label for="waiver">I understand and accept the customer-supplied goods terms above.</label></div>' +
+      '<p class="err" id="err"></p>' +
+      '<div class="actions">' + backBtn() +
+      '<button class="btn btn-primary" onclick="saveCsg()">Continue</button></div>');
+  },
+
+  bulkPromo() {
+    h('<div class="step-label">Bulk Promo</div><h2>Product details</h2>' +
+      '<div class="field"><label>Product type &amp; colors</label><textarea id="ptc" placeholder="e.g. koozies in navy, pens in green…"></textarea></div>' +
+      '<div class="row">' +
+      '<div class="field"><label>Budget</label><input type="text" id="budget" placeholder="$ range or per-piece target"></div>' +
+      '<div class="field"><label>Quantity range <span class="hint">(min 50+ on most promo)</span></label><input type="text" id="qty" placeholder="e.g. 250–500"></div></div>' +
+      '<p class="err" id="err"></p>' +
+      '<div class="actions">' + backBtn() +
+      '<button class="btn btn-primary" onclick="saveDetails(\'promo\', {product_type_colors:v(\'ptc\'), budget:v(\'budget\'), quantity_range:v(\'qty\')}, \'vision\')">Continue</button></div>');
+  },
+
+  bulkMerch() {
+    h('<div class="step-label">Bulk Merch</div><h2>Who\'s this for?</h2>' +
+      '<div class="row">' +
+      '<div class="field"><label>Audience size</label><input type="number" id="aud" min="1"></div>' +
+      '<div class="field"><label>Types of items</label><input type="text" id="items" placeholder="tees, hoodies, hats…"></div></div>' +
+      '<div class="field"><label>Fits needed</label><input type="text" id="fits" placeholder="unisex, ladies, youth…"></div>' +
+      '<div class="field"><label>Quality / price point interest</label>' +
+      '<select id="qpi"><option value="">Choose…</option><option>Budget-friendly</option><option>Mid-range</option><option>Premium / retail quality</option><option>Not sure — advise me</option></select></div>' +
+      '<p class="err" id="err"></p>' +
+      '<div class="actions">' + backBtn() +
+      '<button class="btn btn-primary" onclick="saveDetails(\'merch\', {audience_size:v(\'aud\'), item_types:v(\'items\'), fits_needed:v(\'fits\'), quality_price_interest:v(\'qpi\')}, \'vision\')">Continue</button></div>');
+  },
+
+  storeKind() {
+    h('<div class="step-label">Online Store</div><h2>What kind of store?</h2>' +
+      '<div class="tiles">' +
+      STORE_KINDS.map(s => '<button class="tile" onclick="pickStore(\'' + s.key + '\')"><b>' + s.label + '</b><small>' + s.desc + '</small></button>').join("") +
+      '</div>' +
+      '<div class="actions">' + backBtn() + '<span></span></div>');
+  },
+
+  stateStore() {
+    h('<div class="step-label">State Store</div><h2>You\'re in the right place</h2>' +
+      '<p class="sub">State stores run through a dedicated setup form.</p>' +
+      (STATE_STORE_URL
+        ? '<div class="notice">We\'ll take you to the state store form now.</div><div class="actions">' + backBtn() + '<a class="btn btn-primary" href="' + STATE_STORE_URL + '">Go to state store form &rarr;</a></div>'
+        : '<div class="notice warn">The state store form link isn\'t set up yet — submit this inquiry and we\'ll send it to you directly.</div><div class="actions">' + backBtn() + '<button class="btn btn-primary" onclick="saveDetails(\'state\', {redirect_pending:true}, \'review\')">Submit inquiry</button></div>'));
+  },
+
+  popUp() {
+    h('<div class="step-label">Pop-Up Store</div><h2>Store setup</h2>' +
+      '<div class="field"><label>When do you want the store open?</label><input type="text" id="window" placeholder="e.g. Aug 1–14, or \'2 weeks in September\'"></div>' +
+      STEPS._storeCommonFields() +
+      '<p class="err" id="err"></p>' +
+      '<div class="actions">' + backBtn() +
+      '<button class="btn btn-primary" onclick="saveStore(\'pop_up\')">Continue</button></div>');
+  },
+
+  catalog() {
+    h('<div class="step-label">Catalog Store</div><h2>Store setup</h2>' +
+      '<div class="field"><label>Order batching <span class="hint">(how often should we run orders?)</span></label>' +
+      '<select id="batching"><option value="">Choose…</option><option>Weekly</option><option>Every two weeks</option><option>Monthly</option><option>Not sure — advise me</option></select></div>' +
+      STEPS._storeCommonFields() +
+      '<p class="err" id="err"></p>' +
+      '<div class="actions">' + backBtn() +
+      '<button class="btn btn-primary" onclick="saveStore(\'catalog\')">Continue</button></div>');
+  },
+
+  _storeCommonFields() {
+    return '<div class="row">' +
+      '<div class="field"><label>Discount / access codes?</label><select id="codes"><option value="">Choose…</option><option>Yes</option><option>No</option><option>Not sure</option></select></div>' +
+      '<div class="field"><label>Who pays for orders?</label><select id="payer"><option value="">Choose…</option><option>Individuals pay</option><option>Company pays</option><option>Mix of both</option></select></div></div>' +
+      '<div class="row">' +
+      '<div class="field"><label>Audience size</label><input type="number" id="aud" min="1"></div>' +
+      '<div class="field"><label>Fits needed</label><input type="text" id="fits" placeholder="unisex, ladies, youth…"></div></div>' +
+      '<div class="row">' +
+      '<div class="field"><label>Types of items</label><input type="text" id="items" placeholder="tees, hoodies, hats…"></div>' +
+      '<div class="field"><label>Quality / price point</label><select id="qpi"><option value="">Choose…</option><option>Budget-friendly</option><option>Mid-range</option><option>Premium / retail quality</option><option>Not sure — advise me</option></select></div></div>';
+  },
+
+  /* VISION BOARD --------------------------------------------------------- */
+  vision() {
+    h('<div class="step-label">Vision board</div><h2>The look</h2>' +
+      '<div class="field"><label>Garment / product colors</label><input type="text" id="colors" placeholder="e.g. black tees, forest green hoodies"></div>' +
+      '<div class="field"><label>Preferred decoration method</label>' +
+      '<select id="deco"><option value="">Choose…</option><option>Screen print</option><option>Embroidery</option><option>Heat transfer / vinyl</option><option>DTF / DTG</option><option>Patches</option><option>Not sure — advise me</option></select></div>' +
+      '<div class="field"><label>Do you have art ready?</label>' +
+      '<select id="hasArt" onchange="STEPS._visionToggle()"><option value="">Choose…</option><option value="yes">Yes</option><option value="no">No</option></select></div>' +
+      '<div id="artYes" style="display:none">' +
+      '<div class="field"><label>Link to your art <span class="hint">(Drive, Dropbox, your site — or reply to our confirmation email with files)</span></label><input type="url" id="artUrl" placeholder="https://"></div></div>' +
+      '<div id="artNo" style="display:none">' +
+      '<div class="field"><label>Do you have a brand guide?</label>' +
+      '<select id="hasGuide" onchange="STEPS._visionToggle()"><option value="">Choose…</option><option value="yes">Yes</option><option value="no">No</option></select></div>' +
+      '<div class="field" id="guideYes" style="display:none"><label>Link to your brand guide</label><input type="url" id="guideUrl" placeholder="https://"></div>' +
+      '<div class="field"><label>Want to talk to our art team?</label>' +
+      '<select id="talkArt" onchange="STEPS._visionToggle()"><option value="">Choose…</option><option value="yes">Yes — set up a meeting</option><option value="no">No — I\'ll describe it</option></select></div>' +
+      '<div id="describeBlock" style="display:none">' +
+      '<div class="field"><label>Describe your vision</label><textarea id="visionDesc" placeholder="Style, mood, anything you\'re picturing…"></textarea></div>' +
+      '<div class="field"><label>Inspiration links <span class="hint">(Pinterest, screenshots, brands you like)</span></label><input type="text" id="inspo" placeholder="paste links, comma-separated"></div></div>' +
+      '<div class="notice" id="meetingNote" style="display:none">Great — we\'ll reach out to schedule a meeting with the art team.</div></div>' +
+      '<p class="err" id="err"></p>' +
+      '<div class="actions">' + backBtn() +
+      '<button class="btn btn-primary" onclick="saveVision()">Review &amp; submit</button></div>');
+  },
+
+  _visionToggle() {
+    const hasArt = v("hasArt"), hasGuide = v("hasGuide"), talk = v("talkArt");
+    document.getElementById("artYes").style.display = hasArt === "yes" ? "block" : "none";
+    document.getElementById("artNo").style.display = hasArt === "no" ? "block" : "none";
+    const gy = document.getElementById("guideYes"); if (gy) gy.style.display = hasGuide === "yes" ? "block" : "none";
+    const db = document.getElementById("describeBlock"); if (db) db.style.display = talk === "no" ? "block" : "none";
+    const mn = document.getElementById("meetingNote"); if (mn) mn.style.display = talk === "yes" ? "block" : "none";
+  },
+
+  /* REVIEW + SUBMIT -------------------------------------------------------- */
+  review() {
+    const p = form.project;
+    const typeLabel = p.type ? (PROJECT_TYPES.find(t => t.key === p.type) || {}).label || p.type : "—";
+    h('<div class="step-label">Almost done</div><h2>Review your inquiry</h2>' +
+      '<dl class="review">' +
+      '<dt>Company</dt><dd>' + (form.company.name || "—") + (form.company.industry ? " · " + form.company.industry : "") + '</dd>' +
+      '<dt>Contact</dt><dd>' + [form.contact.name, form.contact.email, form.contact.phone].filter(Boolean).join(" · ") + '</dd>' +
+      '<dt>Project</dt><dd>' + (p.name || "—") + ' · ' + typeLabel + (p.store_kind ? " (" + p.store_kind.replace("_", "-") + ")" : "") + (p.in_hands_date ? " · in hands " + p.in_hands_date : "") + '</dd>' +
+      (p.description ? '<dt>Notes</dt><dd>' + p.description + '</dd>' : '') +
+      '</dl>' +
+      '<p class="err" id="err"></p>' +
+      '<div class="actions">' + backBtn() +
+      '<button class="btn btn-primary" id="submitBtn" onclick="submitForm()">Submit inquiry</button></div>');
+  },
+
+  done() {
+    h('<div class="center"><div class="done-icon">&#10003;</div>' +
+      '<h2>Got it — thank you!</h2>' +
+      '<p class="sub">Your inquiry is in. The right account manager will reach out shortly' +
+      (form.project.in_hands_date ? ' — we\'ve noted your ' + form.project.in_hands_date + ' in-hands date.' : '.') + '</p>' +
+      '<button class="btn btn-primary" onclick="location.reload()">Start another inquiry</button></div>');
+    bar.style.width = "100%";
+  }
+};
+
+/* ------------------------------------------------------------- handlers */
+function pickGate(val) {
+  form.entry.existing_client = val;
+  if (val === "yes") return go("existing", 30);
+  if (val === "manual") return go("manual", 40);
+  if (val === "no") return go("source", 20);
+  go("infoDump", 30); // yes_new / not_sure
+}
+function saveSource() {
+  if (!v("src")) return fail("Pick how you heard about us.");
+  form.entry.source = { channel: v("src"), detail: v("srcDetail") };
+  go("infoDump", 30);
+}
+function saveExisting() {
+  if (!v("company")) return fail("Company is required.");
+  if (!v("cname") || (!v("cemail") && !v("cphone"))) return fail("Your name plus an email or phone are required.");
+  form.company = { name: v("company"), industry: v("industry") };
+  form.contact = { name: v("cname"), phone: v("cphone"), email: v("cemail"), url: v("curl"), job_title: "" };
+  form.project.name = v("pname"); form.project.in_hands_date = v("ihd"); form.project.description = v("pdesc");
+  go("review", 85);
+}
+function saveManual() {
+  if (!v("company")) return fail("Company is required.");
+  form.company.name = v("company");
+  form.contact.name = v("cname");
+  form.project.in_hands_date = v("ihd");
+  form.project.type = v("ptype") || null;
+  form.project.description = v("pdesc");
+  go("review", 85);
+}
+function saveInfoDump() {
+  if (!v("company")) return fail("Company name is required.");
+  if (!v("industry")) return fail("Select your industry.");
+  if (!v("cname") || (!v("cemail") && !v("cphone"))) return fail("Your name plus an email or phone are required.");
+  form.company = { name: v("company"), industry: v("industry") };
+  form.contact = { name: v("cname"), phone: v("cphone"), email: v("cemail"), url: v("curl"), job_title: v("ctitle") };
+  form.project.name = v("pname"); form.project.in_hands_date = v("ihd");
+  go("projectType", 45);
+}
+function pickType(key) {
+  form.project.type = key;
+  const map = { live_activation: "liveActivation", just_a_few: "justAFew", csg: "csg", bulk_promo: "bulkPromo", bulk_merch: "bulkMerch", online_store: "storeKind" };
+  go(map[key], 55);
+}
+function pickStore(kind) {
+  form.project.store_kind = kind;
+  go(kind === "state_store" ? "stateStore" : (kind === "pop_up" ? "popUp" : "catalog"), 62);
+}
+function saveDetails(_tag, details, next) {
+  form.project.details = details;
+  go(next, next === "review" ? 85 : 70);
+}
+function saveCsg() {
+  if (!document.getElementById("waiver").checked) return fail("Please accept the customer-supplied goods terms to continue.");
+  form.project.details = { order_info: v("oinfo"), preferred_deco: v("deco"), item_info: v("iinfo"), csg_waiver_accepted: true, csg_waiver_accepted_at: new Date().toISOString() };
+  go("vision", 70);
+}
+function saveStore(kind) {
+  form.project.details = {
+    open_window: kind === "pop_up" ? v("window") : null,
+    batching: kind === "catalog" ? v("batching") : null,
+    codes: v("codes"), payer: v("payer"),
+    audience_size: v("aud"), fits_needed: v("fits"), item_types: v("items"), quality_price_interest: v("qpi")
+  };
+  go("vision", 70);
+}
+function saveVision() {
+  const hasArt = v("hasArt");
+  if (!hasArt) return fail("Let us know if you have art ready.");
+  form.vision = {
+    colors: v("colors"), deco_method: v("deco"),
+    has_art: hasArt === "yes", art_url: v("artUrl") || null,
+    has_brand_guide: v("hasGuide") === "yes" || null, brand_guide_url: v("guideUrl") || null,
+    talk_to_art: v("talkArt") === "yes" || null,
+    vision_description: v("visionDesc") || null,
+    inspo: v("inspo") ? v("inspo").split(",").map(s => s.trim()).filter(Boolean) : []
+  };
+  go("review", 85);
+}
+async function submitForm() {
+  const btn = document.getElementById("submitBtn");
+  btn.disabled = true; btn.textContent = "Sending…";
+  try {
+    const res = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ submission: form })
+    });
+    if (!res.ok) throw new Error("save failed (" + res.status + ")");
+    go("done", 100);
+  } catch (e) {
+    btn.disabled = false; btn.textContent = "Submit inquiry";
+    fail("Couldn't send your inquiry — check your connection and try again, or call the shop.");
+  }
+}
+
+go("gate", 5);
+</script>
+</body>
+</html>
