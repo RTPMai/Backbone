@@ -58,11 +58,41 @@ follow_up_speed: "Immediate" for strategic accounts or active buying signals, "2
 Hours" for qualified growth accounts, "48-72 Hours" for standard inquiries,
 "Transactional Queue" for low-value one-off opportunities.
 
+Research the company's likely purchasing decision-maker(s) using web search — LinkedIn profiles,
+company "About"/"Team"/"Contact" pages, press mentions, and third-party contact databases
+(ZoomInfo, RocketReach, success.ai, etc.). Look specifically for HR/People leadership (owns
+onboarding/uniform decisions), Operations/Facilities leadership (owns workwear/safety apparel),
+Marketing (owns promo product/event merchandise), and Owner/President/GM for smaller companies
+where one person likely controls purchasing. Only report names, titles, and contact details
+that are genuinely public — never guess or fabricate a name, email, or phone number.
+
+For every contact, set "confidence" to exactly one of:
+  "confirmed" — found directly on the company's own site/page (first-party)
+  "third-party unverified" — from a data broker (ZoomInfo, RocketReach, success.ai, etc.),
+    not confirmed first-party
+  "single-source unconfirmed" — only one weak source (e.g. a colleague's social post
+    mentioning the title), not corroborated
+  "not found" — searched but nothing public located; still include the row with empty
+    contact_info so the gap is visible rather than silently omitted
+
 Respond with ONLY a single JSON object, no markdown fences, no preamble, matching
 exactly this shape (use empty string / empty array / null for anything you truly
 cannot determine — never fabricate specifics):
 
 {
+  "at_a_glance": {
+    "summary": "1-2 sentence plain-English rundown of who this company is and why they matter",
+    "top_opportunity": "the single biggest reason to pursue this account",
+    "top_risk": "the single biggest reason this might not pan out"
+  },
+  "next_steps": {
+    "recommended_action": "one concrete next action",
+    "who_to_contact": "best contact from key_contacts to start with, and why",
+    "urgency": "why now vs. later"
+  },
+  "key_contacts": [
+    { "name": "", "title": "", "relevance": "", "confidence": "", "source": "", "contact_info": "" }
+  ],
   "company_overview": {
     "company_name": "", "website": "", "hq_location": "", "number_of_locations": "",
     "estimated_employee_count": "", "employee_tier": "", "industry_classification": "",
