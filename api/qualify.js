@@ -176,9 +176,18 @@ Research this company using web search, then return the JSON object exactly as s
 
     const cleaned = rawText.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
 
+    // Even with explicit instructions, the model occasionally adds a stray sentence before/after
+    // the JSON object. Extract the outermost {...} block rather than assuming the whole response
+    // is clean JSON.
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
+    const jsonSlice = (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace)
+      ? cleaned.slice(firstBrace, lastBrace + 1)
+      : cleaned;
+
     let parsed;
     try {
-      parsed = JSON.parse(cleaned);
+      parsed = JSON.parse(jsonSlice);
     } catch (e) {
       return res.status(502).json({
         error: "Could not parse qualification JSON from model output",
