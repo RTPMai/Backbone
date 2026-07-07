@@ -159,7 +159,7 @@ Research this company using web search, then return the JSON object exactly as s
         max_tokens: 4000,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: userMsg }],
-        tools: [{ type: "web_search_20250305", name: "web_search" }]
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }]
       })
     });
 
