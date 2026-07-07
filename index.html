@@ -80,6 +80,23 @@ textarea.field{min-height:60px;resize:vertical}
 .err{background:#FEE2E2;border:1px solid #FECACA;border-radius:8px;padding:10px 14px;color:#DC2626;font-size:13px;margin-bottom:10px}
 .help{font-size:12px;color:#6B7280;margin-bottom:12px;line-height:1.5}
 .empty-state{padding:40px;text-align:center;color:#9CA3AF}
+
+.alert-group{margin-bottom:18px}
+.alert-group:last-child{margin-bottom:0}
+.alert-group-hd{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;font-weight:600}
+.alert-count{background:#F3F4F6;color:#374151;border-radius:99px;padding:1px 8px;font-size:11px}
+.alert-count.warn{background:#FEE2E2;color:#DC2626}
+.alert-count.amber{background:#FEF3C7;color:#D97706}
+.alert-row{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid #F3F4F6;border-radius:6px;margin-bottom:6px;cursor:pointer;font-size:13px}
+.alert-row:hover{background:#F9FAFB}
+.alert-row .meta{color:#6B7280;font-size:12px}
+.mix-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:13px}
+.mix-bar-lbl{width:190px;flex-shrink:0;color:#374151}
+.mix-bar-track{flex:1;background:#F3F4F6;border-radius:4px;height:14px;overflow:hidden;display:flex}
+.mix-bar-fill{height:100%}
+.mix-bar-val{width:110px;flex-shrink:0;text-align:right;color:#6B7280;font-size:12px}
+.am-table td,.am-table th{white-space:normal}
+.tier-pill{display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;margin-right:3px}
 </style>
 </head>
 <body>
@@ -96,6 +113,7 @@ textarea.field{min-height:60px;resize:vertical}
     <div class="nav">
       <button class="nav-btn active" data-page="roster">Roster</button>
       <button class="nav-btn" data-page="scorecard">Scorecard</button>
+      <button class="nav-btn" data-page="dashboard">Dashboard</button>
       <button class="nav-btn" data-page="settings">Settings</button>
     </div>
     <span class="last-updated" id="lastUpdated"></span>
@@ -161,6 +179,40 @@ textarea.field{min-height:60px;resize:vertical}
         </div>
         <div id="scoreTableWrap"></div>
         <div class="help" style="margin-top:10px">Click any column header to sort — click again to reverse.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="page-dashboard" class="page">
+    <div class="kpi-grid" id="dashPortfolioKpiGrid"></div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-hd">
+        <h3>Revenue concentration &amp; industry mix</h3>
+      </div>
+      <div class="card-bd">
+        <div id="dashConcentrationWrap" style="margin-bottom:18px"></div>
+        <div id="dashIndustryWrap"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-hd">
+        <h3>Account Manager workload</h3>
+      </div>
+      <div class="card-bd">
+        <div class="help">Client count, combined revenue, and tier mix per AM. "Needs review" counts clients with no explicit industry or AM set.</div>
+        <div id="dashAmWrap"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hd">
+        <h3>Alerts</h3>
+      </div>
+      <div class="card-bd">
+        <div class="help">Computed from existing roster data — no separate pull required. Click a company to open its record.</div>
+        <div id="dashAlertsWrap"></div>
       </div>
     </div>
   </div>
@@ -841,6 +893,7 @@ function render() {
   }
 
   renderScorecard();
+  renderDashboard();
 }
 
 const TIER_RANK = { "Platinum": 5, "Gold": 4, "Silver": 3, "Bronze": 2, "Valuable Dirt": 1 };
@@ -936,6 +989,190 @@ function renderScorecard() {
     el.addEventListener("click", function(e) { e.stopPropagation(); });
   });
   attachSortHandlers(wrap, scoreSort, renderScorecard);
+}
+
+// ---- Dashboard (Layer 3): portfolio health, AM workload, alerts ----
+// Alert thresholds are simple and visible on purpose (not tuned/hidden) so they're easy to argue
+// with and adjust. "Re-engagement candidate" reuses the days_since + revenue fields already on the
+// roster rather than requiring a separate Apparelytics dormant pull.
+const DASH_THRESHOLDS = {
+  atRiskDaysSince: 90,        // high-tier client gone quiet this long -> at-risk
+  reengageDaysSince: 180,     // fully dormant this long -> re-engagement candidate
+  reengageMinRevenue: 15000   // must have been worth at least this much historically to bother flagging
+};
+
+function getDashboardData() {
+  const rows = state.synced.map(function(c) {
+    const enrichment = state.enrichment[c.customer_id] || {};
+    const sc = computeScorecard(c, enrichment);
+    const daysSinceVal = daysSince(c.last_invoice_date);
+    const industry = enrichment.industry || "";
+    const explicitAM = enrichment.account_manager || "";
+    const lane = !explicitAM ? getAssignedAM(industry) : null;
+    const resolvedAM = explicitAM || (lane && !lane.varies ? lane.am : "");
+    return Object.assign({}, c, sc, {
+      days_since: daysSinceVal,
+      industry: industry,
+      am: resolvedAM,
+      amExplicit: !!explicitAM,
+      needsReview: !industry && !explicitAM
+    });
+  });
+  return rows;
+}
+
+function renderDashboard() {
+  const rows = getDashboardData();
+  if (rows.length === 0) {
+    document.getElementById("dashPortfolioKpiGrid").innerHTML = "";
+    document.getElementById("dashConcentrationWrap").innerHTML = '<div class="empty-state">No data yet.</div>';
+    document.getElementById("dashIndustryWrap").innerHTML = "";
+    document.getElementById("dashAmWrap").innerHTML = "";
+    document.getElementById("dashAlertsWrap").innerHTML = "";
+    return;
+  }
+
+  // --- Portfolio health KPIs ---
+  const totalRevenue = rows.reduce(function(s, r) { return s + (r.total_revenue || 0); }, 0);
+  const avgScore = rows.reduce(function(s, r) { return s + r.total; }, 0) / rows.length;
+  const tierCounts = { "Platinum": 0, "Gold": 0, "Silver": 0, "Bronze": 0, "Valuable Dirt": 0 };
+  rows.forEach(function(r) { tierCounts[r.tier]++; });
+  const topTierShare = ((tierCounts["Platinum"] + tierCounts["Gold"]) / rows.length * 100).toFixed(0);
+
+  const kpiGrid = document.getElementById("dashPortfolioKpiGrid");
+  kpiGrid.innerHTML =
+    '<div class="kpi"><div class="kpi-lbl">Total roster revenue</div><div class="kpi-val">' + fmtMoney(totalRevenue) + '</div></div>' +
+    '<div class="kpi"><div class="kpi-lbl">Total clients</div><div class="kpi-val">' + rows.length + '</div></div>' +
+    '<div class="kpi"><div class="kpi-lbl">Avg score</div><div class="kpi-val">' + avgScore.toFixed(2) + '</div><div class="kpi-s">out of 5</div></div>' +
+    '<div class="kpi"><div class="kpi-lbl">Platinum + Gold</div><div class="kpi-val">' + topTierShare + '%</div><div class="kpi-s">of roster</div></div>';
+
+  // --- Revenue concentration: top 10 clients' share of total revenue ---
+  const sortedByRev = rows.slice().sort(function(a, b) { return b.total_revenue - a.total_revenue; });
+  const top10 = sortedByRev.slice(0, 10);
+  const top10Revenue = top10.reduce(function(s, r) { return s + r.total_revenue; }, 0);
+  const top10Share = totalRevenue > 0 ? (top10Revenue / totalRevenue * 100) : 0;
+  document.getElementById("dashConcentrationWrap").innerHTML =
+    '<div class="mix-bar-row">' +
+      '<div class="mix-bar-lbl">Top 10 clients</div>' +
+      '<div class="mix-bar-track"><div class="mix-bar-fill" style="width:' + top10Share.toFixed(1) + '%;background:#3D9A5C"></div></div>' +
+      '<div class="mix-bar-val">' + top10Share.toFixed(0) + '% of revenue</div>' +
+    '</div>' +
+    '<div class="help" style="margin:0">' + top10.map(function(r) { return r.company_name; }).slice(0, 5).join(", ") +
+      (top10.length > 5 ? ", +" + (top10.length - 5) + " more" : "") + '</div>';
+
+  // --- Industry mix ---
+  const industryMap = {};
+  rows.forEach(function(r) {
+    const key = r.industry || "Unclassified";
+    if (!industryMap[key]) industryMap[key] = { count: 0, revenue: 0 };
+    industryMap[key].count++;
+    industryMap[key].revenue += r.total_revenue || 0;
+  });
+  const industryList = Object.keys(industryMap).map(function(k) {
+    return { industry: k, count: industryMap[k].count, revenue: industryMap[k].revenue };
+  }).sort(function(a, b) { return b.count - a.count; });
+  const maxIndustryCount = industryList.length ? industryList[0].count : 1;
+  document.getElementById("dashIndustryWrap").innerHTML =
+    '<div class="section-lbl" style="margin-top:0">By industry (client count)</div>' +
+    industryList.map(function(i) {
+      const pct = (i.count / maxIndustryCount * 100).toFixed(0);
+      const color = i.industry === "Unclassified" ? "#D1D5DB" : "#3D9A5C";
+      return '<div class="mix-bar-row">' +
+        '<div class="mix-bar-lbl">' + i.industry + '</div>' +
+        '<div class="mix-bar-track"><div class="mix-bar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>' +
+        '<div class="mix-bar-val">' + i.count + ' · ' + fmtMoney(i.revenue) + '</div>' +
+      '</div>';
+    }).join("");
+
+  // --- AM workload ---
+  const amMap = {};
+  ACCOUNT_MANAGERS.forEach(function(a) { amMap[a] = { count: 0, revenue: 0, tiers: { "Platinum": 0, "Gold": 0, "Silver": 0, "Bronze": 0, "Valuable Dirt": 0 }, needsReview: 0, scoreSum: 0 }; });
+  amMap["Unassigned"] = { count: 0, revenue: 0, tiers: { "Platinum": 0, "Gold": 0, "Silver": 0, "Bronze": 0, "Valuable Dirt": 0 }, needsReview: 0, scoreSum: 0 };
+  rows.forEach(function(r) {
+    const key = r.am && amMap[r.am] ? r.am : "Unassigned";
+    amMap[key].count++;
+    amMap[key].revenue += r.total_revenue || 0;
+    amMap[key].tiers[r.tier]++;
+    amMap[key].scoreSum += r.total;
+    if (r.needsReview) amMap[key].needsReview++;
+  });
+  const amRows = Object.keys(amMap).filter(function(k) { return amMap[k].count > 0; })
+    .sort(function(a, b) { return amMap[b].revenue - amMap[a].revenue; });
+  let amHtml = '<table class="am-table"><thead><tr>' +
+    '<th>Account Manager</th><th>Clients</th><th>Revenue</th><th>Avg Score</th><th>Tier mix</th><th>Needs review</th>' +
+    '</tr></thead><tbody>';
+  amRows.forEach(function(k) {
+    const a = amMap[k];
+    const tierPills = Object.keys(a.tiers).filter(function(t) { return a.tiers[t] > 0; }).map(function(t) {
+      return '<span class="tier-pill" style="background:#F3F4F6;color:' + (TIER_COLORS[t] || "#374151") + '">' + t.slice(0, 4) + ' ' + a.tiers[t] + '</span>';
+    }).join("");
+    amHtml += '<tr>' +
+      '<td class="company-cell">' + k + '</td>' +
+      '<td>' + a.count + '</td>' +
+      '<td>' + fmtMoney(a.revenue) + '</td>' +
+      '<td>' + (a.scoreSum / a.count).toFixed(2) + '</td>' +
+      '<td>' + tierPills + '</td>' +
+      '<td>' + (a.needsReview > 0 ? '<span class="badge badge-amber">' + a.needsReview + '</span>' : '—') + '</td>' +
+      '</tr>';
+  });
+  amHtml += '</tbody></table>';
+  document.getElementById("dashAmWrap").innerHTML = amHtml;
+
+  // --- Alerts ---
+  const atRisk = rows.filter(function(r) {
+    return (r.tier === "Platinum" || r.tier === "Gold") && r.days_since > DASH_THRESHOLDS.atRiskDaysSince;
+  }).sort(function(a, b) { return b.total_revenue - a.total_revenue; });
+
+  const reengage = rows.filter(function(r) {
+    return r.days_since > DASH_THRESHOLDS.reengageDaysSince && r.total_revenue >= DASH_THRESHOLDS.reengageMinRevenue;
+  }).sort(function(a, b) { return b.total_revenue - a.total_revenue; });
+
+  const unassigned = rows.filter(function(r) { return r.needsReview; })
+    .sort(function(a, b) { return b.total_revenue - a.total_revenue; });
+
+  function alertRow(r, metaFn) {
+    return '<div class="alert-row" data-id="' + r.customer_id + '">' +
+      '<span class="company-cell">' + r.company_name + '</span>' +
+      '<span class="meta">' + metaFn(r) + '</span>' +
+    '</div>';
+  }
+
+  function alertGroup(title, items, countClass, metaFn, emptyMsg) {
+    let html = '<div class="alert-group"><div class="alert-group-hd">' + title +
+      '<span class="alert-count' + (items.length ? ' ' + countClass : '') + '">' + items.length + '</span></div>';
+    if (items.length === 0) {
+      html += '<div class="help" style="margin:0">' + emptyMsg + '</div>';
+    } else {
+      html += items.map(function(r) { return alertRow(r, metaFn); }).join("");
+    }
+    html += '</div>';
+    return html;
+  }
+
+  const alertsHtml =
+    alertGroup(
+      "At-risk high-value (Platinum/Gold, " + DASH_THRESHOLDS.atRiskDaysSince + "+ days quiet)",
+      atRisk, "warn",
+      function(r) { return r.tier + " · " + r.days_since + " days · " + fmtMoney(r.total_revenue); },
+      "None — no top-tier clients have gone quiet."
+    ) +
+    alertGroup(
+      "Re-engagement candidates (" + DASH_THRESHOLDS.reengageDaysSince + "+ days dormant, was worth " + fmtMoney(DASH_THRESHOLDS.reengageMinRevenue) + "+)",
+      reengage, "amber",
+      function(r) { return r.days_since + " days · historically " + fmtMoney(r.total_revenue); },
+      "None currently meet the threshold."
+    ) +
+    alertGroup(
+      "Needs industry/AM assignment",
+      unassigned, "amber",
+      function(r) { return fmtMoney(r.total_revenue) + " · " + r.invoice_count + " invoices"; },
+      "Every client has at least an industry or AM set."
+    );
+
+  document.getElementById("dashAlertsWrap").innerHTML = alertsHtml;
+  document.querySelectorAll("#dashAlertsWrap .alert-row").forEach(function(el) {
+    el.addEventListener("click", function() { openDetail(el.dataset.id); });
+  });
 }
 
 function inlineSelectCell(customerId, key, currentValue) {
