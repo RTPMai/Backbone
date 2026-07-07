@@ -134,12 +134,9 @@ textarea.field{min-height:60px;resize:vertical}
         </div>
         <div class="toolbar">
           <input class="search" id="searchBox" placeholder="Search company name"/>
-          <div class="sort-group">
-            <button class="sort-btn active" data-sort="overdue">Most overdue</button>
-            <button class="sort-btn" data-sort="revenue">Highest revenue</button>
-          </div>
         </div>
         <div id="tableWrap"></div>
+        <div class="help" style="margin-top:10px">Click any column header to sort — click again to reverse.</div>
       </div>
     </div>
   </div>
@@ -161,13 +158,9 @@ textarea.field{min-height:60px;resize:vertical}
         </div>
         <div class="toolbar">
           <input class="search" id="scoreSearchBox" placeholder="Search company name"/>
-          <div class="sort-group">
-            <button class="sort-btn active" data-scoresort="score">Highest score</button>
-            <button class="sort-btn" data-scoresort="completeness">Most complete</button>
-            <button class="sort-btn" data-scoresort="revenue">Highest revenue</button>
-          </div>
         </div>
         <div id="scoreTableWrap"></div>
+        <div class="help" style="margin-top:10px">Click any column header to sort — click again to reverse.</div>
       </div>
     </div>
   </div>
@@ -448,9 +441,9 @@ function backfillMondaySeed(enrichment) {
 }
 
 let state = { synced: [], enrichment: {}, lastSynced: null };
-let sortMode = "overdue";
+let rosterSort = { col: "days_since", dir: "desc" };
 let searchQuery = "";
-let scoreSortMode = "score";
+let scoreSort = { col: "total", dir: "desc" };
 let scoreSearchQuery = "";
 let activeCustomerId = null;
 
@@ -711,16 +704,69 @@ const TIER_COLORS = {
   "Valuable Dirt": "#9CA3AF"
 };
 
+function compareForSort(a, b, dir) {
+  const aNull = a === null || a === undefined || a === "";
+  const bNull = b === null || b === undefined || b === "";
+  if (aNull && bNull) return 0;
+  if (aNull) return 1;  // nulls always sort to the bottom regardless of direction
+  if (bNull) return -1;
+  let cmp;
+  if (typeof a === "number" && typeof b === "number") cmp = a - b;
+  else cmp = String(a).toLowerCase().localeCompare(String(b).toLowerCase());
+  return dir === "asc" ? cmp : -cmp;
+}
+
+// columns: array of { key, label, numeric } -- numeric ones default to descending on first click,
+// text ones default to ascending, matching what people expect (highest revenue first, but A-Z names).
+function buildSortableHeaderRow(columns, sortState) {
+  return "<tr>" + columns.map(function(c) {
+    const active = sortState.col === c.key;
+    const arrow = active ? (sortState.dir === "asc" ? " ▲" : " ▼") : "";
+    return '<th data-sort-col="' + c.key + '" data-numeric="' + (c.numeric ? "1" : "0") + '" style="cursor:pointer;user-select:none" title="Click to sort">' + c.label + arrow + '</th>';
+  }).join("") + "</tr>";
+}
+
+function attachSortHandlers(wrap, sortState, onSorted) {
+  wrap.querySelectorAll("[data-sort-col]").forEach(function(th) {
+    th.addEventListener("click", function() {
+      const col = th.dataset.sortCol;
+      const numeric = th.dataset.numeric === "1";
+      if (sortState.col === col) {
+        sortState.dir = sortState.dir === "asc" ? "desc" : "asc";
+      } else {
+        sortState.col = col;
+        sortState.dir = numeric ? "desc" : "asc";
+      }
+      onSorted();
+    });
+  });
+}
+
 function getRows() {
   let rows = state.synced.map(function(c) {
-    return Object.assign({}, c, { days_since: daysSince(c.last_invoice_date) });
+    const rEnrich = state.enrichment[c.customer_id] || {};
+    const industry = rEnrich.industry || "";
+    const explicitAM = rEnrich.account_manager || "";
+    const lane = !explicitAM ? getAssignedAM(industry) : null;
+    const amSortKey = explicitAM || (lane && !lane.varies ? lane.am : "") || "";
+    return Object.assign({}, c, {
+      days_since: daysSince(c.last_invoice_date),
+      industry_sort: industry,
+      am_sort: amSortKey,
+      enrichment_sort: hasEnrichment(c) ? 1 : 0
+    });
   });
   if (searchQuery.trim()) {
     const q = searchQuery.trim().toLowerCase();
     rows = rows.filter(function(r) { return r.company_name.toLowerCase().indexOf(q) !== -1; });
   }
-  if (sortMode === "overdue") rows.sort(function(a, b) { return b.days_since - a.days_since; });
-  else rows.sort(function(a, b) { return b.total_revenue - a.total_revenue; });
+  const colMap = {
+    company_name: "company_name", total_revenue: "total_revenue", invoice_count: "invoice_count",
+    last_invoice_date: "last_invoice_date", days_since: "days_since", industry: "industry_sort",
+    account_manager: "am_sort", enrichment: "enrichment_sort"
+  };
+  const key = colMap[rosterSort.col] || "days_since";
+  rows.sort(function(a, b) { return compareForSort(a[key], b[key], rosterSort.dir); });
   return rows;
 }
 
@@ -736,7 +782,17 @@ function render() {
   if (rows.length === 0) {
     wrap.innerHTML = '<div class="empty-state">No matches.</div>';
   } else {
-    let html = "<table><thead><tr><th>Company</th><th>Revenue</th><th>Invoices</th><th>Last invoice</th><th>Days since</th><th>Industry Classification</th><th>Account Manager</th><th>Enrichment</th></tr></thead><tbody>";
+    const ROSTER_COLUMNS = [
+      { key: "company_name", label: "Company", numeric: false },
+      { key: "total_revenue", label: "Revenue", numeric: true },
+      { key: "invoice_count", label: "Invoices", numeric: true },
+      { key: "last_invoice_date", label: "Last invoice", numeric: true },
+      { key: "days_since", label: "Days since", numeric: true },
+      { key: "industry", label: "Industry Classification", numeric: false },
+      { key: "account_manager", label: "Account Manager", numeric: false },
+      { key: "enrichment", label: "Enrichment", numeric: true }
+    ];
+    let html = "<table><thead>" + buildSortableHeaderRow(ROSTER_COLUMNS, rosterSort) + "</thead><tbody>";
     rows.forEach(function(r) {
       const overdueColor = r.days_since > 180 ? "#DC2626" : r.days_since > 90 ? "#D97706" : "#374151";
       const filled = hasEnrichment(r);
@@ -781,15 +837,30 @@ function render() {
     wrap.querySelectorAll("tr.row").forEach(function(tr) {
       tr.addEventListener("click", function() { openDetail(tr.dataset.id); });
     });
+    attachSortHandlers(wrap, rosterSort, render);
   }
 
   renderScorecard();
 }
 
+const TIER_RANK = { "Platinum": 5, "Gold": 4, "Silver": 3, "Bronze": 2, "Valuable Dirt": 1 };
+
 function renderScorecard() {
   const scored = state.synced.map(function(c) {
     const sc = computeScorecard(c, state.enrichment[c.customer_id]);
-    return Object.assign({}, c, sc);
+    const enrichment = state.enrichment[c.customer_id] || {};
+    const avgInvoice = c.invoice_count > 0 ? c.total_revenue / c.invoice_count : 0;
+    const empVal = parseFloat(enrichment.employees);
+    return Object.assign({}, c, sc, {
+      avg_invoice_sort: avgInvoice,
+      tier_sort: TIER_RANK[sc.tier] || 0,
+      completeness_sort: parseInt(sc.completeness, 10),
+      employees_sort: isNaN(empVal) ? null : empVal,
+      growth_sort: sc.criteria.growth.score,
+      comm_sort: sc.criteria.communication.score,
+      csr_sort: sc.criteria.csr.score,
+      freq_sort: sc.criteria.frequency.score
+    });
   });
 
   const tierCounts = { "Platinum": 0, "Gold": 0, "Silver": 0, "Bronze": 0, "Valuable Dirt": 0 };
@@ -804,17 +875,33 @@ function renderScorecard() {
     const q = scoreSearchQuery.trim().toLowerCase();
     rows = rows.filter(function(r) { return r.company_name.toLowerCase().indexOf(q) !== -1; });
   }
-  if (scoreSortMode === "score") rows.sort(function(a, b) { return b.total - a.total; });
-  else if (scoreSortMode === "completeness") rows.sort(function(a, b) { return parseInt(b.completeness) - parseInt(a.completeness); });
-  else rows.sort(function(a, b) { return b.total_revenue - a.total_revenue; });
+  const scoreColMap = {
+    company_name: "company_name", total: "total", tier: "tier_sort", completeness: "completeness_sort",
+    total_revenue: "total_revenue", avg_invoice: "avg_invoice_sort", employees: "employees_sort",
+    growth: "growth_sort", comm: "comm_sort", csr: "csr_sort", freq: "freq_sort"
+  };
+  const scoreKey = scoreColMap[scoreSort.col] || "total";
+  rows.sort(function(a, b) { return compareForSort(a[scoreKey], b[scoreKey], scoreSort.dir); });
 
   const wrap = document.getElementById("scoreTableWrap");
   if (rows.length === 0) {
     wrap.innerHTML = '<div class="empty-state">No matches.</div>';
     return;
   }
-  let html = "<table><thead><tr><th>Company</th><th>Score</th><th>Tier</th><th>Criteria used</th>" +
-    "<th>Revenue</th><th>Avg Invoice</th><th>Employees</th><th>Growth</th><th>Comm.</th><th>CSR</th><th>Freq.</th></tr></thead><tbody>";
+  const SCORE_COLUMNS = [
+    { key: "company_name", label: "Company", numeric: false },
+    { key: "total", label: "Score", numeric: true },
+    { key: "tier", label: "Tier", numeric: true },
+    { key: "completeness", label: "Criteria used", numeric: true },
+    { key: "total_revenue", label: "Revenue", numeric: true },
+    { key: "avg_invoice", label: "Avg Invoice", numeric: true },
+    { key: "employees", label: "Employees", numeric: true },
+    { key: "growth", label: "Growth", numeric: true },
+    { key: "comm", label: "Comm.", numeric: true },
+    { key: "csr", label: "CSR", numeric: true },
+    { key: "freq", label: "Freq.", numeric: true }
+  ];
+  let html = "<table><thead>" + buildSortableHeaderRow(SCORE_COLUMNS, scoreSort) + "</thead><tbody>";
   rows.forEach(function(r) {
     const avgInv = r.invoice_count > 0 ? fmtMoney(r.total_revenue / r.invoice_count) : "—";
     const color = TIER_COLORS[r.tier] || "#374151";
@@ -848,6 +935,7 @@ function renderScorecard() {
     });
     el.addEventListener("click", function(e) { e.stopPropagation(); });
   });
+  attachSortHandlers(wrap, scoreSort, renderScorecard);
 }
 
 function inlineSelectCell(customerId, key, currentValue) {
@@ -1013,14 +1101,6 @@ document.querySelectorAll(".nav-btn").forEach(function(btn) {
     document.getElementById("page-" + btn.dataset.page).classList.add("active");
   });
 });
-document.querySelectorAll(".sort-btn[data-sort]").forEach(function(btn) {
-  btn.addEventListener("click", function() {
-    sortMode = btn.dataset.sort;
-    document.querySelectorAll(".sort-btn[data-sort]").forEach(function(b) { b.classList.remove("active"); });
-    btn.classList.add("active");
-    render();
-  });
-});
 document.getElementById("searchBox").addEventListener("input", function(e) {
   searchQuery = e.target.value;
   render();
@@ -1028,14 +1108,6 @@ document.getElementById("searchBox").addEventListener("input", function(e) {
 document.getElementById("scoreSearchBox").addEventListener("input", function(e) {
   scoreSearchQuery = e.target.value;
   renderScorecard();
-});
-document.querySelectorAll("[data-scoresort]").forEach(function(btn) {
-  btn.addEventListener("click", function() {
-    scoreSortMode = btn.dataset.scoresort;
-    document.querySelectorAll("[data-scoresort]").forEach(function(b) { b.classList.remove("active"); });
-    btn.classList.add("active");
-    renderScorecard();
-  });
 });
 document.getElementById("detailClose").addEventListener("click", closeDetail);
 document.getElementById("detailOverlay").addEventListener("click", function(e) {
