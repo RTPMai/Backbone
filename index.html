@@ -61,19 +61,20 @@ tr.row:hover td{background:#F9FAFB}
 
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
 .modal-overlay.open{display:flex}
-.modal{background:#fff;border-radius:12px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.2);overflow:hidden}
+.modal{background:#fff;border-radius:12px;width:100%;max-width:720px;box-shadow:0 20px 60px rgba(0,0,0,.2);overflow:hidden}
 .modal-hd{padding:16px 20px;border-bottom:1px solid #E5E7EB;display:flex;align-items:center;justify-content:space-between}
 .modal-hd h3{font-size:16px;font-weight:700}
 .modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:#6B7280;line-height:1;padding:4px}
-.modal-bd{padding:20px;max-height:70vh;overflow-y:auto}
+.modal-bd{padding:20px;max-height:85vh;overflow-y:auto}
 .section-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6B7280;margin:16px 0 8px}
 .section-lbl:first-child{margin-top:0}
 .synced-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px;margin-bottom:8px}
+.synced-grid>div{min-width:0}
 .field-lbl{font-size:11px;color:#9CA3AF;display:block;margin-bottom:3px}
 .enrich-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.enrich-field{display:flex;flex-direction:column}
+.enrich-field{display:flex;flex-direction:column;min-width:0}
 .enrich-field.wide{grid-column:1/-1}
-input.field,textarea.field{padding:7px 9px;border:1px solid #E5E7EB;border-radius:6px;font-size:13px;font-family:inherit;background:#F9FAFB}
+input.field,textarea.field,select.field{width:100%;padding:7px 9px;border:1px solid #E5E7EB;border-radius:6px;font-size:13px;font-family:inherit;background:#F9FAFB}
 textarea.field{min-height:60px;resize:vertical}
 .modal-ft{padding:14px 20px;border-top:1px solid #E5E7EB;display:flex;align-items:center;gap:10px}
 .save-status{font-size:12px;color:#6B7280}
@@ -83,13 +84,23 @@ textarea.field{min-height:60px;resize:vertical}
 .help{font-size:12px;color:#6B7280;margin-bottom:12px;line-height:1.5}
 .empty-state{padding:40px;text-align:center;color:#9CA3AF}
 
-.alert-group{margin-bottom:18px}
+.alert-group{border:1px solid #E5E7EB;border-radius:8px;margin-bottom:10px;overflow:hidden;background:#fff}
 .alert-group:last-child{margin-bottom:0}
-.alert-group-hd{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;font-weight:600}
-.alert-count{background:#F3F4F6;color:#374151;border-radius:99px;padding:1px 8px;font-size:11px}
+.alert-group summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:11px 14px;font-size:13px;font-weight:600;gap:8px}
+.alert-group summary::-webkit-details-marker{display:none}
+.alert-group summary::before{content:"▸";display:inline-block;margin-right:8px;transition:transform .15s ease;color:#9CA3AF;font-size:11px}
+.alert-group[open] summary::before{transform:rotate(90deg)}
+.alert-group.sev-high{border-color:#FECACA}
+.alert-group.sev-high summary{background:#FEF2F2}
+.alert-group.sev-med{border-color:#FDE68A}
+.alert-group.sev-med summary{background:#FFFBEB}
+.alert-group.sev-low summary{background:#F9FAFB}
+.alert-group-body{padding:10px 14px 12px}
+.alert-count{background:#F3F4F6;color:#374151;border-radius:99px;padding:2px 9px;font-size:12px;font-weight:700}
 .alert-count.warn{background:#FEE2E2;color:#DC2626}
 .alert-count.amber{background:#FEF3C7;color:#D97706}
 .alert-row{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid #F3F4F6;border-radius:6px;margin-bottom:6px;cursor:pointer;font-size:13px}
+.alert-row:last-child{margin-bottom:0}
 .alert-row:hover{background:#F9FAFB}
 .alert-row .meta{color:#6B7280;font-size:12px}
 .mix-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:13px}
@@ -113,9 +124,9 @@ textarea.field{min-height:60px;resize:vertical}
   </div>
   <div class="hdr-right">
     <div class="nav">
-      <button class="nav-btn active" data-page="roster">Roster</button>
+      <button class="nav-btn" data-page="roster">Roster</button>
       <button class="nav-btn" data-page="scorecard">Scorecard</button>
-      <button class="nav-btn" data-page="dashboard">Dashboard</button>
+      <button class="nav-btn active" data-page="dashboard">Dashboard</button>
       <button class="nav-btn" data-page="settings">Settings</button>
     </div>
     <span class="last-updated" id="lastUpdated"></span>
@@ -124,7 +135,7 @@ textarea.field{min-height:60px;resize:vertical}
 
 <div class="dash">
 
-  <div id="page-roster" class="page active">
+  <div id="page-roster" class="page">
     <div class="kpi-grid">
       <div class="kpi">
         <div class="kpi-lbl">Total customers</div>
@@ -185,7 +196,14 @@ textarea.field{min-height:60px;resize:vertical}
     </div>
   </div>
 
-  <div id="page-dashboard" class="page">
+  <div id="page-dashboard" class="page active">
+    <div class="toolbar" style="margin-bottom:14px;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:10px">
+        <label style="font-size:13px;color:#374151;font-weight:600">Year</label>
+        <select class="search" id="dashYearSelect" style="min-width:130px"></select>
+      </div>
+      <div class="help" id="dashYearNote" style="margin:0;flex:1;text-align:right"></div>
+    </div>
     <div class="kpi-grid" id="dashPortfolioKpiGrid"></div>
 
     <div class="card" style="margin-bottom:16px">
@@ -1003,27 +1021,75 @@ const DASH_THRESHOLDS = {
   reengageMinRevenue: 15000   // must have been worth at least this much historically to bother flagging
 };
 
+let dashYear = "all";
+let dashGroupState = { atrisk: true, reengage: false, unassigned: false }; // remembers open/closed across re-renders
+
+// Year filtering requires a `revenue_by_year` (and optionally `invoices_by_year`) object on the
+// synced customer record, e.g. { "2025": 42000, "2026": 18500 }. Until a refresh includes that,
+// every record only has one all-time total and the Year dropdown will just show "All time".
+function getDashboardYears() {
+  const years = new Set();
+  state.synced.forEach(function(c) {
+    if (c.revenue_by_year) Object.keys(c.revenue_by_year).forEach(function(y) { years.add(y); });
+  });
+  return Array.from(years).sort().reverse();
+}
+
+function yearAdjustedCustomer(c, year) {
+  if (year === "all" || !c.revenue_by_year || c.revenue_by_year[year] === undefined) {
+    return { customer: c, hasYearData: year === "all" };
+  }
+  const yearRevenue = c.revenue_by_year[year];
+  const yearInvoices = (c.invoices_by_year && c.invoices_by_year[year] !== undefined) ? c.invoices_by_year[year] : null;
+  return {
+    customer: Object.assign({}, c, {
+      total_revenue: yearRevenue,
+      invoice_count: yearInvoices !== null ? yearInvoices : c.invoice_count
+    }),
+    hasYearData: true
+  };
+}
+
 function getDashboardData() {
   const rows = state.synced.map(function(c) {
+    const adj = yearAdjustedCustomer(c, dashYear);
+    const cc = adj.customer;
     const enrichment = state.enrichment[c.customer_id] || {};
-    const sc = computeScorecard(c, enrichment);
-    const daysSinceVal = daysSince(c.last_invoice_date);
+    const sc = computeScorecard(cc, enrichment);
+    const daysSinceVal = daysSince(c.last_invoice_date); // recency always reflects real last activity, not the year filter
     const industry = enrichment.industry || "";
     const explicitAM = enrichment.account_manager || "";
     const lane = !explicitAM ? getAssignedAM(industry) : null;
     const resolvedAM = explicitAM || (lane && !lane.varies ? lane.am : "");
-    return Object.assign({}, c, sc, {
+    return Object.assign({}, cc, sc, {
       days_since: daysSinceVal,
       industry: industry,
       am: resolvedAM,
       amExplicit: !!explicitAM,
-      needsReview: !industry && !explicitAM
+      needsReview: !industry && !explicitAM,
+      hasYearData: adj.hasYearData
     });
   });
   return rows;
 }
 
+function populateDashYearSelect() {
+  const sel = document.getElementById("dashYearSelect");
+  const years = getDashboardYears();
+  const options = [["all", "All time"]].concat(years.map(function(y) { return [y, y]; }));
+  sel.innerHTML = options.map(function(o) {
+    return '<option value="' + o[0] + '"' + (o[0] === dashYear ? " selected" : "") + '>' + o[1] + '</option>';
+  }).join("");
+  const note = document.getElementById("dashYearNote");
+  if (years.length === 0) {
+    note.textContent = "No per-year data yet — figures below are all-time totals. Ask Claude to include revenue_by_year on the next Apparelytics refresh to enable this filter.";
+  } else {
+    note.textContent = "";
+  }
+}
+
 function renderDashboard() {
+  populateDashYearSelect();
   const rows = getDashboardData();
   if (rows.length === 0) {
     document.getElementById("dashPortfolioKpiGrid").innerHTML = "";
@@ -1034,6 +1100,8 @@ function renderDashboard() {
     return;
   }
 
+  const missingYearData = dashYear !== "all" ? rows.filter(function(r) { return !r.hasYearData; }).length : 0;
+
   // --- Portfolio health KPIs ---
   const totalRevenue = rows.reduce(function(s, r) { return s + (r.total_revenue || 0); }, 0);
   const avgScore = rows.reduce(function(s, r) { return s + r.total; }, 0) / rows.length;
@@ -1043,10 +1111,11 @@ function renderDashboard() {
 
   const kpiGrid = document.getElementById("dashPortfolioKpiGrid");
   kpiGrid.innerHTML =
-    '<div class="kpi"><div class="kpi-lbl">Total roster revenue</div><div class="kpi-val">' + fmtMoney(totalRevenue) + '</div></div>' +
+    '<div class="kpi"><div class="kpi-lbl">' + (dashYear === "all" ? "Total roster revenue" : dashYear + " revenue") + '</div><div class="kpi-val">' + fmtMoney(totalRevenue) + '</div>' +
+      (missingYearData ? '<div class="kpi-s" style="color:#D97706">' + missingYearData + ' clients missing ' + dashYear + ' data (counted as $0)</div>' : '') + '</div>' +
     '<div class="kpi"><div class="kpi-lbl">Total clients</div><div class="kpi-val">' + rows.length + '</div></div>' +
-    '<div class="kpi"><div class="kpi-lbl">Avg score</div><div class="kpi-val">' + avgScore.toFixed(2) + '</div><div class="kpi-s">out of 5</div></div>' +
-    '<div class="kpi"><div class="kpi-lbl">Platinum + Gold</div><div class="kpi-val">' + topTierShare + '%</div><div class="kpi-s">of roster</div></div>';
+    '<div class="kpi"><div class="kpi-lbl">Avg score</div><div class="kpi-val">' + avgScore.toFixed(2) + '</div><div class="kpi-s">out of 5' + (dashYear !== "all" ? " · this year's revenue/invoices" : "") + '</div></div>' +
+    '<div class="kpi"><div class="kpi-lbl">Platinum + Gold</div><div class="kpi-val">' + topTierShare + '%</div><div class="kpi-s">of roster' + (dashYear !== "all" ? ", " + dashYear + " basis" : "") + '</div></div>';
 
   // --- Revenue concentration: top 10 clients' share of total revenue ---
   const sortedByRev = rows.slice().sort(function(a, b) { return b.total_revenue - a.total_revenue; });
@@ -1121,16 +1190,23 @@ function renderDashboard() {
   document.getElementById("dashAmWrap").innerHTML = amHtml;
 
   // --- Alerts ---
+  // Recency (days_since) always reflects true last-activity regardless of the Year filter above;
+  // only the revenue threshold on re-engagement candidates uses the currently selected year's figure.
   const atRisk = rows.filter(function(r) {
     return (r.tier === "Platinum" || r.tier === "Gold") && r.days_since > DASH_THRESHOLDS.atRiskDaysSince;
-  }).sort(function(a, b) { return b.total_revenue - a.total_revenue; });
+  }).sort(function(a, b) { return b.days_since - a.days_since; });
 
   const reengage = rows.filter(function(r) {
     return r.days_since > DASH_THRESHOLDS.reengageDaysSince && r.total_revenue >= DASH_THRESHOLDS.reengageMinRevenue;
-  }).sort(function(a, b) { return b.total_revenue - a.total_revenue; });
+  }).sort(function(a, b) { return b.days_since - a.days_since; });
 
   const unassigned = rows.filter(function(r) { return r.needsReview; })
     .sort(function(a, b) { return b.total_revenue - a.total_revenue; });
+
+  function daysBadge(days, warnAt, critAt) {
+    const color = days > critAt ? "#DC2626" : days > warnAt ? "#D97706" : "#374151";
+    return '<span style="color:' + color + ';font-weight:700">' + days + ' days</span>';
+  }
 
   function alertRow(r, metaFn) {
     return '<div class="alert-row" data-id="' + r.customer_id + '">' +
@@ -1139,34 +1215,51 @@ function renderDashboard() {
     '</div>';
   }
 
-  function alertGroup(title, items, countClass, metaFn, emptyMsg) {
-    let html = '<div class="alert-group"><div class="alert-group-hd">' + title +
-      '<span class="alert-count' + (items.length ? ' ' + countClass : '') + '">' + items.length + '</span></div>';
+  // Native <details>/<summary> gives free collapse/expand + keyboard support. Open/closed state is
+  // remembered in dashGroupState across re-renders (e.g. after clicking a row's data or switching years).
+  function alertGroup(key, icon, title, items, sevClass, countClass, metaFn, emptyMsg) {
+    const isOpen = items.length > 0 ? dashGroupState[key] : false;
+    let html = '<details class="alert-group ' + sevClass + '" data-group-key="' + key + '"' + (isOpen ? " open" : "") + '>' +
+      '<summary>' +
+        '<span>' + icon + title + '</span>' +
+        '<span class="alert-count' + (items.length ? ' ' + countClass : '') + '">' + items.length + '</span>' +
+      '</summary>' +
+      '<div class="alert-group-body">';
     if (items.length === 0) {
       html += '<div class="help" style="margin:0">' + emptyMsg + '</div>';
     } else {
       html += items.map(function(r) { return alertRow(r, metaFn); }).join("");
     }
-    html += '</div>';
+    html += '</div></details>';
     return html;
   }
 
-  const alertsHtml =
+  const urgencyStrip =
+    '<div class="kpi-grid" style="margin-bottom:16px">' +
+      '<div class="kpi" style="border-left:4px solid #DC2626"><div class="kpi-lbl">At risk</div><div class="kpi-val" style="color:' + (atRisk.length ? "#DC2626" : "#111827") + '">' + atRisk.length + '</div></div>' +
+      '<div class="kpi" style="border-left:4px solid #D97706"><div class="kpi-lbl">Re-engagement</div><div class="kpi-val" style="color:' + (reengage.length ? "#D97706" : "#111827") + '">' + reengage.length + '</div></div>' +
+      '<div class="kpi" style="border-left:4px solid #9CA3AF"><div class="kpi-lbl">Needs assignment</div><div class="kpi-val">' + unassigned.length + '</div></div>' +
+    '</div>';
+
+  const alertsHtml = urgencyStrip +
     alertGroup(
+      "atrisk", "🔴 ",
       "At-risk high-value (Platinum/Gold, " + DASH_THRESHOLDS.atRiskDaysSince + "+ days quiet)",
-      atRisk, "warn",
-      function(r) { return r.tier + " · " + r.days_since + " days · " + fmtMoney(r.total_revenue); },
+      atRisk, "sev-high", "warn",
+      function(r) { return daysBadge(r.days_since, DASH_THRESHOLDS.atRiskDaysSince, DASH_THRESHOLDS.atRiskDaysSince * 2) + ' quiet · ' + r.tier + ' · ' + fmtMoney(r.total_revenue); },
       "None — no top-tier clients have gone quiet."
     ) +
     alertGroup(
+      "reengage", "🟠 ",
       "Re-engagement candidates (" + DASH_THRESHOLDS.reengageDaysSince + "+ days dormant, was worth " + fmtMoney(DASH_THRESHOLDS.reengageMinRevenue) + "+)",
-      reengage, "amber",
-      function(r) { return r.days_since + " days · historically " + fmtMoney(r.total_revenue); },
+      reengage, "sev-med", "amber",
+      function(r) { return daysBadge(r.days_since, DASH_THRESHOLDS.reengageDaysSince, DASH_THRESHOLDS.reengageDaysSince * 2) + ' dormant · historically ' + fmtMoney(r.total_revenue); },
       "None currently meet the threshold."
     ) +
     alertGroup(
+      "unassigned", "⚪ ",
       "Needs industry/AM assignment",
-      unassigned, "amber",
+      unassigned, "sev-low", "amber",
       function(r) { return fmtMoney(r.total_revenue) + " · " + r.invoice_count + " invoices"; },
       "Every client has at least an industry or AM set."
     );
@@ -1174,6 +1267,11 @@ function renderDashboard() {
   document.getElementById("dashAlertsWrap").innerHTML = alertsHtml;
   document.querySelectorAll("#dashAlertsWrap .alert-row").forEach(function(el) {
     el.addEventListener("click", function() { openDetail(el.dataset.id); });
+  });
+  document.querySelectorAll("#dashAlertsWrap details.alert-group").forEach(function(el) {
+    el.addEventListener("toggle", function() {
+      dashGroupState[el.dataset.groupKey] = el.open;
+    });
   });
 }
 
@@ -1355,6 +1453,10 @@ document.getElementById("detailOverlay").addEventListener("click", function(e) {
 document.getElementById("saveEnrichBtn").addEventListener("click", handleSaveEnrichment);
 document.getElementById("importBtn").addEventListener("click", handleImport);
 document.getElementById("resetBtn").addEventListener("click", handleReset);
+document.getElementById("dashYearSelect").addEventListener("change", function(e) {
+  dashYear = e.target.value;
+  renderDashboard();
+});
 
 loadData();
 </script>
