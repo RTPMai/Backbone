@@ -1637,6 +1637,50 @@ function qualTierClass(tier) {
   return "qt-lowpriority";
 }
 
+let leadsSort = { col: "created", dir: "desc" };
+
+const LEADS_COLUMNS = [
+  { key: "company_name", label: "Company", numeric: false },
+  { key: "source_type", label: "Source", numeric: false },
+  { key: "status", label: "Status", numeric: false },
+  { key: "score", label: "Score", numeric: true },
+  { key: "tier", label: "Tier", numeric: false },
+  { key: "am", label: "Suggested AM", numeric: false },
+  { key: "followup", label: "Follow-up", numeric: false },
+  { key: "created", label: "Added", numeric: true }
+];
+
+function getLeadsRows() {
+  let rows = state_leads.map(function(l) {
+    const q = l.qualification;
+    const score = q ? q.qualification_scoring.total_score : null;
+    const tier = q ? q.qualification_scoring.qualification_tier : "";
+    const industry = q ? q.company_overview.industry_classification : (l.industry || "");
+    const lane = industry ? getAssignedAM(industry) : null;
+    const amText = !lane ? "" : (lane.varies ? "Varies" : lane.am);
+    const followUp = q ? q.routing.follow_up_speed : "";
+    return Object.assign({}, l, {
+      score_sort: score,
+      tier_sort: tier,
+      am_sort: amText,
+      followup_sort: followUp,
+      created_sort: new Date(l.created_at).getTime(),
+      _display: { score: score, tier: tier, am: amText, followUp: followUp }
+    });
+  });
+  if (leadsSearchQuery.trim()) {
+    const q2 = leadsSearchQuery.trim().toLowerCase();
+    rows = rows.filter(function(r) { return r.company_name.toLowerCase().indexOf(q2) !== -1; });
+  }
+  const colMap = {
+    company_name: "company_name", source_type: "source_type", status: "status",
+    score: "score_sort", tier: "tier_sort", am: "am_sort", followup: "followup_sort", created: "created_sort"
+  };
+  const key = colMap[leadsSort.col] || "created_sort";
+  rows.sort(function(a, b) { return compareForSort(a[key], b[key], leadsSort.dir); });
+  return rows;
+}
+
 function renderLeadsPage() {
   const total = state_leads.length;
   const qualified = state_leads.filter(function(l) { return l.qualification; }).length;
@@ -1655,44 +1699,33 @@ function renderLeadsPage() {
       '<div class="kpi"><div class="kpi-lbl">Won</div><div class="kpi-val">' + won + '</div></div>';
   }
 
-  let rows = state_leads.slice();
-  if (leadsSearchQuery.trim()) {
-    const q = leadsSearchQuery.trim().toLowerCase();
-    rows = rows.filter(function(l) { return l.company_name.toLowerCase().indexOf(q) !== -1; });
-  }
-  rows.sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); });
-
   const wrap = document.getElementById("leadsTableWrap");
   if (!wrap) return;
+  const rows = getLeadsRows();
   if (rows.length === 0) {
     wrap.innerHTML = '<div class="empty-state">No leads yet. Add one above.</div>';
     return;
   }
 
-  let html = '<table><thead><tr><th>Company</th><th>Source</th><th>Status</th>' +
-    '<th>Score</th><th>Tier</th><th>Suggested AM</th><th>Follow-up</th></tr></thead><tbody>';
+  let html = "<table><thead>" + buildSortableHeaderRow(LEADS_COLUMNS, leadsSort) + "</thead><tbody>";
   rows.forEach(function(l) {
-    const q = l.qualification;
-    const score = q ? q.qualification_scoring.total_score : "—";
-    const tier = q ? q.qualification_scoring.qualification_tier : "—";
-    const tierHtml = q ? '<span class="qual-tier-badge ' + qualTierClass(tier) + '">' + tier + '</span>' : "—";
-    const industry = q ? q.company_overview.industry_classification : (l.industry || "");
-    const lane = industry ? getAssignedAM(industry) : null;
-    const amText = !lane ? "—" : (lane.varies ? "Varies" : lane.am);
-    const followUp = q ? q.routing.follow_up_speed : "—";
+    const d = l._display;
+    const tierHtml = d.tier ? '<span class="qual-tier-badge ' + qualTierClass(d.tier) + '">' + d.tier + '</span>' : "—";
     html += '<tr class="row" data-lead-id="' + l.lead_id + '">' +
       '<td class="company-cell">' + l.company_name + '</td>' +
       '<td>' + (l.source_type || "—") + '</td>' +
       '<td><span class="lead-status-pill lead-status-' + l.status + '">' + l.status + '</span></td>' +
-      '<td>' + score + '</td>' +
+      '<td>' + (d.score === null ? "—" : d.score) + '</td>' +
       '<td>' + tierHtml + '</td>' +
-      '<td>' + amText + '</td>' +
-      '<td>' + followUp + '</td>' +
+      '<td>' + (d.am || "—") + '</td>' +
+      '<td>' + (d.followUp || "—") + '</td>' +
+      '<td>' + fmtDate(l.created_at.slice(0, 10)) + '</td>' +
       '</tr>';
   });
   html += "</tbody></table>";
   wrap.innerHTML = html;
 
+  attachSortHandlers(wrap, leadsSort, renderLeadsPage);
   wrap.querySelectorAll("tr.row").forEach(function(tr) {
     tr.addEventListener("click", function() { openLeadDetail(tr.dataset.leadId); });
   });
@@ -1754,53 +1787,105 @@ function confidenceStyle(conf) {
   return "background:#F3F4F6;color:#6B7280";
 }
 
+function escapeHtml(s) {
+  return (s || "").toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function buildIntakeEditForm(lead) {
+  const sourceOptions = [
+    ["", "Not set"], ["Inbound quote request", "Inbound quote request"], ["Website form", "Website form"],
+    ["Outbound prospecting", "Outbound prospecting"], ["Trade show", "Trade show"], ["Referral", "Referral"],
+    ["Existing account expansion", "Existing account expansion"]
+  ];
+  return '<div class="qual-section"><h4>Intake</h4>' +
+    '<div class="lead-form-grid">' +
+      '<div><label class="field-lbl">Website URL</label><input class="field" id="editLeadWebsite" value="' + escapeHtml(lead.website_url) + '"/></div>' +
+      '<div><label class="field-lbl">Contact name</label><input class="field" id="editLeadContact" value="' + escapeHtml(lead.contact_name) + '"/></div>' +
+      '<div><label class="field-lbl">Source type</label><select class="field" id="editLeadSource">' +
+        sourceOptions.map(function(o) { return '<option value="' + o[0] + '"' + (o[0] === (lead.source_type || "") ? ' selected' : '') + '>' + o[1] + '</option>'; }).join("") +
+      '</select></div>' +
+      '<div><label class="field-lbl">Industry</label><select class="field" id="editLeadIndustry">' +
+        '<option value="">Not set</option>' +
+        INDUSTRY_LANES.map(function(l) { return '<option value="' + l.industry + '"' + (l.industry === (lead.industry || "") ? ' selected' : '') + '>' + l.industry + '</option>'; }).join("") +
+      '</select></div>' +
+      '<div class="wide"><label class="field-lbl">Inquiry notes</label><textarea class="field" id="editLeadInquiryNotes">' + escapeHtml(lead.inquiry_notes) + '</textarea></div>' +
+      '<div class="wide"><label class="field-lbl">Existing CRM notes</label><textarea class="field" id="editLeadCrmNotes">' + escapeHtml(lead.existing_crm_notes) + '</textarea></div>' +
+    '</div>' +
+    (lead.promoted_customer_id ? '<div class="qual-row"><span>Promoted to Roster as</span><span>' + lead.promoted_customer_id + '</span></div>' : '') +
+    '<button class="btn btn-gray btn-sm" id="saveLeadIntakeBtn">Save changes</button>' +
+    '<span id="saveLeadIntakeStatus" style="font-size:12px;color:#6B7280;margin-left:8px"></span>' +
+  '</div>';
+}
+
+async function handleSaveLeadIntake() {
+  const lead = state_leads.find(function(l) { return l.lead_id === activeLeadId; });
+  if (!lead) return;
+  lead.website_url = document.getElementById("editLeadWebsite").value.trim();
+  lead.contact_name = document.getElementById("editLeadContact").value.trim();
+  lead.source_type = document.getElementById("editLeadSource").value;
+  lead.industry = document.getElementById("editLeadIndustry").value;
+  lead.inquiry_notes = document.getElementById("editLeadInquiryNotes").value.trim();
+  lead.existing_crm_notes = document.getElementById("editLeadCrmNotes").value.trim();
+  const statusEl = document.getElementById("saveLeadIntakeStatus");
+  statusEl.textContent = "Saving...";
+  try {
+    await saveLeads();
+    statusEl.textContent = "Saved";
+    renderLeadsPage();
+  } catch (e) {
+    statusEl.textContent = "Save failed, try again";
+  }
+}
+
 function renderLeadDetailBody(lead) {
   const body = document.getElementById("leadDetailBody");
   const q = lead.qualification;
-
-  let intake = '<div class="qual-section"><h4>Intake</h4>' +
-    '<div class="qual-row"><span>Website</span><span>' + (lead.website_url || "—") + '</span></div>' +
-    '<div class="qual-row"><span>Contact</span><span>' + (lead.contact_name || "—") + '</span></div>' +
-    '<div class="qual-row"><span>Source</span><span>' + (lead.source_type || "—") + '</span></div>' +
-    (lead.promoted_customer_id ? '<div class="qual-row"><span>Promoted to Roster as</span><span>' + lead.promoted_customer_id + '</span></div>' : '') +
-    '</div>';
+  const intake = buildIntakeEditForm(lead);
 
   if (!q) {
     body.innerHTML = intake + '<div class="empty-state">Not qualified yet. Click "Run / re-run AI qualification" below — it researches the company via web search, typically takes 15-30 seconds.</div>';
+    document.getElementById("saveLeadIntakeBtn").addEventListener("click", handleSaveLeadIntake);
     return;
   }
 
   const s = q.qualification_scoring;
+  const suggestedAM = (function() {
+    const lane = q.company_overview.industry_classification ? getAssignedAM(q.company_overview.industry_classification) : null;
+    return !lane ? "—" : (lane.varies ? "Varies by account" : lane.am);
+  })();
 
-  // ---- Rundown (score + at-a-glance) ----
+  // ---- Rundown: score + tier up top, plain-English summary, two clean stat blocks below ----
   let rundown = '<div class="qual-section"><h4>Rundown</h4>' +
-    '<div class="qual-score-total">' + s.total_score + '<span style="font-size:14px;color:#6B7280;font-weight:400"> / 50</span> ' +
-    '<span class="qual-tier-badge ' + qualTierClass(s.qualification_tier) + '" style="vertical-align:middle">' + s.qualification_tier + '</span></div>';
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">' +
+      '<span class="qual-score-total">' + s.total_score + '<span style="font-size:13px;color:#6B7280;font-weight:400">/50</span></span>' +
+      '<span class="qual-tier-badge ' + qualTierClass(s.qualification_tier) + '">' + s.qualification_tier + '</span>' +
+    '</div>';
   if (q.at_a_glance) {
-    rundown += '<div style="font-size:13px;margin-top:10px;line-height:1.5">' + (q.at_a_glance.summary || "—") + '</div>' +
-      '<div class="qual-row" style="margin-top:8px"><span>Top opportunity</span><span>' + (q.at_a_glance.top_opportunity || "—") + '</span></div>' +
-      '<div class="qual-row"><span>Top risk</span><span>' + (q.at_a_glance.top_risk || "—") + '</span></div>';
+    rundown += '<div style="font-size:14px;line-height:1.6;color:#111827;margin-bottom:14px">' + (q.at_a_glance.summary || "—") + '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">' +
+        '<div><div class="field-lbl">Top opportunity</div><div style="font-size:13px;line-height:1.4">' + (q.at_a_glance.top_opportunity || "—") + '</div></div>' +
+        '<div><div class="field-lbl">Top risk</div><div style="font-size:13px;line-height:1.4">' + (q.at_a_glance.top_risk || "—") + '</div></div>' +
+      '</div>';
   } else {
-    rundown += '<div style="font-size:12px;color:#9CA3AF;margin-top:8px">No at-a-glance summary on this qualification yet — re-run or re-paste to populate.</div>';
+    rundown += '<div style="font-size:12px;color:#9CA3AF">No at-a-glance summary on this qualification yet — re-run or re-paste to populate.</div>';
   }
   rundown += '</div>';
 
-  // ---- Next steps ----
+  // ---- Next steps: one clear action line, then compact facts row ----
   let nextSteps = '<div class="qual-section"><h4>Next steps</h4>';
   if (q.next_steps) {
-    nextSteps += '<div class="qual-row"><span>Recommended action</span><span>' + (q.next_steps.recommended_action || "—") + '</span></div>' +
-      '<div class="qual-row"><span>Who to contact</span><span>' + (q.next_steps.who_to_contact || "—") + '</span></div>' +
-      '<div class="qual-row"><span>Urgency</span><span>' + (q.next_steps.urgency || "—") + '</span></div>';
+    nextSteps += '<div style="font-size:14px;line-height:1.6;margin-bottom:10px"><strong>' + (q.next_steps.recommended_action || "—") + '</strong></div>' +
+      '<div style="font-size:13px;color:#374151;margin-bottom:4px">' + (q.next_steps.who_to_contact || "—") + '</div>' +
+      '<div style="font-size:12px;color:#6B7280;margin-bottom:12px">' + (q.next_steps.urgency || "—") + '</div>';
   } else {
-    nextSteps += '<div class="qual-row"><span>Next action</span><span>' + (q.executive_summary.next_action || "—") + '</span></div>' +
-      '<div class="qual-row"><span>Urgency</span><span>' + (q.executive_summary.urgency || "—") + '</span></div>';
+    nextSteps += '<div style="font-size:14px;line-height:1.6;margin-bottom:6px">' + (q.executive_summary.next_action || "—") + '</div>' +
+      '<div style="font-size:12px;color:#6B7280;margin-bottom:12px">' + (q.executive_summary.urgency || "—") + '</div>';
   }
-  nextSteps += '<div class="qual-row"><span>Suggested AM (via industry table)</span><span>' + (function() {
-      const lane = q.company_overview.industry_classification ? getAssignedAM(q.company_overview.industry_classification) : null;
-      return !lane ? "—" : (lane.varies ? "Varies by account" : lane.am);
-    })() + '</span></div>' +
-    '<div class="qual-row"><span>Follow-up speed</span><span>' + q.routing.follow_up_speed + '</span></div>' +
-    '</div>';
+  nextSteps += '<div style="display:flex;gap:20px;font-size:12px;color:#6B7280">' +
+      '<span>AM: <strong style="color:#111827">' + suggestedAM + '</strong></span>' +
+      '<span>Follow-up: <strong style="color:#111827">' + q.routing.follow_up_speed + '</strong></span>' +
+    '</div>' +
+  '</div>';
 
   // ---- Key contacts ----
   let contacts = '';
@@ -1851,6 +1936,7 @@ function renderLeadDetailBody(lead) {
     '</details>';
 
   body.innerHTML = intake + rundown + nextSteps + contacts + details;
+  document.getElementById("saveLeadIntakeBtn").addEventListener("click", handleSaveLeadIntake);
 }
 
 async function handleRunQualification() {
