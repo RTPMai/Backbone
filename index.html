@@ -23,6 +23,19 @@ body{background:#F4F6F8;color:#111827;font-family:'Inter',sans-serif;font-size:1
 .nav{display:flex;gap:2px;background:#F3F4F6;border-radius:8px;padding:3px}
 .nav-btn{border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500;background:transparent;color:#6B7280}
 .nav-btn.active{background:#fff;color:#111827;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.nav-count{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:#3D9A5C;color:#fff;font-size:10px;font-weight:700;margin-left:2px}
+.inbox-item{border:1px solid #E5E7EB;border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:border-color .12s,box-shadow .12s;background:#fff}
+.inbox-item:hover{border-color:#3D9A5C;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.inbox-item.is-new{border-left:3px solid #3D9A5C}
+.inbox-item.is-done{opacity:.62}
+.inbox-top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.inbox-co{font-size:14px;font-weight:600;color:#111827}
+.inbox-meta{font-size:12px;color:#6B7280;margin-top:3px}
+.inbox-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;background:#F3F4F6;color:#374151}
+.chip-existing{background:#EAF5EE;color:#3D9A5C}
+.chip-new{background:#EEF2FF;color:#4F46E5}
+.chip-internal{background:#F5F0FB;color:#7C3AED}
 .page{display:none}.page.active{display:block}
 .dash{padding:24px;max-width:1440px;margin:0 auto}
 
@@ -145,6 +158,7 @@ textarea.field{min-height:60px;resize:vertical}
   </div>
   <div class="hdr-right">
     <div class="nav">
+      <button class="nav-btn" data-page="inbox">Inbox <span id="inboxNavBadge" class="nav-count" style="display:none"></span></button>
       <button class="nav-btn" data-page="leads">Leads</button>
       <button class="nav-btn" data-page="roster">Roster</button>
       <button class="nav-btn" data-page="scorecard">Scorecard</button>
@@ -156,6 +170,35 @@ textarea.field{min-height:60px;resize:vertical}
 </div>
 
 <div class="dash">
+
+  <div id="page-inbox" class="page">
+    <div class="kpi-grid" id="inboxKpiGrid"></div>
+    <div class="card">
+      <div class="card-hd">
+        <h3>Inquiry inbox</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select class="field" id="inboxFilter" style="width:auto;padding:6px 10px">
+            <option value="open">Needs action</option>
+            <option value="all">All</option>
+            <option value="new">New</option>
+            <option value="attached_to_client">Attached to client</option>
+            <option value="converted_lead">Converted to lead</option>
+            <option value="dismissed">Dismissed</option>
+          </select>
+          <button class="btn btn-gray btn-sm" id="inboxRefreshBtn">Refresh</button>
+        </div>
+      </div>
+      <div class="card-bd">
+        <div class="help">
+          Submissions from the public intake form (<code>intake.html</code> &rarr; <code>/api/intake</code>).
+          Existing-client inquiries attach to a Roster record so activity shows up next to the
+          Scorecard judgment fields. New-client inquiries convert into a Lead, pre-filled and ready
+          for free chat qualification.
+        </div>
+        <div id="inboxList"></div>
+      </div>
+    </div>
+  </div>
 
   <div id="page-leads" class="page">
     <div class="kpi-grid" id="leadsKpiGrid"></div>
@@ -369,6 +412,8 @@ textarea.field{min-height:60px;resize:vertical}
       <div class="section-lbl">Synced from Apparelytics</div>
       <div class="synced-grid" id="syncedGrid"></div>
 
+      <div id="detailInquiries" style="display:none"></div>
+
       <div class="section-lbl">Manual / enrichment fields</div>
       <div class="help">These never get overwritten by a refresh import.</div>
       <div class="enrich-grid" id="enrichGrid"></div>
@@ -377,6 +422,16 @@ textarea.field{min-height:60px;resize:vertical}
       <button class="btn btn-green" id="saveEnrichBtn">Save</button>
       <span class="save-status" id="saveStatus"></span>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="inboxDetailOverlay">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-hd">
+      <h3 id="inboxDetailTitle"></h3>
+      <button class="modal-close" id="inboxDetailClose">&times;</button>
+    </div>
+    <div class="modal-bd" id="inboxDetailBody"></div>
   </div>
 </div>
 
@@ -1479,6 +1534,26 @@ function openDetail(customerId) {
     '<div><span class="field-lbl">Last invoice</span>' + fmtDate(rec.last_invoice_date) + '</div>' +
     '<div><span class="field-lbl">Days since last invoice</span>' + daysSince(rec.last_invoice_date) + '</div>';
 
+  // Attached inquiries — the Inbox→Scorecard link. Fresh intake activity shows right where
+  // the AM sets Growth Potential / Client Communication / CSR Needs.
+  const inqs = (enrichment.inquiries || []).slice().sort(function(a, b) {
+    return new Date(b.submitted_at || 0) - new Date(a.submitted_at || 0);
+  });
+  const inqWrap = document.getElementById("detailInquiries");
+  if (inqWrap) {
+    if (inqs.length) {
+      inqWrap.innerHTML = '<div class="section-lbl">Recent inquiries (' + inqs.length + ')</div>' +
+        inqs.map(function(q) {
+          return '<div class="qual-row"><span>' + (q.submitted_at ? new Date(q.submitted_at).toLocaleDateString() : "") +
+            (q.contact ? " · " + escapeHtml(q.contact) : "") + '</span><span>' + escapeHtml(q.summary || "") + '</span></div>';
+        }).join("");
+      inqWrap.style.display = "block";
+    } else {
+      inqWrap.style.display = "none";
+      inqWrap.innerHTML = "";
+    }
+  }
+
   const grid = document.getElementById("enrichGrid");
   grid.innerHTML = "";
   ENRICHMENT_FIELDS.forEach(function(f) {
@@ -2063,6 +2138,330 @@ async function handlePromoteToRoster() {
     "automatic merge between the two IDs.");
 }
 
+// ---- Inbox module (Layer 0 front door — intake submissions) ----
+
+let state_intake = [];
+let inboxFilter = "open";
+let activeInquiryId = null;
+
+const PROJECT_TYPE_LABELS = {
+  live_activation: "Live Activation", just_a_few: "Just a Few Items", csg: "You Supply the Goods",
+  bulk_promo: "Bulk Promo", bulk_merch: "Bulk Merch", online_store: "Online Store"
+};
+const GATE_LABELS = {
+  yes: "Existing client", yes_new: "Existing · new project", not_sure: "Not sure",
+  no: "New client", manual: "Manual entry"
+};
+
+async function loadInbox() {
+  try {
+    const r = await fetch("/api/intake");
+    const d = await r.json();
+    state_intake = d.submissions || [];
+  } catch (e) {
+    state_intake = [];
+  }
+  renderInbox();
+}
+
+async function saveInbox() {
+  const r = await fetch("/api/intake?mode=update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ submissions: state_intake })
+  });
+  return r.json();
+}
+
+function inboxNewCount() {
+  return state_intake.filter(function(s) { return s.status === "new"; }).length;
+}
+
+function updateInboxBadge() {
+  const badge = document.getElementById("inboxNavBadge");
+  if (!badge) return;
+  const n = inboxNewCount();
+  if (n > 0) { badge.textContent = n; badge.style.display = "inline-flex"; }
+  else { badge.style.display = "none"; }
+}
+
+function projectSummary(s) {
+  const p = s.project || {};
+  const parts = [];
+  if (p.type) parts.push(PROJECT_TYPE_LABELS[p.type] || p.type);
+  if (p.store_kind) parts.push(p.store_kind.replace(/_/g, "-"));
+  if (p.name) parts.unshift(p.name);
+  if (p.in_hands_date) parts.push("in hands " + p.in_hands_date);
+  return parts.join(" · ") || "No project detail";
+}
+
+function renderInbox() {
+  updateInboxBadge();
+
+  const total = state_intake.length;
+  const newCount = inboxNewCount();
+  const existing = state_intake.filter(function(s) { return s.entry && ["yes","yes_new","not_sure"].indexOf(s.entry.existing_client) !== -1; }).length;
+  const fresh = state_intake.filter(function(s) { return s.entry && s.entry.existing_client === "no"; }).length;
+
+  const grid = document.getElementById("inboxKpiGrid");
+  if (grid) {
+    grid.innerHTML =
+      '<div class="kpi"><div class="kpi-lbl">Needs action</div><div class="kpi-val">' + newCount + '</div></div>' +
+      '<div class="kpi"><div class="kpi-lbl">Total inquiries</div><div class="kpi-val">' + total + '</div></div>' +
+      '<div class="kpi"><div class="kpi-lbl">Existing clients</div><div class="kpi-val">' + existing + '</div></div>' +
+      '<div class="kpi"><div class="kpi-lbl">New prospects</div><div class="kpi-val">' + fresh + '</div></div>';
+  }
+
+  const list = document.getElementById("inboxList");
+  if (!list) return;
+
+  let rows = state_intake.slice().sort(function(a, b) {
+    return new Date(b.submitted_at || 0) - new Date(a.submitted_at || 0);
+  });
+  if (inboxFilter === "open") rows = rows.filter(function(s) { return s.status === "new" || s.status === "reviewed"; });
+  else if (inboxFilter !== "all") rows = rows.filter(function(s) { return s.status === inboxFilter; });
+
+  if (!rows.length) {
+    list.innerHTML = '<div class="help" style="padding:20px 0;text-align:center">No inquiries here yet. When someone submits the intake form, it lands in this list.</div>';
+    return;
+  }
+
+  const statusChip = {
+    new: '<span class="chip chip-new">New</span>',
+    reviewed: '<span class="chip">Reviewed</span>',
+    attached_to_client: '<span class="chip chip-existing">Attached to client</span>',
+    converted_lead: '<span class="chip chip-existing">Converted to lead</span>',
+    dismissed: '<span class="chip">Dismissed</span>'
+  };
+
+  list.innerHTML = rows.map(function(s) {
+    const gate = s.entry ? s.entry.existing_client : null;
+    const co = (s.company && s.company.name) || "(no company name)";
+    const contact = (s.contact && s.contact.name) || "";
+    const when = s.submitted_at ? new Date(s.submitted_at).toLocaleString() : "";
+    const done = s.status === "attached_to_client" || s.status === "converted_lead" || s.status === "dismissed";
+    let gateChip = "";
+    if (gate === "no") gateChip = '<span class="chip chip-new">New client</span>';
+    else if (gate === "manual") gateChip = '<span class="chip chip-internal">Manual entry</span>';
+    else if (gate) gateChip = '<span class="chip chip-existing">' + (GATE_LABELS[gate] || gate) + '</span>';
+    return '<div class="inbox-item ' + (s.status === "new" ? "is-new" : "") + (done ? " is-done" : "") +
+      '" data-id="' + s.id + '">' +
+      '<div class="inbox-top"><div class="inbox-co">' + escapeHtml(co) + '</div>' +
+      '<div style="font-size:11px;color:#9CA3AF">' + when + '</div></div>' +
+      '<div class="inbox-meta">' + escapeHtml(projectSummary(s)) + (contact ? " — " + escapeHtml(contact) : "") + '</div>' +
+      '<div class="inbox-chips">' + gateChip + (statusChip[s.status] || "") + '</div>' +
+    '</div>';
+  }).join("");
+
+  list.querySelectorAll(".inbox-item").forEach(function(el) {
+    el.addEventListener("click", function() { openInquiry(el.dataset.id); });
+  });
+}
+
+// fuzzy match an inquiry company against the Roster
+function normalizeCo(s) {
+  return (s || "").toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\b(the|inc|llc|co|company|corp|ltd)\b/g, "").replace(/\s+/g, " ").trim();
+}
+function matchRoster(companyName) {
+  const target = normalizeCo(companyName);
+  if (!target) return [];
+  return state.synced.map(function(c) {
+    const n = normalizeCo(c.company_name);
+    let score = 0;
+    if (n === target) score = 100;
+    else if (n.indexOf(target) !== -1 || target.indexOf(n) !== -1) score = 70;
+    else {
+      const tw = target.split(" "), nw = n.split(" ");
+      const shared = tw.filter(function(w) { return w.length > 2 && nw.indexOf(w) !== -1; }).length;
+      if (shared) score = 40 + shared * 10;
+    }
+    return { rec: c, score: score };
+  }).filter(function(m) { return m.score >= 40; })
+    .sort(function(a, b) { return b.score - a.score; })
+    .slice(0, 5);
+}
+
+function openInquiry(id) {
+  const s = state_intake.find(function(x) { return x.id === id; });
+  if (!s) return;
+  activeInquiryId = id;
+  if (s.status === "new") { s.status = "reviewed"; saveInbox().then(renderInbox); }
+  document.getElementById("inboxDetailTitle").textContent = (s.company && s.company.name) || "Inquiry";
+  renderInquiryBody(s);
+  document.getElementById("inboxDetailOverlay").classList.add("open");
+}
+
+function kvRows(pairs) {
+  return pairs.filter(function(p) { return p[1]; })
+    .map(function(p) { return '<div class="qual-row"><span>' + p[0] + '</span><span>' + escapeHtml(p[1]) + '</span></div>'; })
+    .join("");
+}
+
+function renderInquiryBody(s) {
+  const c = s.contact || {}, co = s.company || {}, p = s.project || {}, det = p.details || {}, vis = s.vision;
+  const gate = s.entry ? s.entry.existing_client : null;
+  const isExisting = ["yes", "yes_new", "not_sure"].indexOf(gate) !== -1;
+
+  let html = "";
+
+  // status line
+  html += '<div class="help" style="margin-bottom:14px">Submitted ' +
+    (s.submitted_at ? new Date(s.submitted_at).toLocaleString() : "") +
+    ' · status: <b>' + (s.status || "new").replace(/_/g, " ") + '</b>' +
+    (s.links && s.links.customer_id ? ' · attached to ' + s.links.customer_id : "") +
+    (s.links && s.links.lead_id ? ' · lead created' : "") + '</div>';
+
+  html += '<div class="qual-section"><h4>Contact</h4>' +
+    kvRows([["Company", co.name], ["Industry", co.industry], ["Contact", c.name], ["Title", c.job_title],
+            ["Email", c.email], ["Phone", c.phone], ["Website", c.url]]) + '</div>';
+
+  const srcParts = s.entry && s.entry.source ? [s.entry.source.channel, s.entry.source.detail].filter(Boolean).join(" — ") : "";
+  html += '<div class="qual-section"><h4>Project</h4>' +
+    kvRows([["Entry path", GATE_LABELS[gate] || gate], ["Heard about us", srcParts],
+            ["Project name", p.name], ["Type", PROJECT_TYPE_LABELS[p.type] || p.type],
+            ["Store kind", p.store_kind ? p.store_kind.replace(/_/g, "-") : ""],
+            ["In-hands date", p.in_hands_date], ["Description", p.description]]) + '</div>';
+
+  const detEntries = Object.keys(det).filter(function(k) { return det[k] && k !== "csg_waiver_accepted_at"; })
+    .map(function(k) { return [k.replace(/_/g, " "), typeof det[k] === "boolean" ? (det[k] ? "Yes" : "No") : det[k]]; });
+  if (detEntries.length) html += '<div class="qual-section"><h4>Details</h4>' + kvRows(detEntries) + '</div>';
+
+  if (vis) {
+    const visEntries = [["Colors", vis.colors], ["Decoration", vis.deco_method],
+      ["Has art", vis.has_art ? "Yes" : "No"], ["Art link", vis.art_url],
+      ["Brand guide", vis.has_brand_guide ? "Yes" : ""], ["Brand guide link", vis.brand_guide_url],
+      ["Wants art meeting", vis.talk_to_art ? "Yes" : ""], ["Vision", vis.vision_description],
+      ["Inspiration", (vis.inspo || []).join(", ")]];
+    html += '<div class="qual-section"><h4>Vision board</h4>' + kvRows(visEntries) + '</div>';
+  }
+
+  // ---- Actions ----
+  html += '<div class="qual-section"><h4>Route this inquiry</h4><div id="inqActions">';
+
+  if (s.status === "attached_to_client" || s.status === "converted_lead" || s.status === "dismissed") {
+    html += '<div class="help">This inquiry is <b>' + s.status.replace(/_/g, " ") + '</b>. ' +
+      '<a href="#" id="inqReopen">Reopen</a> to route it again.</div>';
+  } else if (isExisting) {
+    const matches = matchRoster(co.name);
+    if (matches.length) {
+      html += '<div class="help">Best Roster matches — pick one to attach this inquiry to that client:</div>';
+      html += matches.map(function(m) {
+        return '<button class="btn btn-gray btn-sm" style="display:block;width:100%;text-align:left;margin-bottom:6px" ' +
+          'data-attach="' + m.rec.customer_id + '">' + escapeHtml(m.rec.company_name) +
+          ' <span style="color:#9CA3AF">(' + m.rec.customer_id + (m.rec.is_prospect ? " · prospect" : "") + ")</span></button>";
+      }).join("");
+      html += '<div class="help" style="margin-top:4px">Not one of these? Convert it to a new Lead instead:</div>';
+    } else {
+      html += '<div class="help">No confident Roster match for "' + escapeHtml(co.name) + '". Convert it to a Lead:</div>';
+    }
+    html += '<button class="btn btn-green btn-sm" id="inqConvert">Convert to Lead</button> ' +
+            '<button class="btn btn-gray btn-sm" id="inqDismiss">Dismiss</button>';
+  } else {
+    // new client / manual -> lead
+    html += '<div class="help">New prospect — convert to a Lead, pre-filled and ready for free chat qualification.</div>' +
+      '<button class="btn btn-green btn-sm" id="inqConvert">Convert to Lead</button> ' +
+      '<button class="btn btn-gray btn-sm" id="inqDismiss">Dismiss</button>';
+  }
+  html += '</div></div>';
+
+  const body = document.getElementById("inboxDetailBody");
+  body.innerHTML = html;
+
+  body.querySelectorAll("[data-attach]").forEach(function(btn) {
+    btn.addEventListener("click", function() { attachInquiryToClient(s, btn.dataset.attach); });
+  });
+  const convBtn = document.getElementById("inqConvert");
+  if (convBtn) convBtn.addEventListener("click", function() { convertInquiryToLead(s); });
+  const disBtn = document.getElementById("inqDismiss");
+  if (disBtn) disBtn.addEventListener("click", function() { dismissInquiry(s); });
+  const reopen = document.getElementById("inqReopen");
+  if (reopen) reopen.addEventListener("click", function(e) {
+    e.preventDefault(); s.status = "reviewed"; saveInbox().then(function() { renderInquiryBody(s); renderInbox(); });
+  });
+}
+
+async function attachInquiryToClient(s, customerId) {
+  if (!state.enrichment[customerId]) state.enrichment[customerId] = {};
+  const en = state.enrichment[customerId];
+  if (!Array.isArray(en.inquiries)) en.inquiries = [];
+  en.inquiries.push({
+    inquiry_id: s.id, submitted_at: s.submitted_at,
+    summary: projectSummary(s),
+    contact: (s.contact && s.contact.name) || "",
+    in_hands_date: (s.project && s.project.in_hands_date) || null
+  });
+  // fill blank enrichment contact fields without overwriting AM judgment
+  const c = s.contact || {};
+  if (c.email && !en.contact_email) en.contact_email = c.email;
+  if (c.phone && !en.contact_phone) en.contact_phone = c.phone;
+  if (s.company && s.company.industry && !en.industry) en.industry = s.company.industry;
+
+  s.status = "attached_to_client";
+  s.links = Object.assign({}, s.links, { customer_id: customerId });
+
+  await saveEnrichment(state.enrichment);
+  await saveInbox();
+  renderInquiryBody(s);
+  renderInbox();
+  render();
+  alert(((s.company && s.company.name) || "Inquiry") + " attached to " + customerId +
+    ". It now shows on that client's record next to the Scorecard fields.");
+}
+
+async function convertInquiryToLead(s) {
+  const co = s.company || {}, c = s.contact || {}, p = s.project || {};
+  const srcMap = { no: "Website form", yes_new: "Existing account expansion", not_sure: "Website form", manual: "Inbound quote request" };
+  const noteParts = [];
+  if (p.name) noteParts.push("Project: " + p.name);
+  if (p.type) noteParts.push("Type: " + (PROJECT_TYPE_LABELS[p.type] || p.type) + (p.store_kind ? " (" + p.store_kind.replace(/_/g, "-") + ")" : ""));
+  if (p.in_hands_date) noteParts.push("In-hands: " + p.in_hands_date);
+  if (p.description) noteParts.push(p.description);
+  if (s.entry && s.entry.source && s.entry.source.channel) noteParts.push("Heard about us: " + [s.entry.source.channel, s.entry.source.detail].filter(Boolean).join(" — "));
+  const det = p.details || {};
+  Object.keys(det).forEach(function(k) { if (det[k] && k.indexOf("waiver") === -1) noteParts.push(k.replace(/_/g, " ") + ": " + det[k]); });
+
+  const lead = {
+    lead_id: uid(),
+    company_name: co.name || "(from inquiry)",
+    website_url: c.url || "",
+    contact_name: c.name || "",
+    source_type: srcMap[s.entry ? s.entry.existing_client : "no"] || "Website form",
+    industry: co.industry || "",
+    inquiry_notes: noteParts.join("\n"),
+    existing_crm_notes: "Auto-created from intake inquiry " + s.id + " on " + new Date().toLocaleDateString() + ".",
+    status: "New",
+    created_at: new Date().toISOString(),
+    qualification: null,
+    promoted_customer_id: null,
+    from_inquiry_id: s.id
+  };
+  state_leads.push(lead);
+  s.status = "converted_lead";
+  s.links = Object.assign({}, s.links, { lead_id: lead.lead_id });
+
+  await saveLeads();
+  await saveInbox();
+  renderInquiryBody(s);
+  renderInbox();
+  renderLeadsPage();
+
+  const goToLead = confirm(lead.company_name + " added to Leads with intake context pre-filled. " +
+    "Open it now to run qualification?");
+  if (goToLead) {
+    document.getElementById("inboxDetailOverlay").classList.remove("open");
+    document.querySelector('[data-page="leads"]').click();
+    openLeadDetail(lead.lead_id);
+  }
+}
+
+async function dismissInquiry(s) {
+  if (!confirm("Dismiss this inquiry? It stays on record for marketing attribution but leaves your action list.")) return;
+  s.status = "dismissed";
+  await saveInbox();
+  renderInquiryBody(s);
+  renderInbox();
+}
+
 document.querySelectorAll(".nav-btn").forEach(function(btn) {
   btn.addEventListener("click", function() {
     document.querySelectorAll(".nav-btn").forEach(function(b) { b.classList.remove("active"); });
@@ -2111,8 +2510,25 @@ document.getElementById("pasteQualBtn").addEventListener("click", handlePasteQua
 document.getElementById("leadStatusSelect").addEventListener("change", handleLeadStatusChange);
 document.getElementById("promoteLeadBtn").addEventListener("click", handlePromoteToRoster);
 
+document.getElementById("inboxDetailClose").addEventListener("click", function() {
+  document.getElementById("inboxDetailOverlay").classList.remove("open");
+  activeInquiryId = null;
+});
+document.getElementById("inboxDetailOverlay").addEventListener("click", function(e) {
+  if (e.target.id === "inboxDetailOverlay") {
+    document.getElementById("inboxDetailOverlay").classList.remove("open");
+    activeInquiryId = null;
+  }
+});
+document.getElementById("inboxFilter").addEventListener("change", function(e) {
+  inboxFilter = e.target.value;
+  renderInbox();
+});
+document.getElementById("inboxRefreshBtn").addEventListener("click", loadInbox);
+
 loadData();
 loadLeads();
+loadInbox();
 </script>
 </body>
 </html>
