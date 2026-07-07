@@ -110,6 +110,27 @@ textarea.field{min-height:60px;resize:vertical}
 .mix-bar-val{width:110px;flex-shrink:0;text-align:right;color:#6B7280;font-size:12px}
 .am-table td,.am-table th{white-space:normal}
 .tier-pill{display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;margin-right:3px}
+
+.qual-tier-badge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:700}
+.qt-strategic{background:#EAF5EE;color:#3D9A5C}
+.qt-highvalue{background:#DBEAFE;color:#2563EB}
+.qt-standard{background:#F3F4F6;color:#6B7280}
+.qt-transactional{background:#FEF3C7;color:#D97706}
+.qt-lowpriority{background:#FEE2E2;color:#DC2626}
+.lead-status-pill{display:inline-flex;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;background:#F3F4F6;color:#374151}
+.lead-status-Won{background:#EAF5EE;color:#3D9A5C}
+.lead-status-Dead{background:#FEE2E2;color:#9CA3AF}
+.lead-status-Qualified{background:#DBEAFE;color:#2563EB}
+.lead-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.lead-form-grid .wide{grid-column:1/-1}
+.qual-section{margin-bottom:16px}
+.qual-section h4{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6B7280;margin-bottom:8px}
+.qual-row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid #F3F4F6;gap:12px}
+.qual-row span:first-child{color:#6B7280;text-transform:capitalize}
+.qual-row span:last-child{text-align:right}
+.qual-score-total{font-size:32px;font-weight:700;letter-spacing:-1px}
+.qual-spinner{display:inline-block;width:12px;height:12px;border:2px solid #E5E7EB;border-top-color:#3D9A5C;border-radius:50%;animation:qualspin .7s linear infinite}
+@keyframes qualspin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -124,6 +145,7 @@ textarea.field{min-height:60px;resize:vertical}
   </div>
   <div class="hdr-right">
     <div class="nav">
+      <button class="nav-btn" data-page="leads">Leads</button>
       <button class="nav-btn" data-page="roster">Roster</button>
       <button class="nav-btn" data-page="scorecard">Scorecard</button>
       <button class="nav-btn active" data-page="dashboard">Dashboard</button>
@@ -134,6 +156,72 @@ textarea.field{min-height:60px;resize:vertical}
 </div>
 
 <div class="dash">
+
+  <div id="page-leads" class="page">
+    <div class="kpi-grid" id="leadsKpiGrid"></div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-hd"><h3>New lead</h3></div>
+      <div class="card-bd">
+        <div class="help">
+          Front door for prospects that haven't transacted yet. Add what you know, then run
+          AI qualification — it researches the company via web search and scores it against
+          the same industry/AM logic the Roster uses. "Promote to Roster" adds it as a
+          $0 / 0-invoice prospect record you can track alongside real clients.
+        </div>
+        <div class="lead-form-grid">
+          <div>
+            <label class="field-lbl">Company name *</label>
+            <input class="field" id="leadCompanyName"/>
+          </div>
+          <div>
+            <label class="field-lbl">Website URL</label>
+            <input class="field" id="leadWebsite" placeholder="https://"/>
+          </div>
+          <div>
+            <label class="field-lbl">Contact name</label>
+            <input class="field" id="leadContactName"/>
+          </div>
+          <div>
+            <label class="field-lbl">Source type</label>
+            <select class="field" id="leadSourceType">
+              <option value="">Not set</option>
+              <option>Inbound quote request</option>
+              <option>Website form</option>
+              <option>Outbound prospecting</option>
+              <option>Trade show</option>
+              <option>Referral</option>
+              <option>Existing account expansion</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-lbl">Industry (if known — the agent will verify)</label>
+            <select class="field" id="leadIndustry"></select>
+          </div>
+          <div class="wide">
+            <label class="field-lbl">Inquiry notes</label>
+            <textarea class="field" id="leadInquiryNotes"></textarea>
+          </div>
+          <div class="wide">
+            <label class="field-lbl">Existing CRM notes</label>
+            <textarea class="field" id="leadCrmNotes"></textarea>
+          </div>
+        </div>
+        <button class="btn btn-green" id="addLeadBtn">Add lead</button>
+        <span id="addLeadErr" style="color:#DC2626;font-size:12px;margin-left:10px"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hd"><h3>Pipeline</h3></div>
+      <div class="card-bd">
+        <div class="toolbar">
+          <input class="search" id="leadsSearchBox" placeholder="Search company name"/>
+        </div>
+        <div id="leadsTableWrap"></div>
+      </div>
+    </div>
+  </div>
 
   <div id="page-roster" class="page">
     <div class="kpi-grid">
@@ -288,6 +376,29 @@ textarea.field{min-height:60px;resize:vertical}
     <div class="modal-ft">
       <button class="btn btn-green" id="saveEnrichBtn">Save</button>
       <span class="save-status" id="saveStatus"></span>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="leadDetailOverlay">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-hd">
+      <h3 id="leadDetailTitle"></h3>
+      <button class="modal-close" id="leadDetailClose">&times;</button>
+    </div>
+    <div class="modal-bd" id="leadDetailBody"></div>
+    <div class="modal-ft" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div style="display:flex;gap:10px;align-items:center">
+        <label class="field-lbl" style="margin:0">Status</label>
+        <select class="field" id="leadStatusSelect" style="width:auto">
+          <option>New</option><option>Researching</option><option>Qualified</option>
+          <option>Contacted</option><option>Won</option><option>Dead</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-gray btn-sm" id="rerunQualBtn">Run / re-run AI qualification</button>
+        <button class="btn btn-green btn-sm" id="promoteLeadBtn">Promote to Roster</button>
+      </div>
     </div>
   </div>
 </div>
@@ -519,6 +630,9 @@ let searchQuery = "";
 let scoreSort = { col: "total", dir: "desc" };
 let scoreSearchQuery = "";
 let activeCustomerId = null;
+let state_leads = [];
+let leadsSearchQuery = "";
+let activeLeadId = null;
 
 async function loadData() {
   try {
@@ -556,6 +670,7 @@ async function saveEnrichment(enrichment) {
 }
 
 function daysSince(dateStr) {
+  if (!dateStr) return null;
   const then = new Date(dateStr + "T00:00:00Z").getTime();
   return Math.floor((Date.now() - then) / 86400000);
 }
@@ -563,6 +678,7 @@ function fmtMoney(n) {
   return (n || 0).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
 function fmtDate(dateStr) {
+  if (!dateStr) return "—";
   const d = new Date(dateStr + "T00:00:00Z");
   return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
@@ -867,7 +983,7 @@ function render() {
     ];
     let html = "<table><thead>" + buildSortableHeaderRow(ROSTER_COLUMNS, rosterSort) + "</thead><tbody>";
     rows.forEach(function(r) {
-      const overdueColor = r.days_since > 180 ? "#DC2626" : r.days_since > 90 ? "#D97706" : "#374151";
+      const overdueColor = r.days_since === null ? "#9CA3AF" : r.days_since > 180 ? "#DC2626" : r.days_since > 90 ? "#D97706" : "#374151";
       const filled = hasEnrichment(r);
       const rEnrich = state.enrichment[r.customer_id] || {};
       const industry = rEnrich.industry || "";
@@ -893,7 +1009,7 @@ function render() {
         '<td>' + fmtMoney(r.total_revenue) + '</td>' +
         '<td>' + r.invoice_count + '</td>' +
         '<td>' + fmtDate(r.last_invoice_date) + '</td>' +
-        '<td style="color:' + overdueColor + '">' + r.days_since + '</td>' +
+        '<td style="color:' + overdueColor + '">' + (r.days_since === null ? "—" : r.days_since) + '</td>' +
         '<td>' + industryCell + '</td>' +
         '<td>' + amCell + '</td>' +
         '<td><span class="dot ' + (filled ? "dot-filled" : "dot-empty") + '"></span></td>' +
@@ -1445,8 +1561,13 @@ async function handleImport() {
     }
   }
   try {
-    await saveSynced(parsed);
-    state.synced = parsed;
+    // Preserve promoted-prospect records (is_prospect: true) — they won't appear in a
+    // fresh Apparelytics pull until they actually transact in Printavo. A plain
+    // `state.synced = parsed` here would silently wipe them on every refresh.
+    const prospects = state.synced.filter(function(c) { return c.is_prospect; });
+    const merged = parsed.concat(prospects);
+    await saveSynced(merged);
+    state.synced = merged;
     state.lastSynced = new Date().toISOString();
     box.value = "";
     render();
@@ -1461,6 +1582,301 @@ async function handleReset() {
   state.lastSynced = null;
   await saveSynced(SEED_CUSTOMERS);
   render();
+}
+
+// ---- Leads module (Layer 0) ----
+
+function uid() { return "lead_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+async function loadLeads() {
+  try {
+    const r = await fetch("/api/leads-data");
+    const d = await r.json();
+    state_leads = d.leads || [];
+  } catch (e) {
+    state_leads = [];
+  }
+  populateLeadIndustryDropdown();
+  renderLeadsPage();
+}
+
+async function saveLeads() {
+  const r = await fetch("/api/leads-save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ leads: state_leads })
+  });
+  return r.json();
+}
+
+function populateLeadIndustryDropdown() {
+  const sel = document.getElementById("leadIndustry");
+  if (!sel || sel.options.length > 0) return;
+  sel.innerHTML = '<option value="">Not set / let the agent determine it</option>' +
+    INDUSTRY_LANES.map(function(l) { return '<option value="' + l.industry + '">' + l.industry + '</option>'; }).join("");
+}
+
+function qualTierClass(tier) {
+  if (tier === "Strategic Account") return "qt-strategic";
+  if (tier === "High-Value Growth Account") return "qt-highvalue";
+  if (tier === "Standard Account") return "qt-standard";
+  if (tier === "Transactional Account") return "qt-transactional";
+  return "qt-lowpriority";
+}
+
+function renderLeadsPage() {
+  const total = state_leads.length;
+  const qualified = state_leads.filter(function(l) { return l.qualification; }).length;
+  const won = state_leads.filter(function(l) { return l.status === "Won"; }).length;
+  const strategic = state_leads.filter(function(l) {
+    return l.qualification && l.qualification.qualification_scoring &&
+      l.qualification.qualification_scoring.qualification_tier === "Strategic Account";
+  }).length;
+
+  const kpiGrid = document.getElementById("leadsKpiGrid");
+  if (kpiGrid) {
+    kpiGrid.innerHTML =
+      '<div class="kpi"><div class="kpi-lbl">Total leads</div><div class="kpi-val">' + total + '</div></div>' +
+      '<div class="kpi"><div class="kpi-lbl">Qualified</div><div class="kpi-val">' + qualified + '</div></div>' +
+      '<div class="kpi"><div class="kpi-lbl">Strategic tier</div><div class="kpi-val">' + strategic + '</div></div>' +
+      '<div class="kpi"><div class="kpi-lbl">Won</div><div class="kpi-val">' + won + '</div></div>';
+  }
+
+  let rows = state_leads.slice();
+  if (leadsSearchQuery.trim()) {
+    const q = leadsSearchQuery.trim().toLowerCase();
+    rows = rows.filter(function(l) { return l.company_name.toLowerCase().indexOf(q) !== -1; });
+  }
+  rows.sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); });
+
+  const wrap = document.getElementById("leadsTableWrap");
+  if (!wrap) return;
+  if (rows.length === 0) {
+    wrap.innerHTML = '<div class="empty-state">No leads yet. Add one above.</div>';
+    return;
+  }
+
+  let html = '<table><thead><tr><th>Company</th><th>Source</th><th>Status</th>' +
+    '<th>Score</th><th>Tier</th><th>Suggested AM</th><th>Follow-up</th></tr></thead><tbody>';
+  rows.forEach(function(l) {
+    const q = l.qualification;
+    const score = q ? q.qualification_scoring.total_score : "—";
+    const tier = q ? q.qualification_scoring.qualification_tier : "—";
+    const tierHtml = q ? '<span class="qual-tier-badge ' + qualTierClass(tier) + '">' + tier + '</span>' : "—";
+    const industry = q ? q.company_overview.industry_classification : (l.industry || "");
+    const lane = industry ? getAssignedAM(industry) : null;
+    const amText = !lane ? "—" : (lane.varies ? "Varies" : lane.am);
+    const followUp = q ? q.routing.follow_up_speed : "—";
+    html += '<tr class="row" data-lead-id="' + l.lead_id + '">' +
+      '<td class="company-cell">' + l.company_name + '</td>' +
+      '<td>' + (l.source_type || "—") + '</td>' +
+      '<td><span class="lead-status-pill lead-status-' + l.status + '">' + l.status + '</span></td>' +
+      '<td>' + score + '</td>' +
+      '<td>' + tierHtml + '</td>' +
+      '<td>' + amText + '</td>' +
+      '<td>' + followUp + '</td>' +
+      '</tr>';
+  });
+  html += "</tbody></table>";
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll("tr.row").forEach(function(tr) {
+    tr.addEventListener("click", function() { openLeadDetail(tr.dataset.leadId); });
+  });
+}
+
+async function handleAddLead() {
+  const name = document.getElementById("leadCompanyName").value.trim();
+  const errEl = document.getElementById("addLeadErr");
+  errEl.textContent = "";
+  if (!name) { errEl.textContent = "Company name is required."; return; }
+
+  const existing = state.synced.find(function(c) {
+    return c.company_name.toLowerCase() === name.toLowerCase();
+  });
+  if (existing) {
+    errEl.textContent = 'A customer named "' + name + '" already exists in the Roster — check before adding as a new lead.';
+    return;
+  }
+
+  const lead = {
+    lead_id: uid(),
+    company_name: name,
+    website_url: document.getElementById("leadWebsite").value.trim(),
+    contact_name: document.getElementById("leadContactName").value.trim(),
+    source_type: document.getElementById("leadSourceType").value,
+    industry: document.getElementById("leadIndustry").value,
+    inquiry_notes: document.getElementById("leadInquiryNotes").value.trim(),
+    existing_crm_notes: document.getElementById("leadCrmNotes").value.trim(),
+    status: "New",
+    created_at: new Date().toISOString(),
+    qualification: null,
+    promoted_customer_id: null
+  };
+  state_leads.push(lead);
+  await saveLeads();
+  ["leadCompanyName","leadWebsite","leadContactName","leadInquiryNotes","leadCrmNotes"].forEach(function(id) {
+    document.getElementById(id).value = "";
+  });
+  document.getElementById("leadSourceType").value = "";
+  document.getElementById("leadIndustry").value = "";
+  renderLeadsPage();
+}
+
+function openLeadDetail(leadId) {
+  const lead = state_leads.find(function(l) { return l.lead_id === leadId; });
+  if (!lead) return;
+  activeLeadId = leadId;
+  document.getElementById("leadDetailTitle").textContent = lead.company_name;
+  document.getElementById("leadStatusSelect").value = lead.status;
+  renderLeadDetailBody(lead);
+  document.getElementById("leadDetailOverlay").classList.add("open");
+}
+
+function renderLeadDetailBody(lead) {
+  const body = document.getElementById("leadDetailBody");
+  const q = lead.qualification;
+
+  let intake = '<div class="qual-section"><h4>Intake</h4>' +
+    '<div class="qual-row"><span>Website</span><span>' + (lead.website_url || "—") + '</span></div>' +
+    '<div class="qual-row"><span>Contact</span><span>' + (lead.contact_name || "—") + '</span></div>' +
+    '<div class="qual-row"><span>Source</span><span>' + (lead.source_type || "—") + '</span></div>' +
+    (lead.promoted_customer_id ? '<div class="qual-row"><span>Promoted to Roster as</span><span>' + lead.promoted_customer_id + '</span></div>' : '') +
+    '</div>';
+
+  if (!q) {
+    body.innerHTML = intake + '<div class="empty-state">Not qualified yet. Click "Run / re-run AI qualification" below — it researches the company via web search, typically takes 15-30 seconds.</div>';
+    return;
+  }
+
+  const s = q.qualification_scoring;
+  body.innerHTML = intake +
+    '<div class="qual-section"><h4>Score</h4>' +
+      '<div class="qual-score-total">' + s.total_score + '<span style="font-size:14px;color:#6B7280;font-weight:400"> / 50</span></div>' +
+      '<span class="qual-tier-badge ' + qualTierClass(s.qualification_tier) + '" style="margin-top:6px">' + s.qualification_tier + '</span>' +
+    '</div>' +
+    '<div class="qual-section"><h4>Company overview</h4>' +
+      Object.keys(q.company_overview).map(function(k) {
+        return '<div class="qual-row"><span>' + k.replace(/_/g," ") + '</span><span>' + (q.company_overview[k] || "—") + '</span></div>';
+      }).join("") +
+    '</div>' +
+    '<div class="qual-section"><h4>Apparel opportunity</h4>' +
+      Object.keys(q.apparel_opportunity).map(function(k) {
+        return '<div class="qual-row"><span>' + k.replace(/_/g," ") + '</span><span>' + (q.apparel_opportunity[k] || "—") + '</span></div>';
+      }).join("") +
+    '</div>' +
+    '<div class="qual-section"><h4>Growth signals</h4>' +
+      Object.keys(q.growth_signals).map(function(k) {
+        return '<div class="qual-row"><span>' + k.replace(/_/g," ") + '</span><span>' + (q.growth_signals[k] || "—") + '</span></div>';
+      }).join("") +
+    '</div>' +
+    '<div class="qual-section"><h4>Routing</h4>' +
+      '<div class="qual-row"><span>Suggested AM (via industry table)</span><span>' + (function() {
+        const lane = q.company_overview.industry_classification ? getAssignedAM(q.company_overview.industry_classification) : null;
+        return !lane ? "—" : (lane.varies ? "Varies by account" : lane.am);
+      })() + '</span></div>' +
+      '<div class="qual-row"><span>Follow-up speed</span><span>' + q.routing.follow_up_speed + '</span></div>' +
+      '<div class="qual-row"><span>Note</span><span>' + (q.routing.routing_note || "—") + '</span></div>' +
+    '</div>' +
+    (q.red_flags.red_flags_detected.length ? '<div class="qual-section"><h4>Red flags</h4><div style="font-size:13px">' + q.red_flags.red_flags_detected.join(", ") + '</div></div>' : '') +
+    '<div class="qual-section"><h4>Executive summary</h4>' +
+      Object.keys(q.executive_summary).map(function(k) {
+        return '<div style="margin-bottom:8px"><div class="field-lbl">' + k.replace(/_/g," ") + '</div><div style="font-size:13px">' + (q.executive_summary[k] || "—") + '</div></div>';
+      }).join("") +
+    '</div>' +
+    (q.assumptions_flagged.length ? '<div class="qual-section"><h4>Assumptions flagged</h4><div style="font-size:12px;color:#6B7280">' + q.assumptions_flagged.join("; ") + '</div></div>' : '');
+}
+
+async function handleRunQualification() {
+  const lead = state_leads.find(function(l) { return l.lead_id === activeLeadId; });
+  if (!lead) return;
+  const btn = document.getElementById("rerunQualBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="qual-spinner"></span> Researching...';
+  try {
+    const r = await fetch("/api/qualify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        company_name: lead.company_name,
+        website_url: lead.website_url,
+        contact_name: lead.contact_name,
+        inquiry_notes: lead.inquiry_notes,
+        source_type: lead.source_type,
+        industry: lead.industry,
+        existing_crm_notes: lead.existing_crm_notes
+      })
+    });
+    const result = await r.json();
+    if (result.error) {
+      alert("Qualification failed: " + result.error);
+      return;
+    }
+    lead.qualification = result;
+    if (lead.status === "New") lead.status = "Qualified";
+    document.getElementById("leadStatusSelect").value = lead.status;
+    await saveLeads();
+    renderLeadDetailBody(lead);
+    renderLeadsPage();
+  } catch (e) {
+    alert("Qualification request failed: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Run / re-run AI qualification";
+  }
+}
+
+async function handleLeadStatusChange() {
+  const lead = state_leads.find(function(l) { return l.lead_id === activeLeadId; });
+  if (!lead) return;
+  lead.status = document.getElementById("leadStatusSelect").value;
+  await saveLeads();
+  renderLeadsPage();
+}
+
+async function handlePromoteToRoster() {
+  const lead = state_leads.find(function(l) { return l.lead_id === activeLeadId; });
+  if (!lead) return;
+  if (lead.promoted_customer_id) {
+    alert("Already promoted as " + lead.promoted_customer_id + ".");
+    return;
+  }
+  const customerId = "LEAD-" + lead.lead_id.slice(5, 13).toUpperCase();
+  const q = lead.qualification;
+  const industry = q ? q.company_overview.industry_classification : lead.industry;
+
+  state.synced.push({
+    customer_id: customerId,
+    company_name: lead.company_name,
+    invoice_count: 0,
+    last_invoice_date: null,
+    total_revenue: 0,
+    median_gap_days: null,
+    is_prospect: true
+  });
+
+  state.enrichment[customerId] = {
+    industry: industry || "",
+    website_url: lead.website_url || "",
+    contact_first_name: lead.contact_name || "",
+    notes: "Promoted from Leads pipeline on " + new Date().toLocaleDateString() +
+      (q ? ". Qualification tier: " + q.qualification_scoring.qualification_tier +
+        " (" + q.qualification_scoring.total_score + "/50). " + q.executive_summary.next_action : "")
+  };
+
+  lead.promoted_customer_id = customerId;
+  lead.status = "Won";
+  document.getElementById("leadStatusSelect").value = "Won";
+
+  await saveSynced(state.synced);
+  await saveEnrichment(state.enrichment);
+  await saveLeads();
+  renderLeadDetailBody(lead);
+  renderLeadsPage();
+  render();
+  alert(lead.company_name + " added to Roster as a prospect (" + customerId + ", $0 / 0 invoices). " +
+    "When it actually transacts in Printavo, delete this LEAD- row manually — there's no " +
+    "automatic merge between the two IDs.");
 }
 
 document.querySelectorAll(".nav-btn").forEach(function(btn) {
@@ -1491,7 +1907,27 @@ document.getElementById("dashYearSelect").addEventListener("change", function(e)
   renderDashboard();
 });
 
+document.getElementById("addLeadBtn").addEventListener("click", handleAddLead);
+document.getElementById("leadsSearchBox").addEventListener("input", function(e) {
+  leadsSearchQuery = e.target.value;
+  renderLeadsPage();
+});
+document.getElementById("leadDetailClose").addEventListener("click", function() {
+  document.getElementById("leadDetailOverlay").classList.remove("open");
+  activeLeadId = null;
+});
+document.getElementById("leadDetailOverlay").addEventListener("click", function(e) {
+  if (e.target.id === "leadDetailOverlay") {
+    document.getElementById("leadDetailOverlay").classList.remove("open");
+    activeLeadId = null;
+  }
+});
+document.getElementById("rerunQualBtn").addEventListener("click", handleRunQualification);
+document.getElementById("leadStatusSelect").addEventListener("change", handleLeadStatusChange);
+document.getElementById("promoteLeadBtn").addEventListener("click", handlePromoteToRoster);
+
 loadData();
+loadLeads();
 </script>
 </body>
 </html>
