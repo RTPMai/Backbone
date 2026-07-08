@@ -201,19 +201,17 @@ const STEPS = {
       '<h2>Tell us about your project</h2>' +
       '<div class="field"><label>Company</label><input type="text" id="company" value="' + form.company.name + '"></div>' +
       '<div class="row">' +
-      '<div class="field"><label>Your name</label><input type="text" id="cname"></div>' +
-      '<div class="field"><label>Phone</label><input type="tel" id="cphone"></div></div>' +
+      '<div class="field"><label>Your name</label><input type="text" id="cname" value="' + form.contact.name + '"></div>' +
+      '<div class="field"><label>Phone</label><input type="tel" id="cphone" value="' + form.contact.phone + '"></div></div>' +
       '<div class="row">' +
-      '<div class="field"><label>Email</label><input type="email" id="cemail"></div>' +
-      '<div class="field"><label>Website <span class="hint">(optional)</span></label><input type="url" id="curl" placeholder="https://"></div></div>' +
-      '<div class="field"><label>Industry</label>' + industrySelect("industry", form.company.industry) + '</div>' +
+      '<div class="field"><label>Email</label><input type="email" id="cemail" value="' + form.contact.email + '"></div>' +
+      '<div class="field"><label>Website <span class="hint">(optional)</span></label><input type="url" id="curl" placeholder="https://" value="' + form.contact.url + '"></div></div>' +
       '<div class="row">' +
-      '<div class="field"><label>Project name</label><input type="text" id="pname" placeholder="e.g. Staff polos 2026"></div>' +
-      '<div class="field"><label>In-hands date</label><input type="date" id="ihd"></div></div>' +
-      '<div class="field"><label>Tell us about your project</label><textarea id="pdesc" placeholder="What are you looking to do?"></textarea></div>' +
+      '<div class="field"><label>Project name</label><input type="text" id="pname" placeholder="e.g. Staff polos 2026" value="' + form.project.name + '"></div>' +
+      '<div class="field"><label>In-hands date</label><input type="date" id="ihd" value="' + form.project.in_hands_date + '"></div></div>' +
       '<p class="err" id="err"></p>' +
       '<div class="actions">' + backBtn() +
-      '<button class="btn btn-primary" onclick="saveExisting()">Review &amp; submit</button></div>');
+      '<button class="btn btn-primary" onclick="saveExisting()">Continue</button></div>');
   },
 
   /* MANUAL ENTRY (internal) -------------------------------------------- */
@@ -446,10 +444,10 @@ function saveSource() {
 function saveExisting() {
   if (!v("company")) return fail("Company is required.");
   if (!v("cname") || (!v("cemail") && !v("cphone"))) return fail("Your name plus an email or phone are required.");
-  form.company = { name: v("company"), industry: v("industry") };
+  form.company = { name: v("company"), industry: "" };
   form.contact = { name: v("cname"), phone: v("cphone"), email: v("cemail"), url: v("curl"), job_title: "" };
-  form.project.name = v("pname"); form.project.in_hands_date = v("ihd"); form.project.description = v("pdesc");
-  go("review", 85);
+  form.project.name = v("pname"); form.project.in_hands_date = v("ihd");
+  go("projectType", 45);
 }
 function saveManual() {
   if (!v("company")) return fail("Company is required.");
