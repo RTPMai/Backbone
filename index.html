@@ -134,6 +134,7 @@ textarea.field{min-height:60px;resize:vertical}
 .lead-status-Won{background:#EAF5EE;color:#3D9A5C}
 .lead-status-Dead{background:#FEE2E2;color:#9CA3AF}
 .lead-status-Qualified{background:#DBEAFE;color:#2563EB}
+.scan-card-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #EDF0F3}
 .lead-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 .lead-form-grid .wide{grid-column:1/-1}
 .qual-section{margin-bottom:16px}
@@ -249,6 +250,20 @@ textarea.field{min-height:60px;resize:vertical}
           AI qualification — it researches the company via web search and scores it against
           the same industry/AM logic the Roster uses. "Promote to Roster" adds it as a
           $0 / 0-invoice prospect record you can track alongside real clients.
+        </div>
+        <div class="scan-card-bar">
+          <button class="btn btn-sm" id="scanCardUploadBtn" type="button">📇 Scan business card</button>
+          <button class="btn btn-sm" id="scanCardCameraBtn" type="button">📷 Use camera</button>
+          <input type="file" id="scanCardFile" accept="image/*" style="display:none"/>
+          <input type="file" id="scanCardCam" accept="image/*" capture="environment" style="display:none"/>
+          <span id="scanCardStatus" class="help" style="margin-left:6px"></span>
+        </div>
+        <div id="scanCameraWrap" style="display:none;margin-bottom:12px">
+          <video id="scanVideo" playsinline style="width:100%;max-width:360px;border-radius:8px;background:#000"></video>
+          <div style="margin-top:8px">
+            <button class="btn btn-green btn-sm" id="scanCaptureBtn" type="button">Capture</button>
+            <button class="btn btn-sm" id="scanCancelBtn" type="button">Cancel</button>
+          </div>
         </div>
         <div class="lead-form-grid">
           <div>
@@ -1892,6 +1907,122 @@ function renderLeadsPage() {
   });
 }
 
+// ---- Business card scan (client-side Claude vision → auto-fill New lead form) ----
+let scanStream = null;
+
+function setScanStatus(msg, isErr) {
+  const el = document.getElementById("scanCardStatus");
+  el.textContent = msg || "";
+  el.style.color = isErr ? "#DC2626" : "#9CA3AF";
+}
+
+function fileToBase64(file) {
+  return new Promise(function(res, rej) {
+    const r = new FileReader();
+    r.onload = function() { res(r.result.split(",")[1]); };
+    r.onerror = function() { rej(new Error("Could not read image")); };
+    r.readAsDataURL(file);
+  });
+}
+
+async function scanCardImage(base64, mediaType) {
+  setScanStatus("Reading card…");
+  const prompt =
+    "This is a photo of a business card. Extract the contact details and respond with ONLY " +
+    "a JSON object (no markdown, no preamble) with these keys: company_name, website_url, " +
+    "contact_name, notes. website_url should include https:// if a domain is present. " +
+    "Put job title, phone, email, and physical address into notes as a short readable summary. " +
+    "Use an empty string for anything not present on the card.";
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1000,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+          { type: "text", text: prompt }
+        ]
+      }]
+    })
+  });
+  if (!r.ok) throw new Error("Scan request failed (" + r.status + ")");
+  const data = await r.json();
+  const text = (data.content || [])
+    .filter(function(i) { return i.type === "text"; })
+    .map(function(i) { return i.text; })
+    .join("\n")
+    .replace(/```json|```/g, "")
+    .trim();
+  return JSON.parse(text);
+}
+
+function applyScanResult(parsed) {
+  function setIf(id, val) {
+    if (val) document.getElementById(id).value = val;
+  }
+  setIf("leadCompanyName", parsed.company_name);
+  setIf("leadWebsite", parsed.website_url);
+  setIf("leadContactName", parsed.contact_name);
+  const notesEl = document.getElementById("leadInquiryNotes");
+  if (parsed.notes) {
+    notesEl.value = (notesEl.value ? notesEl.value + "\n\n" : "") + "From business card: " + parsed.notes;
+  }
+  document.getElementById("leadSourceType").value = "Trade show";
+  setScanStatus("Filled from card — review and edit before adding.");
+}
+
+async function handleScanFile(file) {
+  if (!file) return;
+  try {
+    const b64 = await fileToBase64(file);
+    const mediaType = file.type && file.type.indexOf("image/") === 0 ? file.type : "image/jpeg";
+    const parsed = await scanCardImage(b64, mediaType);
+    applyScanResult(parsed);
+  } catch (e) {
+    setScanStatus(e.message || "Could not read that card. Try a clearer photo.", true);
+  }
+}
+
+function stopScanCamera() {
+  if (scanStream) { scanStream.getTracks().forEach(function(t) { t.stop(); }); scanStream = null; }
+  document.getElementById("scanCameraWrap").style.display = "none";
+}
+
+async function startScanCamera() {
+  const wrap = document.getElementById("scanCameraWrap");
+  const video = document.getElementById("scanVideo");
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    video.srcObject = scanStream;
+    await video.play();
+    wrap.style.display = "block";
+    setScanStatus("");
+  } catch (e) {
+    // Fall back to the file input with capture hint (mobile).
+    setScanStatus("Camera unavailable — opening capture instead.", false);
+    document.getElementById("scanCardCam").click();
+  }
+}
+
+async function captureScanFrame() {
+  const video = document.getElementById("scanVideo");
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  const b64 = canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
+  stopScanCamera();
+  try {
+    const parsed = await scanCardImage(b64, "image/jpeg");
+    applyScanResult(parsed);
+  } catch (e) {
+    setScanStatus(e.message || "Could not read that card. Try again.", true);
+  }
+}
+
 async function handleAddLead() {
   const name = document.getElementById("leadCompanyName").value.trim();
   const errEl = document.getElementById("addLeadErr");
@@ -2578,6 +2709,12 @@ document.getElementById("dashYearSelect").addEventListener("change", function(e)
 });
 
 document.getElementById("addLeadBtn").addEventListener("click", handleAddLead);
+document.getElementById("scanCardUploadBtn").addEventListener("click", function() { document.getElementById("scanCardFile").click(); });
+document.getElementById("scanCardCameraBtn").addEventListener("click", startScanCamera);
+document.getElementById("scanCardFile").addEventListener("change", function(e) { handleScanFile(e.target.files[0]); e.target.value = ""; });
+document.getElementById("scanCardCam").addEventListener("change", function(e) { handleScanFile(e.target.files[0]); e.target.value = ""; });
+document.getElementById("scanCaptureBtn").addEventListener("click", captureScanFrame);
+document.getElementById("scanCancelBtn").addEventListener("click", function() { stopScanCamera(); setScanStatus(""); });
 document.getElementById("leadsSearchBox").addEventListener("input", function(e) {
   leadsSearchQuery = e.target.value;
   renderLeadsPage();
