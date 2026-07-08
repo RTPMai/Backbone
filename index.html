@@ -134,7 +134,6 @@ textarea.field{min-height:60px;resize:vertical}
 .lead-status-Won{background:#EAF5EE;color:#3D9A5C}
 .lead-status-Dead{background:#FEE2E2;color:#9CA3AF}
 .lead-status-Qualified{background:#DBEAFE;color:#2563EB}
-.scan-card-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #EDF0F3}
 .lead-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 .lead-form-grid .wide{grid-column:1/-1}
 .qual-section{margin-bottom:16px}
@@ -251,20 +250,6 @@ textarea.field{min-height:60px;resize:vertical}
           the same industry/AM logic the Roster uses. "Promote to Roster" adds it as a
           $0 / 0-invoice prospect record you can track alongside real clients.
         </div>
-        <div class="scan-card-bar">
-          <button class="btn btn-sm" id="scanCardUploadBtn" type="button">📇 Scan business card</button>
-          <button class="btn btn-sm" id="scanCardCameraBtn" type="button">📷 Use camera</button>
-          <input type="file" id="scanCardFile" accept="image/*" style="display:none"/>
-          <input type="file" id="scanCardCam" accept="image/*" capture="environment" style="display:none"/>
-          <span id="scanCardStatus" class="help" style="margin-left:6px"></span>
-        </div>
-        <div id="scanCameraWrap" style="display:none;margin-bottom:12px">
-          <video id="scanVideo" playsinline style="width:100%;max-width:360px;border-radius:8px;background:#000"></video>
-          <div style="margin-top:8px">
-            <button class="btn btn-green btn-sm" id="scanCaptureBtn" type="button">Capture</button>
-            <button class="btn btn-sm" id="scanCancelBtn" type="button">Cancel</button>
-          </div>
-        </div>
         <div class="lead-form-grid">
           <div>
             <label class="field-lbl">Company name *</label>
@@ -371,9 +356,14 @@ textarea.field{min-height:60px;resize:vertical}
           to see what it means. Missing criteria are excluded and the remaining weights are re-normalized,
           so a partial score is still comparable to a complete one.
         </div>
-        <div class="toolbar">
+        <div class="toolbar" style="justify-content:space-between">
           <input class="search" id="scoreSearchBox" placeholder="Search company name"/>
+          <div class="sort-group" style="display:inline-flex;background:#F3F4F6;border-radius:6px;padding:2px">
+            <button class="sort-btn active" id="scoreBasisAll" data-basis="all">All time</button>
+            <button class="sort-btn" id="scoreBasisYtd" data-basis="ytd">2026 YTD</button>
+          </div>
         </div>
+        <div class="help" id="scoreBasisNote" style="margin-bottom:10px"></div>
         <div id="scoringLegendWrap" style="margin-bottom:14px"></div>
         <div id="scoreTableWrap"></div>
         <div class="help" style="margin-top:10px">Click any column header to sort — click again to reverse.</div>
@@ -771,6 +761,7 @@ let state = { synced: [], enrichment: {}, lastSynced: null };
 let rosterSort = { col: "days_since", dir: "desc" };
 let searchQuery = "";
 let scoreSort = { col: "total", dir: "desc" };
+let scoreBasis = "all"; // "all" = lifetime totals, "ytd" = current calendar year so far
 let scoreSearchQuery = "";
 let activeCustomerId = null;
 let state_leads = [];
@@ -978,8 +969,18 @@ const SCORECARD_WEIGHTS = {
   csr: 0.08
 };
 
-function starForRevenue(v) { return v >= 80000 ? 5 : v >= 50000 ? 4 : v >= 20000 ? 3 : v >= 5000 ? 2 : 1; }
-function starForInvoices(v) { return v >= 100 ? 5 : v >= 50 ? 4 : v >= 20 ? 3 : v >= 6 ? 2 : 1; }
+// Two band sets: all-time (lifetime totals) and YTD (current calendar year so far). The YTD
+// bands are scaled down (~half) so a client's tier stays comparable when viewing partial-year
+// figures instead of dropping a tier or two purely because one year is smaller than lifetime.
+// Avg-invoice is a per-order figure, so its bands are period-independent and identical in both.
+function starForRevenue(v, ytd) {
+  if (ytd) return v >= 40000 ? 5 : v >= 25000 ? 4 : v >= 10000 ? 3 : v >= 2500 ? 2 : 1;
+  return v >= 80000 ? 5 : v >= 50000 ? 4 : v >= 20000 ? 3 : v >= 5000 ? 2 : 1;
+}
+function starForInvoices(v, ytd) {
+  if (ytd) return v >= 50 ? 5 : v >= 25 ? 4 : v >= 10 ? 3 : v >= 3 ? 2 : 1;
+  return v >= 100 ? 5 : v >= 50 ? 4 : v >= 20 ? 3 : v >= 6 ? 2 : 1;
+}
 function starForAvgInvoice(v) { return v >= 1500 ? 5 : v >= 1000 ? 4 : v >= 500 ? 3 : v >= 100 ? 2 : 1; }
 // Accepts a raw number OR a scraped range string ("51-200", "5000+", "201").
 // Keys off the lower bound so each LinkedIn-style bucket maps to exactly one rating.
@@ -1005,9 +1006,20 @@ function starForFrequency(medianGapDays) {
   return ordersPerMonth >= 10 ? 5 : ordersPerMonth >= 5 ? 4 : ordersPerMonth >= 3 ? 3 : ordersPerMonth >= 1 ? 2 : 1;
 }
 
-function computeScorecard(customer, enrichment) {
+function computeScorecard(customer, enrichment, basis) {
   enrichment = enrichment || {};
-  const avgInvoice = customer.invoice_count > 0 ? customer.total_revenue / customer.invoice_count : 0;
+  const ytd = basis === "ytd";
+  // Under YTD, pull the current calendar year's figures from revenue_by_year / invoices_by_year.
+  // If a client has no entry for the current year, treat the period figures as 0 (they haven't
+  // ordered yet this year) rather than falling back to lifetime, so YTD means YTD.
+  const curYear = String(new Date().getFullYear());
+  let revenue = customer.total_revenue;
+  let invoices = customer.invoice_count;
+  if (ytd) {
+    revenue = (customer.revenue_by_year && customer.revenue_by_year[curYear] !== undefined) ? customer.revenue_by_year[curYear] : 0;
+    invoices = (customer.invoices_by_year && customer.invoices_by_year[curYear] !== undefined) ? customer.invoices_by_year[curYear] : 0;
+  }
+  const avgInvoice = invoices > 0 ? revenue / invoices : 0;
   const empVal = parseEmployeeCount(enrichment.employees);
   const growthVal = parseInt(enrichment.growth_potential, 10);
   const commVal = parseInt(enrichment.client_communication, 10);
@@ -1016,8 +1028,8 @@ function computeScorecard(customer, enrichment) {
   const freqVal = parseInt(enrichment.order_frequency_monthly, 10);
 
   const criteria = {
-    revenue: { label: "Annual Revenue", score: starForRevenue(customer.total_revenue), available: true },
-    invoices: { label: "Total Invoices", score: starForInvoices(customer.invoice_count), available: true },
+    revenue: { label: "Annual Revenue", score: starForRevenue(revenue, ytd), available: true },
+    invoices: { label: "Total Invoices", score: starForInvoices(invoices, ytd), available: true },
     avg_invoice: { label: "Avg Invoice", score: starForAvgInvoice(avgInvoice), available: true },
     employees: { label: "# Employees", score: isNaN(empVal) ? null : starForEmployees(empVal), available: !isNaN(empVal) },
     growth: { label: "Growth Potential", score: isNaN(growthVal) ? null : growthVal, available: !isNaN(growthVal) },
@@ -1045,7 +1057,8 @@ function computeScorecard(customer, enrichment) {
   else if (total >= 1.5) tier = "Bronze";
   else tier = "Valuable Dirt";
 
-  return { criteria: criteria, total: total, tier: tier, completeness: availableCount + "/8" };
+  return { criteria: criteria, total: total, tier: tier, completeness: availableCount + "/8",
+           period_revenue: revenue, period_invoices: invoices, period_avg_invoice: avgInvoice };
 }
 
 const TIER_COLORS = {
@@ -1229,15 +1242,33 @@ function renderScoringLegend() {
   scoringLegendRendered = true;
 }
 
+function updateScoreBasisUI() {
+  const allBtn = document.getElementById("scoreBasisAll");
+  const ytdBtn = document.getElementById("scoreBasisYtd");
+  if (!allBtn || !ytdBtn) return;
+  allBtn.classList.toggle("active", scoreBasis === "all");
+  ytdBtn.classList.toggle("active", scoreBasis === "ytd");
+  const hasYearData = state.synced.some(function(c) { return c.revenue_by_year; });
+  const note = document.getElementById("scoreBasisNote");
+  if (scoreBasis === "ytd") {
+    note.textContent = hasYearData
+      ? "Scoring on " + new Date().getFullYear() + " revenue, invoices, and avg invoice so far this year. Star bands are scaled down for the partial year so tiers stay comparable to all-time. Clients with no orders yet this year score 1★ on those criteria."
+      : "No per-year data on these records yet — YTD can't be computed. Ask Claude to include revenue_by_year / invoices_by_year on the next Apparelytics refresh.";
+  } else {
+    note.textContent = "";
+  }
+}
+
 function renderScorecard() {
   renderScoringLegend();
+  updateScoreBasisUI();
   const scored = state.synced.map(function(c) {
-    const sc = computeScorecard(c, state.enrichment[c.customer_id]);
+    const sc = computeScorecard(c, state.enrichment[c.customer_id], scoreBasis);
     const enrichment = state.enrichment[c.customer_id] || {};
-    const avgInvoice = c.invoice_count > 0 ? c.total_revenue / c.invoice_count : 0;
     const empVal = parseEmployeeCount(enrichment.employees);
     return Object.assign({}, c, sc, {
-      avg_invoice_sort: avgInvoice,
+      avg_invoice_sort: sc.period_avg_invoice,
+      revenue_sort: sc.period_revenue,
       tier_sort: TIER_RANK[sc.tier] || 0,
       completeness_sort: parseInt(sc.completeness, 10),
       employees_sort: isNaN(empVal) ? null : empVal,
@@ -1262,7 +1293,7 @@ function renderScorecard() {
   }
   const scoreColMap = {
     company_name: "company_name", total: "total", tier: "tier_sort", completeness: "completeness_sort",
-    total_revenue: "total_revenue", avg_invoice: "avg_invoice_sort", employees: "employees_sort",
+    total_revenue: "revenue_sort", avg_invoice: "avg_invoice_sort", employees: "employees_sort",
     growth: "growth_sort", comm: "comm_sort", csr: "csr_sort", freq: "freq_sort"
   };
   const scoreKey = scoreColMap[scoreSort.col] || "total";
@@ -1278,7 +1309,7 @@ function renderScorecard() {
     { key: "total", label: "Score", numeric: true },
     { key: "tier", label: "Tier", numeric: true },
     { key: "completeness", label: "Criteria used", numeric: true },
-    { key: "total_revenue", label: "Revenue", numeric: true },
+    { key: "total_revenue", label: scoreBasis === "ytd" ? "Revenue (YTD)" : "Revenue", numeric: true },
     { key: "avg_invoice", label: "Avg Invoice", numeric: true },
     { key: "employees", label: "Employees", numeric: true },
     { key: "growth", label: "Growth", numeric: true },
@@ -1288,7 +1319,7 @@ function renderScorecard() {
   ];
   let html = "<table><thead>" + buildSortableHeaderRow(SCORE_COLUMNS, scoreSort) + "</thead><tbody>";
   rows.forEach(function(r) {
-    const avgInv = r.invoice_count > 0 ? fmtMoney(r.total_revenue / r.invoice_count) : "—";
+    const avgInv = r.period_invoices > 0 ? fmtMoney(r.period_avg_invoice) : "—";
     const color = TIER_COLORS[r.tier] || "#374151";
     const enrichment = state.enrichment[r.customer_id] || {};
     const freqCell = r.criteria.frequency.auto
@@ -1299,7 +1330,7 @@ function renderScorecard() {
       '<td>' + r.total.toFixed(2) + '</td>' +
       '<td><span class="badge" style="background:#F3F4F6;color:' + color + '">' + r.tier + '</span></td>' +
       '<td>' + r.completeness + '</td>' +
-      '<td>' + fmtMoney(r.total_revenue) + '</td>' +
+      '<td>' + fmtMoney(r.period_revenue) + '</td>' +
       '<td>' + avgInv + '</td>' +
       '<td>' + inlineSelectCell(r.customer_id, "employees", enrichment.employees) + '</td>' +
       '<td>' + inlineSelectCell(r.customer_id, "growth_potential", enrichment.growth_potential) + '</td>' +
@@ -1905,122 +1936,6 @@ function renderLeadsPage() {
   wrap.querySelectorAll("tr.row").forEach(function(tr) {
     tr.addEventListener("click", function() { openLeadDetail(tr.dataset.leadId); });
   });
-}
-
-// ---- Business card scan (client-side Claude vision → auto-fill New lead form) ----
-let scanStream = null;
-
-function setScanStatus(msg, isErr) {
-  const el = document.getElementById("scanCardStatus");
-  el.textContent = msg || "";
-  el.style.color = isErr ? "#DC2626" : "#9CA3AF";
-}
-
-function fileToBase64(file) {
-  return new Promise(function(res, rej) {
-    const r = new FileReader();
-    r.onload = function() { res(r.result.split(",")[1]); };
-    r.onerror = function() { rej(new Error("Could not read image")); };
-    r.readAsDataURL(file);
-  });
-}
-
-async function scanCardImage(base64, mediaType) {
-  setScanStatus("Reading card…");
-  const prompt =
-    "This is a photo of a business card. Extract the contact details and respond with ONLY " +
-    "a JSON object (no markdown, no preamble) with these keys: company_name, website_url, " +
-    "contact_name, notes. website_url should include https:// if a domain is present. " +
-    "Put job title, phone, email, and physical address into notes as a short readable summary. " +
-    "Use an empty string for anything not present on the card.";
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1000,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-          { type: "text", text: prompt }
-        ]
-      }]
-    })
-  });
-  if (!r.ok) throw new Error("Scan request failed (" + r.status + ")");
-  const data = await r.json();
-  const text = (data.content || [])
-    .filter(function(i) { return i.type === "text"; })
-    .map(function(i) { return i.text; })
-    .join("\n")
-    .replace(/```json|```/g, "")
-    .trim();
-  return JSON.parse(text);
-}
-
-function applyScanResult(parsed) {
-  function setIf(id, val) {
-    if (val) document.getElementById(id).value = val;
-  }
-  setIf("leadCompanyName", parsed.company_name);
-  setIf("leadWebsite", parsed.website_url);
-  setIf("leadContactName", parsed.contact_name);
-  const notesEl = document.getElementById("leadInquiryNotes");
-  if (parsed.notes) {
-    notesEl.value = (notesEl.value ? notesEl.value + "\n\n" : "") + "From business card: " + parsed.notes;
-  }
-  document.getElementById("leadSourceType").value = "Trade show";
-  setScanStatus("Filled from card — review and edit before adding.");
-}
-
-async function handleScanFile(file) {
-  if (!file) return;
-  try {
-    const b64 = await fileToBase64(file);
-    const mediaType = file.type && file.type.indexOf("image/") === 0 ? file.type : "image/jpeg";
-    const parsed = await scanCardImage(b64, mediaType);
-    applyScanResult(parsed);
-  } catch (e) {
-    setScanStatus(e.message || "Could not read that card. Try a clearer photo.", true);
-  }
-}
-
-function stopScanCamera() {
-  if (scanStream) { scanStream.getTracks().forEach(function(t) { t.stop(); }); scanStream = null; }
-  document.getElementById("scanCameraWrap").style.display = "none";
-}
-
-async function startScanCamera() {
-  const wrap = document.getElementById("scanCameraWrap");
-  const video = document.getElementById("scanVideo");
-  try {
-    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-    video.srcObject = scanStream;
-    await video.play();
-    wrap.style.display = "block";
-    setScanStatus("");
-  } catch (e) {
-    // Fall back to the file input with capture hint (mobile).
-    setScanStatus("Camera unavailable — opening capture instead.", false);
-    document.getElementById("scanCardCam").click();
-  }
-}
-
-async function captureScanFrame() {
-  const video = document.getElementById("scanVideo");
-  const canvas = document.createElement("canvas");
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext("2d").drawImage(video, 0, 0);
-  const b64 = canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
-  stopScanCamera();
-  try {
-    const parsed = await scanCardImage(b64, "image/jpeg");
-    applyScanResult(parsed);
-  } catch (e) {
-    setScanStatus(e.message || "Could not read that card. Try again.", true);
-  }
 }
 
 async function handleAddLead() {
@@ -2696,6 +2611,16 @@ document.getElementById("scoreSearchBox").addEventListener("input", function(e) 
   scoreSearchQuery = e.target.value;
   renderScorecard();
 });
+document.getElementById("scoreBasisAll").addEventListener("click", function() {
+  if (scoreBasis === "all") return;
+  scoreBasis = "all";
+  renderScorecard();
+});
+document.getElementById("scoreBasisYtd").addEventListener("click", function() {
+  if (scoreBasis === "ytd") return;
+  scoreBasis = "ytd";
+  renderScorecard();
+});
 document.getElementById("detailClose").addEventListener("click", closeDetail);
 document.getElementById("detailOverlay").addEventListener("click", function(e) {
   if (e.target.id === "detailOverlay") closeDetail();
@@ -2709,12 +2634,6 @@ document.getElementById("dashYearSelect").addEventListener("change", function(e)
 });
 
 document.getElementById("addLeadBtn").addEventListener("click", handleAddLead);
-document.getElementById("scanCardUploadBtn").addEventListener("click", function() { document.getElementById("scanCardFile").click(); });
-document.getElementById("scanCardCameraBtn").addEventListener("click", startScanCamera);
-document.getElementById("scanCardFile").addEventListener("change", function(e) { handleScanFile(e.target.files[0]); e.target.value = ""; });
-document.getElementById("scanCardCam").addEventListener("change", function(e) { handleScanFile(e.target.files[0]); e.target.value = ""; });
-document.getElementById("scanCaptureBtn").addEventListener("click", captureScanFrame);
-document.getElementById("scanCancelBtn").addEventListener("click", function() { stopScanCamera(); setScanStatus(""); });
 document.getElementById("leadsSearchBox").addEventListener("input", function(e) {
   leadsSearchQuery = e.target.value;
   renderLeadsPage();
