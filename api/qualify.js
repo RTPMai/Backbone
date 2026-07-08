@@ -6,6 +6,8 @@
 // console — this is a genuine server-side API call, billed to your account, separate
 // from the Printavo/Upstash env vars already set up).
 
+const { requireAuth } = require("../lib/auth.js");
+
 export const config = { api: { bodyParser: true }, maxDuration: 60 };
 
 const SYSTEM_PROMPT = `You are a sales qualification and account intelligence agent for
@@ -146,11 +148,12 @@ an existing account, or "large strategic account — flag for Sales Director rev
 for very large prospects).`;
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "*");
+  res.setHeader("Cache-Control", "no-store");
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+
+  const sess = requireAuth(req, res);
+  if (!sess) return;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: "Missing ANTHROPIC_API_KEY env var" });
