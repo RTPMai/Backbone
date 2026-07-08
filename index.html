@@ -144,9 +144,46 @@ textarea.field{min-height:60px;resize:vertical}
 .qual-score-total{font-size:32px;font-weight:700;letter-spacing:-1px}
 .qual-spinner{display:inline-block;width:12px;height:12px;border:2px solid #E5E7EB;border-top-color:#3D9A5C;border-radius:50%;animation:qualspin .7s linear infinite}
 @keyframes qualspin{to{transform:rotate(360deg)}}
+/* Login gate */
+#authGate{position:fixed;inset:0;background:#F4F6F8;z-index:9999;display:flex;align-items:center;justify-content:center}
+#authGate .gate-card{background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:32px;width:340px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+#authGate .gate-logo{width:44px;height:44px;background:#3D9A5C;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:20px;margin-bottom:16px}
+#authGate h2{font-size:18px;font-weight:700;margin-bottom:4px}
+#authGate p{font-size:13px;color:#6B7280;margin-bottom:18px}
+#authGate input{width:100%;padding:10px 12px;border:1px solid #E5E7EB;border-radius:8px;font-size:14px;font-family:inherit;margin-bottom:12px}
+#authGate input:focus{outline:none;border-color:#3D9A5C}
+#authGate .gate-err{color:#DC2626;font-size:12px;margin-bottom:12px;display:none}
+#appRoot{display:none}
+/* Tab visibility panel */
+.tab-toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F3F4F6}
+.tab-toggle-row:last-child{border-bottom:none}
+.tab-toggle-row span{font-size:14px;font-weight:500}
+.switch{position:relative;width:40px;height:22px;flex-shrink:0}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:#D1D5DB;border-radius:22px;cursor:pointer;transition:.15s}
+.slider::before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.15s}
+.switch input:checked+.slider{background:#3D9A5C}
+.switch input:checked+.slider::before{transform:translateX(18px)}
+.admin-lock{text-align:center;padding:40px 20px}
+.admin-lock input{width:240px;padding:10px 12px;border:1px solid #E5E7EB;border-radius:8px;font-size:14px;font-family:inherit;margin:12px 8px 0 0}
+.logout-link{font-size:12px;color:#6B7280;cursor:pointer;text-decoration:underline}
+.logout-link:hover{color:#111827}
 </style>
 </head>
 <body>
+
+<div id="authGate">
+  <div class="gate-card">
+    <div class="gate-logo">B</div>
+    <h2>BackBone</h2>
+    <p>P&amp;M Apparel — internal access only</p>
+    <input type="password" id="gatePassword" placeholder="Password" autocomplete="current-password"/>
+    <div class="gate-err" id="gateErr"></div>
+    <button class="btn btn-green" id="gateSubmit" style="width:100%">Sign in</button>
+  </div>
+</div>
+
+<div id="appRoot">
 
 <div class="hdr">
   <div class="logo">
@@ -166,6 +203,7 @@ textarea.field{min-height:60px;resize:vertical}
       <button class="nav-btn" data-page="settings">Settings</button>
     </div>
     <span class="last-updated" id="lastUpdated"></span>
+    <span class="logout-link" id="logoutLink" style="display:none">Log out</span>
   </div>
 </div>
 
@@ -370,6 +408,27 @@ textarea.field{min-height:60px;resize:vertical}
   </div>
 
   <div id="page-settings" class="page">
+    <div id="adminLock" class="card" style="margin-bottom:16px;display:none">
+      <div class="card-hd"><h3>Admin access required</h3></div>
+      <div class="card-bd">
+        <div class="admin-lock">
+          <div class="help" style="margin-bottom:4px">Settings are restricted. Enter the admin password to manage tab visibility and data.</div>
+          <input type="password" id="adminPassword" placeholder="Admin password" autocomplete="off"/>
+          <button class="btn btn-green" id="adminUnlockBtn">Unlock</button>
+          <div class="gate-err" id="adminErr" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="adminContent" style="display:none">
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-hd"><h3>Visible tabs</h3></div>
+      <div class="card-bd">
+        <div class="help">Turn tabs off to hide them from everyone (including viewers). Settings always stays available to admins. Changes save immediately and apply to all users.</div>
+        <div id="tabToggles" style="margin-top:12px"></div>
+      </div>
+    </div>
+
     <div class="card" style="margin-bottom:16px">
       <div class="card-hd"><h3>Refresh from Apparelytics</h3></div>
       <div class="card-bd">
@@ -398,6 +457,7 @@ textarea.field{min-height:60px;resize:vertical}
         <button class="btn btn-gray" id="resetBtn">Reset synced data to seed</button>
       </div>
     </div>
+    </div><!-- /adminContent -->
   </div>
 
 </div>
@@ -2468,6 +2528,7 @@ document.querySelectorAll(".nav-btn").forEach(function(btn) {
     btn.classList.add("active");
     document.querySelectorAll(".page").forEach(function(p) { p.classList.remove("active"); });
     document.getElementById("page-" + btn.dataset.page).classList.add("active");
+    if (btn.dataset.page === "settings") renderSettingsAccess();
   });
 });
 document.getElementById("searchBox").addEventListener("input", function(e) {
@@ -2526,9 +2587,139 @@ document.getElementById("inboxFilter").addEventListener("change", function(e) {
 });
 document.getElementById("inboxRefreshBtn").addEventListener("click", loadInbox);
 
-loadData();
-loadLeads();
-loadInbox();
+// ── Auth + tab visibility ───────────────────────────────────────────────
+let currentRole = null;
+let appTabs = { inbox:true, leads:true, roster:true, scorecard:true, dashboard:true };
+const TAB_LABELS = { inbox:"Inbox", leads:"Leads", roster:"Roster", scorecard:"Scorecard", dashboard:"Dashboard" };
+
+function applyTabVisibility() {
+  Object.keys(TAB_LABELS).forEach(function(tab){
+    const btn = document.querySelector('[data-page="'+tab+'"]');
+    if (btn) btn.style.display = appTabs[tab] ? "" : "none";
+  });
+  // If the active page got hidden, fall back to the first visible tab.
+  const active = document.querySelector(".nav-btn.active");
+  if (active && active.dataset.page !== "settings" && appTabs[active.dataset.page] === false) {
+    const firstVisible = Array.from(document.querySelectorAll(".nav-btn"))
+      .find(b => b.style.display !== "none");
+    if (firstVisible) firstVisible.click();
+  }
+}
+
+function showApp(role, tabs) {
+  currentRole = role;
+  if (tabs) appTabs = Object.assign(appTabs, tabs);
+  document.getElementById("authGate").style.display = "none";
+  document.getElementById("appRoot").style.display = "block";
+  document.getElementById("logoutLink").style.display = "inline";
+  applyTabVisibility();
+  // Kick off the data loads now that we're authenticated.
+  loadData();
+  loadLeads();
+  loadInbox();
+}
+
+async function checkSession() {
+  try {
+    const r = await fetch("/api/auth?action=session", { credentials:"same-origin" });
+    const j = await r.json();
+    if (j.authenticated) { showApp(j.role, j.tabs); return true; }
+  } catch(e) {}
+  return false;
+}
+
+async function doLogin() {
+  const pw = document.getElementById("gatePassword").value;
+  const err = document.getElementById("gateErr");
+  err.style.display = "none";
+  try {
+    const r = await fetch("/api/auth", {
+      method:"POST", credentials:"same-origin",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ action:"login", password: pw })
+    });
+    if (!r.ok) { const j = await r.json().catch(()=>({})); err.textContent = j.error || "Incorrect password"; err.style.display="block"; return; }
+    // Re-check session to pull role + tab settings in one place.
+    await checkSession();
+  } catch(e) {
+    err.textContent = "Sign-in failed. Try again."; err.style.display="block";
+  }
+}
+
+async function doLogout() {
+  try { await fetch("/api/auth", { method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ action:"logout" }) }); } catch(e){}
+  location.reload();
+}
+
+// ── Settings admin lock + tab toggles ──────────────────────────────────
+function renderSettingsAccess() {
+  const isAdmin = currentRole === "admin";
+  document.getElementById("adminLock").style.display = isAdmin ? "none" : "block";
+  document.getElementById("adminContent").style.display = isAdmin ? "block" : "none";
+  if (isAdmin) renderTabToggles();
+}
+
+function renderTabToggles() {
+  const wrap = document.getElementById("tabToggles");
+  wrap.innerHTML = "";
+  Object.keys(TAB_LABELS).forEach(function(tab){
+    const row = document.createElement("div");
+    row.className = "tab-toggle-row";
+    const label = document.createElement("span");
+    label.textContent = TAB_LABELS[tab];
+    const sw = document.createElement("label");
+    sw.className = "switch";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = appTabs[tab] !== false;
+    input.addEventListener("change", function(){ saveTabVisibility(tab, input.checked); });
+    const slider = document.createElement("span");
+    slider.className = "slider";
+    sw.appendChild(input); sw.appendChild(slider);
+    row.appendChild(label); row.appendChild(sw);
+    wrap.appendChild(row);
+  });
+}
+
+async function saveTabVisibility(tab, on) {
+  appTabs[tab] = on;
+  applyTabVisibility();
+  try {
+    await fetch("/api/auth", {
+      method:"POST", credentials:"same-origin",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ action:"settings", tabs: appTabs })
+    });
+  } catch(e) {}
+}
+
+async function doAdminUnlock() {
+  const pw = document.getElementById("adminPassword").value;
+  const err = document.getElementById("adminErr");
+  err.style.display = "none";
+  try {
+    const r = await fetch("/api/auth", {
+      method:"POST", credentials:"same-origin",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ action:"admin", password: pw })
+    });
+    if (!r.ok) { const j = await r.json().catch(()=>({})); err.textContent = j.error || "Incorrect password"; err.style.display="block"; return; }
+    currentRole = "admin";
+    renderSettingsAccess();
+  } catch(e) {
+    err.textContent = "Unlock failed."; err.style.display="block";
+  }
+}
+
+document.getElementById("gateSubmit").addEventListener("click", doLogin);
+document.getElementById("gatePassword").addEventListener("keydown", function(e){ if(e.key==="Enter") doLogin(); });
+document.getElementById("logoutLink").addEventListener("click", doLogout);
+document.getElementById("adminUnlockBtn").addEventListener("click", doAdminUnlock);
+document.getElementById("adminPassword").addEventListener("keydown", function(e){ if(e.key==="Enter") doAdminUnlock(); });
+
+// Boot: check for an existing session; if none, the gate stays up.
+checkSession();
 </script>
+</div><!-- /appRoot -->
 </body>
 </html>
