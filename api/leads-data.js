@@ -3,10 +3,14 @@
 // Uses its own Upstash key (backbone_leads) so it can't collide with the customer
 // roster's synced/enrichment data.
 
+const { requireAuth } = require("../lib/auth.js");
+
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Cache-Control", "no-store");
   if (req.method === "OPTIONS") return res.status(200).end();
+
+  const sess = requireAuth(req, res);
+  if (!sess) return;
 
   const url = process.env.KV_REST_API_URL;
   const token = process.env.KV_REST_API_TOKEN;
