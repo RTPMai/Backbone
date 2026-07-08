@@ -959,7 +959,20 @@ const SCORECARD_WEIGHTS = {
 function starForRevenue(v) { return v >= 80000 ? 5 : v >= 50000 ? 4 : v >= 20000 ? 3 : v >= 5000 ? 2 : 1; }
 function starForInvoices(v) { return v >= 100 ? 5 : v >= 50 ? 4 : v >= 20 ? 3 : v >= 6 ? 2 : 1; }
 function starForAvgInvoice(v) { return v >= 1500 ? 5 : v >= 1000 ? 4 : v >= 500 ? 3 : v >= 100 ? 2 : 1; }
-function starForEmployees(v) { return v >= 1000 ? 5 : v >= 500 ? 4 : v >= 100 ? 3 : v >= 10 ? 2 : 1; }
+// Accepts a raw number OR a scraped range string ("51-200", "5000+", "201").
+// Keys off the lower bound so each LinkedIn-style bucket maps to exactly one rating.
+function parseEmployeeCount(v) {
+  if (v === null || v === undefined || v === "") return NaN;
+  const nums = String(v).replace(/,/g, "").match(/\d+/g);
+  if (!nums) return NaN;
+  const n = parseInt(nums[0], 10);
+  return isNaN(n) ? NaN : n;
+}
+function starForEmployees(v) {
+  const n = parseEmployeeCount(v);
+  if (isNaN(n)) return null;
+  return n >= 501 ? 5 : n >= 201 ? 4 : n >= 51 ? 3 : n >= 11 ? 2 : 1;
+}
 // median_gap_days comes from Apparelytics' reorder-cadence report (mean/median days between
 // consecutive orders). A gap of 0 usually means multiple invoices landed on the same day for a
 // customer with very few total orders (a data artifact, not real high-frequency ordering), so we
@@ -973,7 +986,7 @@ function starForFrequency(medianGapDays) {
 function computeScorecard(customer, enrichment) {
   enrichment = enrichment || {};
   const avgInvoice = customer.invoice_count > 0 ? customer.total_revenue / customer.invoice_count : 0;
-  const empVal = parseFloat(enrichment.employees);
+  const empVal = parseEmployeeCount(enrichment.employees);
   const growthVal = parseInt(enrichment.growth_potential, 10);
   const commVal = parseInt(enrichment.client_communication, 10);
   const csrVal = parseInt(enrichment.csr_needs, 10);
@@ -1200,7 +1213,7 @@ function renderScorecard() {
     const sc = computeScorecard(c, state.enrichment[c.customer_id]);
     const enrichment = state.enrichment[c.customer_id] || {};
     const avgInvoice = c.invoice_count > 0 ? c.total_revenue / c.invoice_count : 0;
-    const empVal = parseFloat(enrichment.employees);
+    const empVal = parseEmployeeCount(enrichment.employees);
     return Object.assign({}, c, sc, {
       avg_invoice_sort: avgInvoice,
       tier_sort: TIER_RANK[sc.tier] || 0,
