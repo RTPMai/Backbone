@@ -1,3 +1,13 @@
 {
-  "version": 2
+  "version": 2,
+  "crons": [
+    {
+      "path": "/api/printavo-sync?mode=incremental",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/printavo-sync?mode=reconcile",
+      "schedule": "0 7 * * *"
+    }
+  ]
 }
