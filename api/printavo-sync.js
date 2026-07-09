@@ -94,21 +94,112 @@ export default async function handler(req, res) {
       (typeof row.customer_id === "string" && row.customer_id.startsWith("LEAD-")));
   }
 
-  // Fold one invoice into a per-customer accumulator.
+  // ---------------------------------------------------------------------
+  // SCHEMA INTROSPECTION
+  //
+  // We've been burned twice guessing which field on Invoice links to the
+  // client (it's not `customer`; `owner` is ambiguous with the staff sales
+  // owner). So instead of hardcoding, ask Printavo's schema what actually
+  // exists on the Invoice type, then pick the right client link at runtime.
+  //
+  // Returns a "plan" object:
+  //   { linkField, idField, nameField, contactNameField }
+  // where linkField is the Invoice field that points at the client account
+  // (e.g. "customer" or "contact"), idField/nameField are the sub-fields on
+  // that linked type to use for grouping id and company name, and
+  // contactNameField is a fallback human name if no company name exists.
+  // ---------------------------------------------------------------------
+  async function introspectInvoicePlan() {
+    // Fields on the Invoice type, with the name of the object type each points to.
+    const q = `query{__type(name:"Invoice"){fields{name type{name kind ofType{name kind}}}}}`;
+    const data = await gql(q);
+    const fields = (data.__type && data.__type.fields) || [];
+    const fieldMap = {};
+    fields.forEach(f => {
+      const t = f.type || {};
+      const typeName = t.name || (t.ofType && t.ofType.name) || null;
+      const kind = t.kind === "OBJECT" ? "OBJECT" : (t.ofType && t.ofType.kind) || t.kind;
+      fieldMap[f.name] = { typeName, kind };
+    });
+
+    // Candidate Invoice fields that could carry the client, best first.
+    // We deliberately try customer/client BEFORE owner, since owner can mean
+    // the internal sales rep rather than the buying company.
+    const linkCandidates = ["customer", "client", "contact", "owner"];
+
+    // Given an object type name, introspect ITS fields so we can locate an id
+    // and a company-name-ish field.
+    async function fieldsOfType(typeName) {
+      if (!typeName) return {};
+      const tq = `query{__type(name:"${typeName}"){fields{name}}}`;
+      const td = await gql(tq);
+      const set = {};
+      ((td.__type && td.__type.fields) || []).forEach(f => { set[f.name] = true; });
+      return set;
+    }
+
+    for (const cand of linkCandidates) {
+      const meta = fieldMap[cand];
+      if (!meta || meta.kind !== "OBJECT" || !meta.typeName) continue;
+      const sub = await fieldsOfType(meta.typeName);
+      if (!sub.id) continue; // need a stable id to group on
+
+      // Prefer an explicit company name; fall back through common shapes.
+      const nameField =
+        sub.companyName ? "companyName" :
+        sub.company     ? "company" :
+        sub.name        ? "name" : null;
+      const contactNameField =
+        sub.fullName ? "fullName" :
+        sub.firstName ? "firstName" : null;
+
+      return {
+        linkField: cand,
+        idField: "id",
+        nameField,
+        contactNameField,
+        linkedType: meta.typeName,
+      };
+    }
+
+    // Nothing matched — signal caller to error clearly rather than silently
+    // producing an empty roster.
+    return null;
+  }
+
+  // Build the GraphQL node selection string from a resolved plan.
+  function buildFieldSelection(plan) {
+    const subFields = [plan.idField];
+    if (plan.nameField) subFields.push(plan.nameField);
+    if (plan.contactNameField && plan.contactNameField !== plan.nameField) subFields.push(plan.contactNameField);
+    const link = `${plan.linkField}{${subFields.join(" ")}}`;
+    // We still grab contact{fullName} as an independent last-resort label even
+    // if the client link is a different field, since it costs little.
+    const contactExtra = plan.linkField === "contact" ? "" : "contact{fullName}";
+    return `nodes{id visualId createdAt total status{id name}${contactExtra}${link}}pageInfo{hasNextPage endCursor}`;
+  }
+
+  // Fold one invoice into a per-customer accumulator, using the resolved plan.
   // Skips $0 invoices so dormant accounts with recent $0 records don't read as
   // active (documented BackBone gotcha). Unpaid non-$0 invoices still count —
-  // total_revenue here means invoiced value, matching the existing seed data.
-  function foldInvoice(acc, inv) {
-    const cust = inv.customer;
-    if (!cust || !cust.id) return;
+  // total_revenue means invoiced value, matching the existing seed data.
+  function foldInvoice(acc, inv, plan) {
+    const link = inv[plan.linkField];
+    if (!link || !link[plan.idField]) return;
     const amount = Number(inv.total) || 0;
     if (amount <= 0) return; // $0 filter
 
-    const id = String(cust.id);
+    const id = String(link[plan.idField]);
+    const companyName =
+      (plan.nameField && link[plan.nameField]) ||
+      (plan.contactNameField && link[plan.contactNameField]) ||
+      (inv.contact && inv.contact.fullName) ||
+      "Unknown";
+
     if (!acc[id]) {
       acc[id] = {
         customer_id: id,
-        company_name: cust.companyName || cust.company || (inv.contact && inv.contact.fullName) || "Unknown",
+        company_name: companyName,
         invoice_count: 0,
         total_revenue: 0,
         last_invoice_date: null,
@@ -119,9 +210,8 @@ export default async function handler(req, res) {
     row.total_revenue += amount;
     const d = inv.createdAt ? inv.createdAt.slice(0, 10) : null;
     if (d && (!row.last_invoice_date || d > row.last_invoice_date)) row.last_invoice_date = d;
-    // Prefer a real company name if a later invoice carries one.
-    if ((!row.company_name || row.company_name === "Unknown") && cust.companyName) {
-      row.company_name = cust.companyName;
+    if ((!row.company_name || row.company_name === "Unknown") && companyName !== "Unknown") {
+      row.company_name = companyName;
     }
   }
 
@@ -157,11 +247,19 @@ export default async function handler(req, res) {
     return [...protectedRows, ...Object.values(byId)];
   }
 
-  const GQL_FIELDS =
-    "nodes{id visualId createdAt total status{id name}contact{fullName}customer{id companyName}}pageInfo{hasNextPage endCursor}";
-
   try {
     const stateKey = "backbone_data";
+
+    // Resolve the schema plan once per invocation. This is 2-3 tiny
+    // introspection queries; cheap, and it makes the sync immune to the
+    // field-name guessing that broke the earlier version.
+    const plan = await introspectInvoicePlan();
+    if (!plan) {
+      return res.status(500).json({
+        error: "Could not find a client-linking field (customer/contact/owner with an id) on Printavo's Invoice type. Schema may have changed.",
+      });
+    }
+    const GQL_FIELDS = buildFieldSelection(plan);
 
     // =====================================================================
     // INCREMENTAL — pull only invoices created after the high-water mark.
@@ -192,7 +290,7 @@ export default async function handler(req, res) {
         for (const inv of data.invoices.nodes) {
           if (seen.has(inv.id)) continue;
           seen.add(inv.id);
-          foldInvoice(acc, inv);
+          foldInvoice(acc, inv, plan);
           if (inv.createdAt && (!newHighWater || inv.createdAt > newHighWater)) newHighWater = inv.createdAt;
         }
         cursor = data.invoices.pageInfo.hasNextPage ? data.invoices.pageInfo.endCursor : null;
@@ -223,6 +321,7 @@ export default async function handler(req, res) {
         ok: true, mode, status: "done", pages,
         customersTouched: Object.keys(acc).length, rosterSize: synced.length,
         highWater: newHighWater || sinceIso,
+        schema: { groupedBy: plan.linkField, companyNameFrom: plan.nameField, linkedType: plan.linkedType },
       });
     }
 
@@ -249,7 +348,7 @@ export default async function handler(req, res) {
         for (const inv of data.invoices.nodes) {
           if (seen.has(inv.id)) continue;
           seen.add(inv.id);
-          foldInvoice(acc, inv);
+          foldInvoice(acc, inv, plan);
         }
         cursor = data.invoices.pageInfo.hasNextPage ? data.invoices.pageInfo.endCursor : null;
         pages++;
@@ -285,6 +384,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true, mode, status: "done", pages,
         customers: Object.keys(acc).length, rosterSize: synced.length, reconciledAt: nowIso,
+        schema: { groupedBy: plan.linkField, companyNameFrom: plan.nameField, linkedType: plan.linkedType },
       });
     }
 
