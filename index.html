@@ -455,6 +455,25 @@ textarea.field{min-height:60px;resize:vertical}
         <button class="btn btn-green" id="importBtn">Import</button>
       </div>
     </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-hd"><h3>Sync from Printavo</h3></div>
+      <div class="card-bd">
+        <div class="help">
+          Rebuilds the roster directly from Printavo's full invoice history &mdash; every
+          real customer's invoice count, total revenue, and last invoice date recomputed
+          from scratch. Use this to pull in the full client base, or any time you want to
+          be sure the roster is exactly in step with Printavo.
+          <br/><br/>
+          Enrichment fields and Leads/prospect rows are never touched. Runs in the background
+          in chunks and can take a couple of minutes on the full history &mdash; leave this tab
+          open until it finishes. The nightly automatic reconcile does the same thing, so day
+          to day you shouldn't need this button.
+        </div>
+        <div id="reconcileErr"></div>
+        <button class="btn btn-green" id="reconcileBtn">Reconcile roster from Printavo</button>
+        <span class="save-status" id="reconcileStatus" style="margin-left:10px"></span>
+      </div>
+    </div>
     <div class="card">
       <div class="card-hd"><h3>Reset</h3></div>
       <div class="card-bd">
@@ -1797,6 +1816,73 @@ async function handleImport() {
   }
 }
 
+async function handleReconcile() {
+  var btn = document.getElementById("reconcileBtn");
+  var statusEl = document.getElementById("reconcileStatus");
+  var errEl = document.getElementById("reconcileErr");
+  errEl.innerHTML = "";
+
+  // If a sync secret is enforced server-side, it's read from a data attribute
+  // on the button (set it in the deployed HTML if you turn SYNC_SECRET on).
+  // Left blank by default; the Vercel cron passes its own.
+  var secret = btn.getAttribute("data-sync-secret") || "";
+  var secretQS = secret ? "&secret=" + encodeURIComponent(secret) : "";
+
+  btn.disabled = true;
+  var origText = btn.textContent;
+  btn.textContent = "Reconciling…";
+  statusEl.textContent = "Starting full pull from Printavo…";
+
+  try {
+    var url = "/api/printavo-sync?mode=reconcile" + secretQS;
+    var pass = 0;
+    var guardMax = 200; // safety ceiling on resume loops
+
+    // The endpoint pages the full history in ~4min chunks. When it times out
+    // mid-history it returns status:"partial" + a nextUrl to continue. Loop
+    // until it returns status:"done".
+    while (pass < guardMax) {
+      pass++;
+      var r = await fetch(url, { method: "GET" });
+      var d = await r.json();
+
+      if (!r.ok || d.error) {
+        throw new Error(d.error || ("HTTP " + r.status));
+      }
+
+      if (d.status === "partial") {
+        var soFar = d.customersSoFar != null ? d.customersSoFar : "…";
+        statusEl.textContent = "Working… " + soFar + " customers so far (pass " + pass + ")";
+        // nextUrl is relative; re-append the secret since it isn't carried over.
+        url = d.nextUrl + secretQS;
+        continue;
+      }
+
+      if (d.status === "done") {
+        statusEl.textContent =
+          "Done — " + (d.customers != null ? d.customers : "?") + " customers, roster size " +
+          (d.rosterSize != null ? d.rosterSize : "?") + ".";
+        // Pull the freshly-written backbone_data back into the UI.
+        await loadData();
+        break;
+      }
+
+      // Unexpected shape — surface it rather than loop forever.
+      throw new Error("Unexpected response: " + JSON.stringify(d).slice(0, 200));
+    }
+
+    if (pass >= guardMax) {
+      throw new Error("Reconcile did not finish after " + guardMax + " passes — check function logs.");
+    }
+  } catch (e) {
+    errEl.innerHTML = '<div class="err">Reconcile failed: ' + (e.message || e) + '</div>';
+    statusEl.textContent = "";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+}
+
 async function handleReset() {
   state.synced = SEED_CUSTOMERS;
   state.lastSynced = null;
@@ -2628,6 +2714,7 @@ document.getElementById("detailOverlay").addEventListener("click", function(e) {
 document.getElementById("saveEnrichBtn").addEventListener("click", handleSaveEnrichment);
 document.getElementById("importBtn").addEventListener("click", handleImport);
 document.getElementById("resetBtn").addEventListener("click", handleReset);
+document.getElementById("reconcileBtn").addEventListener("click", handleReconcile);
 document.getElementById("dashYearSelect").addEventListener("change", function(e) {
   dashYear = e.target.value;
   renderDashboard();
