@@ -350,9 +350,10 @@ textarea.field{min-height:60px;resize:vertical}
       </div>
       <div class="card-bd">
         <div class="help">
-          Score = weighted average across 8 criteria (1–5 each). Revenue, invoice count, and average
-          invoice are computed automatically from synced data. Employees, Growth, Comm., CSR, and Freq.
-          are edited directly in the table below — pick a value and it saves immediately. Hover an option
+          Score = weighted average across 11 criteria (1–5 each). Revenue, invoice count, and average
+          invoice are computed automatically from synced data. Employees, Growth, Comm., CSR, Freq.,
+          Specialty Billing, Contact, and Distance are edited directly in the table below — pick a value
+          and it saves immediately. Hover an option
           to see what it means. Missing criteria are excluded and the remaining weights are re-normalized,
           so a partial score is still comparable to a complete one.
         </div>
@@ -973,19 +974,46 @@ const ENRICHMENT_FIELDS = [
     ["2", "2 – 1–2 orders/month"],
     ["1", "1 – One-time"]
   ]},
+  { key: "specialty_billing", label: "Specialty billing (scorecard)", type: "select", options: [
+    ["", "Not set"],
+    ["5", "5 – Very complex / hard billing (lowers score)"],
+    ["4", "4 – Complex billing"],
+    ["3", "3 – Moderate billing requirements"],
+    ["2", "2 – Minor special handling"],
+    ["1", "1 – Standard / no special billing (best)"]
+  ]},
+  { key: "contact_role", label: "Contact person (scorecard)", type: "select", options: [
+    ["", "Not set"],
+    ["5", "5 – Final decision maker"],
+    ["4", "4 – Strong influencer / budget input"],
+    ["3", "3 – Marketing team"],
+    ["2", "2 – Coordinator / gatekeeper"],
+    ["1", "1 – Random / unknown contact"]
+  ]},
+  { key: "distance_from_shop", label: "Distance from shop (scorecard)", type: "select", options: [
+    ["", "Not set"],
+    ["5", "5 – Local / very close"],
+    ["4", "4 – Nearby (short drive)"],
+    ["3", "3 – Moderate distance"],
+    ["2", "2 – Far"],
+    ["1", "1 – Very far away"]
+  ]},
   { key: "notes", label: "Notes", wide: true }
 ];
 
 // ---- Weighted Scorecard ----
 const SCORECARD_WEIGHTS = {
-  revenue: 0.20,
-  invoices: 0.20,
-  avg_invoice: 0.12,
-  frequency: 0.12,
+  revenue: 0.18,
+  invoices: 0.16,
+  avg_invoice: 0.10,
+  frequency: 0.10,
   growth: 0.08,
-  employees: 0.12,
-  communication: 0.08,
-  csr: 0.08
+  employees: 0.10,
+  communication: 0.06,
+  csr: 0.06,
+  specialty_billing: 0.06,
+  contact_role: 0.06,
+  distance: 0.04
 };
 
 // Two band sets: all-time (lifetime totals) and YTD (current calendar year so far). The YTD
@@ -1045,6 +1073,9 @@ function computeScorecard(customer, enrichment, basis) {
   const csrVal = parseInt(enrichment.csr_needs, 10);
   const cadenceFreqScore = starForFrequency(customer.median_gap_days);
   const freqVal = parseInt(enrichment.order_frequency_monthly, 10);
+  const billingVal = parseInt(enrichment.specialty_billing, 10);
+  const contactVal = parseInt(enrichment.contact_role, 10);
+  const distanceVal = parseInt(enrichment.distance_from_shop, 10);
 
   const criteria = {
     revenue: { label: "Annual Revenue", score: starForRevenue(revenue, ytd), available: true },
@@ -1054,7 +1085,12 @@ function computeScorecard(customer, enrichment, basis) {
     growth: { label: "Growth Potential", score: isNaN(growthVal) ? null : growthVal, available: !isNaN(growthVal) },
     communication: { label: "Client Communication", score: isNaN(commVal) ? null : commVal, available: !isNaN(commVal) },
     csr: { label: "CSR Needs", score: isNaN(csrVal) ? null : csrVal, available: !isNaN(csrVal) },
-    frequency: { label: "Order Frequency", score: cadenceFreqScore !== null ? cadenceFreqScore : (isNaN(freqVal) ? null : freqVal), available: cadenceFreqScore !== null || !isNaN(freqVal), auto: cadenceFreqScore !== null }
+    frequency: { label: "Order Frequency", score: cadenceFreqScore !== null ? cadenceFreqScore : (isNaN(freqVal) ? null : freqVal), available: cadenceFreqScore !== null || !isNaN(freqVal), auto: cadenceFreqScore !== null },
+    // Specialty Billing is entered 1 (standard) .. 5 (very hard), but hard billing is operational
+    // strain, so it lowers priority: the composite uses the inverted value (6 - entered).
+    specialty_billing: { label: "Specialty Billing", score: isNaN(billingVal) ? null : (6 - billingVal), available: !isNaN(billingVal) },
+    contact_role: { label: "Contact Person", score: isNaN(contactVal) ? null : contactVal, available: !isNaN(contactVal) },
+    distance: { label: "Distance", score: isNaN(distanceVal) ? null : distanceVal, available: !isNaN(distanceVal) }
   };
 
   let weightedSum = 0, weightTotal = 0, availableCount = 0;
@@ -1076,7 +1112,7 @@ function computeScorecard(customer, enrichment, basis) {
   else if (total >= 1.5) tier = "Bronze";
   else tier = "Valuable Dirt";
 
-  return { criteria: criteria, total: total, tier: tier, completeness: availableCount + "/8",
+  return { criteria: criteria, total: total, tier: tier, completeness: availableCount + "/11",
            period_revenue: revenue, period_invoices: invoices, period_avg_invoice: avgInvoice };
 }
 
@@ -1236,7 +1272,7 @@ const TIER_RANK = { "Platinum": 5, "Gold": 4, "Silver": 3, "Bronze": 2, "Valuabl
 let scoringLegendRendered = false;
 function renderScoringLegend() {
   if (scoringLegendRendered) return; // static reference data, no need to rebuild on every render
-  const legendKeys = ["growth_potential", "client_communication", "csr_needs", "order_frequency_monthly"];
+  const legendKeys = ["growth_potential", "client_communication", "csr_needs", "order_frequency_monthly", "specialty_billing", "contact_role", "distance_from_shop"];
   const html = legendKeys.map(function(key) {
     const field = ENRICHMENT_FIELDS.find(function(f) { return f.key === key; });
     const rows = field.options.filter(function(o) { return o[0] !== ""; })
@@ -1294,7 +1330,10 @@ function renderScorecard() {
       growth_sort: sc.criteria.growth.score,
       comm_sort: sc.criteria.communication.score,
       csr_sort: sc.criteria.csr.score,
-      freq_sort: sc.criteria.frequency.score
+      freq_sort: sc.criteria.frequency.score,
+      billing_sort: (function(){ var v = parseInt((state.enrichment[c.customer_id]||{}).specialty_billing, 10); return isNaN(v) ? null : v; })(),
+      contact_sort: sc.criteria.contact_role.score,
+      distance_sort: sc.criteria.distance.score
     });
   });
 
@@ -1313,7 +1352,8 @@ function renderScorecard() {
   const scoreColMap = {
     company_name: "company_name", total: "total", tier: "tier_sort", completeness: "completeness_sort",
     total_revenue: "revenue_sort", avg_invoice: "avg_invoice_sort", employees: "employees_sort",
-    growth: "growth_sort", comm: "comm_sort", csr: "csr_sort", freq: "freq_sort"
+    growth: "growth_sort", comm: "comm_sort", csr: "csr_sort", freq: "freq_sort",
+    billing: "billing_sort", contact: "contact_sort", distance: "distance_sort"
   };
   const scoreKey = scoreColMap[scoreSort.col] || "total";
   rows.sort(function(a, b) { return compareForSort(a[scoreKey], b[scoreKey], scoreSort.dir); });
@@ -1334,7 +1374,10 @@ function renderScorecard() {
     { key: "growth", label: "Growth", numeric: true },
     { key: "comm", label: "Comm.", numeric: true },
     { key: "csr", label: "CSR", numeric: true },
-    { key: "freq", label: "Freq.", numeric: true }
+    { key: "freq", label: "Freq.", numeric: true },
+    { key: "billing", label: "Billing", numeric: true },
+    { key: "contact", label: "Contact", numeric: true },
+    { key: "distance", label: "Distance", numeric: true }
   ];
   let html = "<table><thead>" + buildSortableHeaderRow(SCORE_COLUMNS, scoreSort) + "</thead><tbody>";
   rows.forEach(function(r) {
@@ -1356,6 +1399,9 @@ function renderScorecard() {
       '<td>' + inlineSelectCell(r.customer_id, "client_communication", enrichment.client_communication) + '</td>' +
       '<td>' + inlineSelectCell(r.customer_id, "csr_needs", enrichment.csr_needs) + '</td>' +
       '<td>' + freqCell + '</td>' +
+      '<td>' + inlineSelectCell(r.customer_id, "specialty_billing", enrichment.specialty_billing) + '</td>' +
+      '<td>' + inlineSelectCell(r.customer_id, "contact_role", enrichment.contact_role) + '</td>' +
+      '<td>' + inlineSelectCell(r.customer_id, "distance_from_shop", enrichment.distance_from_shop) + '</td>' +
       '</tr>';
   });
   html += "</tbody></table>";
@@ -1384,6 +1430,7 @@ const DASH_THRESHOLDS = {
 };
 
 let dashYear = "all";
+let dashConcentrationOpen = false; // remembers whether the full-client concentration list is expanded
 let dashGroupState = { atrisk: true, reengage: false, unassigned: false }; // remembers open/closed across re-renders
 
 // Year filtering requires a `revenue_by_year` (and optionally `invoices_by_year`) object on the
@@ -1479,19 +1526,37 @@ function renderDashboard() {
     '<div class="kpi"><div class="kpi-lbl">Avg score</div><div class="kpi-val">' + avgScore.toFixed(2) + '</div><div class="kpi-s">out of 5' + (dashYear !== "all" ? " · this year's revenue/invoices" : "") + '</div></div>' +
     '<div class="kpi"><div class="kpi-lbl">Platinum + Gold</div><div class="kpi-val">' + topTierShare + '%</div><div class="kpi-s">of roster' + (dashYear !== "all" ? ", " + dashYear + " basis" : "") + '</div></div>';
 
-  // --- Revenue concentration: top 10 clients' share of total revenue ---
+  // --- Revenue concentration: top 10 clients' share of total revenue, expandable to full list ---
   const sortedByRev = rows.slice().sort(function(a, b) { return b.total_revenue - a.total_revenue; });
   const top10 = sortedByRev.slice(0, 10);
   const top10Revenue = top10.reduce(function(s, r) { return s + r.total_revenue; }, 0);
   const top10Share = totalRevenue > 0 ? (top10Revenue / totalRevenue * 100) : 0;
+  function concClientRow(r, rank) {
+    const share = totalRevenue > 0 ? (r.total_revenue / totalRevenue * 100) : 0;
+    return '<div class="alert-row" data-id="' + r.customer_id + '" style="cursor:pointer">' +
+      '<span class="company-cell">' + rank + '. ' + r.company_name + '</span>' +
+      '<span class="meta">' + fmtMoney(r.total_revenue) + ' · ' + share.toFixed(1) + '%</span>' +
+    '</div>';
+  }
   document.getElementById("dashConcentrationWrap").innerHTML =
     '<div class="mix-bar-row">' +
       '<div class="mix-bar-lbl">Top 10 clients</div>' +
       '<div class="mix-bar-track"><div class="mix-bar-fill" style="width:' + top10Share.toFixed(1) + '%;background:#3D9A5C"></div></div>' +
       '<div class="mix-bar-val">' + top10Share.toFixed(0) + '% of revenue</div>' +
     '</div>' +
-    '<div class="help" style="margin:0">' + top10.map(function(r) { return r.company_name; }).slice(0, 5).join(", ") +
-      (top10.length > 5 ? ", +" + (top10.length - 5) + " more" : "") + '</div>';
+    '<details class="alert-group sev-low" style="margin-top:8px"' + (dashConcentrationOpen ? " open" : "") + '>' +
+      '<summary>Top 10 clients — click to see all ' + sortedByRev.length + '</summary>' +
+      '<div class="alert-group-body">' +
+        sortedByRev.map(function(r, i) { return concClientRow(r, i + 1); }).join("") +
+      '</div>' +
+    '</details>';
+  var concDetails = document.querySelector("#dashConcentrationWrap details");
+  if (concDetails) {
+    concDetails.addEventListener("toggle", function() { dashConcentrationOpen = concDetails.open; });
+  }
+  document.querySelectorAll("#dashConcentrationWrap .alert-row").forEach(function(el) {
+    el.addEventListener("click", function() { openDetail(el.dataset.id); });
+  });
 
   // --- Industry mix ---
   const industryMap = {};
