@@ -63,15 +63,13 @@ body{background:#F4F6F8;color:#111827;font-family:'Inter',sans-serif;font-size:1
 table{width:100%;border-collapse:collapse;font-size:13px}
 #tableWrap,#dashAmWrap{overflow-x:auto}
 #tableWrap table,#dashAmWrap table{min-width:100%}
-/* Scorecard is now 6 read-only columns. Company flexes to fill all remaining width (no dead
-   space on the right); the numeric columns hug their content and right-align. */
+/* Scorecard is 6 read-only columns. The table fills the card; the Company column is the single
+   flexible column (takes all slack and truncates), the five number columns size to their content. */
 #scoreTableWrap{overflow-x:auto}
-#scoreTableWrap table{width:100%}
-#scoreTableWrap th,#scoreTableWrap td{padding:9px 10px;white-space:nowrap}
-#scoreTableWrap .company-cell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0;width:100%}
-/* Company column takes all remaining width; the numeric columns hug their content on the right. */
-#scoreTableWrap th:not(:first-child),#scoreTableWrap td:not(:first-child){width:1%;text-align:right}
-#scoreTableWrap th:first-child{text-align:left}
+#scoreTableWrap table{width:100%;table-layout:auto}
+#scoreTableWrap th,#scoreTableWrap td{padding:9px 12px;white-space:nowrap}
+#scoreTableWrap th.sc-company,#scoreTableWrap td.sc-company{width:99%;max-width:1px;overflow:hidden;text-overflow:ellipsis;text-align:left}
+#scoreTableWrap th.sc-num,#scoreTableWrap td.sc-num{width:1px;text-align:right}
 #scoreTableWrap .badge{padding:2px 5px;font-size:11px}
 th{text-align:left;padding:10px 12px;border-bottom:1px solid #E5E7EB;background:#F9FAFB;font-weight:600;color:#374151;white-space:nowrap}
 td{padding:10px 12px;border-bottom:1px solid #F3F4F6;white-space:nowrap}
@@ -4411,7 +4409,8 @@ function buildSortableHeaderRow(columns, sortState) {
     const active = sortState.col === c.key;
     const arrow = active ? (sortState.dir === "asc" ? " ▲" : " ▼") : "";
     const tip = c.title ? c.title + " — click to sort" : "Click to sort";
-    return '<th data-sort-col="' + c.key + '" data-numeric="' + (c.numeric ? "1" : "0") + '" style="cursor:pointer;user-select:none" title="' + tip.replace(/"/g, "&quot;") + '">' + c.label + arrow + '</th>';
+    const cls = c.cls ? ' class="' + c.cls + '"' : "";
+    return '<th' + cls + ' data-sort-col="' + c.key + '" data-numeric="' + (c.numeric ? "1" : "0") + '" style="cursor:pointer;user-select:none" title="' + tip.replace(/"/g, "&quot;") + '">' + c.label + arrow + '</th>';
   }).join("") + "</tr>";
 }
 
@@ -4643,12 +4642,12 @@ function renderScorecard() {
   const pageRows = rows.slice(startIdx, startIdx + pageSize);
 
   const SCORE_COLUMNS = [
-    { key: "company_name", label: "Company", numeric: false },
-    { key: "total", label: "Score", numeric: true },
-    { key: "tier", label: "Tier", numeric: true },
-    { key: "completeness", label: "Used", numeric: true, title: "Criteria used" },
-    { key: "total_revenue", label: scoreBasis === "ytd" ? "Rev (YTD)" : "Revenue", numeric: true },
-    { key: "avg_invoice", label: "Avg Inv", numeric: true, title: "Average Invoice" }
+    { key: "company_name", label: "Company", numeric: false, cls: "sc-company" },
+    { key: "total", label: "Score", numeric: true, cls: "sc-num" },
+    { key: "tier", label: "Tier", numeric: true, cls: "sc-num" },
+    { key: "completeness", label: "Used", numeric: true, cls: "sc-num", title: "Criteria used" },
+    { key: "total_revenue", label: scoreBasis === "ytd" ? "Rev (YTD)" : "Revenue", numeric: true, cls: "sc-num" },
+    { key: "avg_invoice", label: "Avg Inv", numeric: true, cls: "sc-num", title: "Average Invoice" }
   ];
   let html = "<table><thead>" + buildSortableHeaderRow(SCORE_COLUMNS, scoreSort) + "</thead><tbody>";
   pageRows.forEach(function(r) {
@@ -4658,12 +4657,12 @@ function renderScorecard() {
     // Distance) are edited inside each company's detail panel now, not inline here. This table is
     // read-only; clicking a row opens that company to edit them.
     html += '<tr class="row" data-id="' + r.customer_id + '" style="cursor:pointer">' +
-      '<td class="company-cell" title="' + r.company_name.replace(/"/g, "&quot;") + '">' + r.company_name + '</td>' +
-      '<td>' + r.total.toFixed(2) + '</td>' +
-      '<td><span class="badge" style="background:#F3F4F6;color:' + color + '">' + r.tier + '</span></td>' +
-      '<td>' + r.completeness + '</td>' +
-      '<td>' + fmtMoney(r.period_revenue) + '</td>' +
-      '<td>' + avgInv + '</td>' +
+      '<td class="sc-company company-cell" title="' + r.company_name.replace(/"/g, "&quot;") + '">' + r.company_name + '</td>' +
+      '<td class="sc-num">' + r.total.toFixed(2) + '</td>' +
+      '<td class="sc-num"><span class="badge" style="background:#F3F4F6;color:' + color + '">' + r.tier + '</span></td>' +
+      '<td class="sc-num">' + r.completeness + '</td>' +
+      '<td class="sc-num">' + fmtMoney(r.period_revenue) + '</td>' +
+      '<td class="sc-num">' + avgInv + '</td>' +
       '</tr>';
   });
   html += "</tbody></table>";
