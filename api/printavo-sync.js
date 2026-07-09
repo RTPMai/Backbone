@@ -328,19 +328,28 @@ export default async function handler(req, res) {
   function mergeIntoSynced(existingSynced, aggregated, { replace }) {
     const protectedRows = existingSynced.filter(isProtectedRow);
     const realRows = existingSynced.filter(r => !isProtectedRow(r));
-    const byId = {};
-    realRows.forEach(r => { byId[String(r.customer_id)] = r; });
+    const prevById = {};
+    realRows.forEach(r => { prevById[String(r.customer_id)] = r; });
+
+    // On a reconcile (replace) pass we REBUILD the real-customer set from
+    // scratch: start empty and add only what this run produced. Any old
+    // non-protected row the run didn't touch is dropped — this purges stale
+    // rows left over from the earlier contact-keyed grouping, and self-heals
+    // going forward. On incremental we start from the existing set and layer
+    // deltas on top, so nothing is dropped.
+    const byId = replace ? {} : { ...prevById };
 
     Object.values(aggregated).forEach(agg => {
       const id = String(agg.customer_id);
-      const prev = byId[id];
+      const prev = prevById[id]; // prior row for THIS id, if any (for field inheritance)
       // Strip any scratch field that shouldn't be persisted.
       const cleanAgg = { ...agg };
       delete cleanAgg._dates;
-      if (!prev || replace) {
-        // Reconcile, or brand-new customer: take the aggregate as-is, but don't
-        // let a freshly-null median_gap_days (single-order customer) wipe a
-        // previously-good value that a human or earlier paste supplied.
+      if (!byId[id] || replace) {
+        // Reconcile, or brand-new customer: take the aggregate, inheriting a
+        // few durable fields from the prior row for the same id when present,
+        // but don't let a freshly-null median_gap_days (single-order customer)
+        // wipe a previously-good value a human or earlier paste supplied.
         const merged = { ...(prev || {}), ...cleanAgg };
         if ((cleanAgg.median_gap_days == null) && prev && prev.median_gap_days != null) {
           merged.median_gap_days = prev.median_gap_days;
@@ -350,13 +359,14 @@ export default async function handler(req, res) {
         // Incremental: add the delta onto the running totals. Median gap is NOT
         // recomputed here (a partial recent slice would be misleading) — the
         // nightly reconcile owns that. Carry the existing value forward.
+        const cur = byId[id];
         byId[id] = {
-          ...prev,
-          company_name: cleanAgg.company_name && cleanAgg.company_name !== "Unknown" ? cleanAgg.company_name : prev.company_name,
-          invoice_count: (Number(prev.invoice_count) || 0) + cleanAgg.invoice_count,
-          total_revenue: (Number(prev.total_revenue) || 0) + cleanAgg.total_revenue,
-          last_invoice_date: cleanAgg.last_invoice_date && (!prev.last_invoice_date || cleanAgg.last_invoice_date > prev.last_invoice_date)
-            ? cleanAgg.last_invoice_date : prev.last_invoice_date,
+          ...cur,
+          company_name: cleanAgg.company_name && cleanAgg.company_name !== "Unknown" ? cleanAgg.company_name : cur.company_name,
+          invoice_count: (Number(cur.invoice_count) || 0) + cleanAgg.invoice_count,
+          total_revenue: (Number(cur.total_revenue) || 0) + cleanAgg.total_revenue,
+          last_invoice_date: cleanAgg.last_invoice_date && (!cur.last_invoice_date || cleanAgg.last_invoice_date > cur.last_invoice_date)
+            ? cleanAgg.last_invoice_date : cur.last_invoice_date,
         };
       }
     });
@@ -485,6 +495,13 @@ export default async function handler(req, res) {
       // Compute median_gap_days now that we have each customer's FULL date set.
       finalizeMedianGaps(acc);
       const state = (await kvGet(stateKey)) || { synced: [], enrichment: {}, lastSynced: null };
+
+      // Safety backup: this reconcile PURGES stale non-protected rows, so snapshot
+      // the pre-purge state first. Recover with: copy backbone_data_backup back
+      // over backbone_data in Upstash if a run ever drops something it shouldn't.
+      const beforeCount = (state.synced || []).length;
+      await kvSet("backbone_data_backup", { ...state, backupAt: new Date().toISOString() });
+
       const synced = mergeIntoSynced(state.synced || [], acc, { replace: true });
       const nextState = { ...state, synced, lastSynced: new Date().toISOString() };
       await kvSet(stateKey, nextState);
@@ -500,9 +517,14 @@ export default async function handler(req, res) {
       });
       await kvSet("backbone_reconcile_partial", { acc: {}, seen: [] }); // clear
 
+      const protectedCount = (state.synced || []).filter(isProtectedRow).length;
       return res.status(200).json({
         ok: true, mode, status: "done", pages,
         customers: Object.keys(acc).length, rosterSize: synced.length, reconciledAt: nowIso,
+        rosterBefore: beforeCount, rosterAfter: synced.length,
+        purgedStaleRows: Math.max(0, beforeCount - synced.length),
+        protectedRowsKept: protectedCount,
+        backupKey: "backbone_data_backup",
         schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
       });
     }
