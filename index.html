@@ -365,10 +365,10 @@ textarea.field{min-height:60px;resize:vertical}
       <div class="card-bd">
         <div class="help">
           Score = weighted average across 11 criteria (1–5 each). Revenue, invoice count, and average
-          invoice are computed automatically from synced data. Employees, Growth, Comm., CSR, Freq.,
-          Specialty Billing, Contact, and Distance are edited directly in the table below — pick a value
-          and it saves immediately. Hover an option
-          to see what it means. Missing criteria are excluded and the remaining weights are re-normalized,
+          invoice are computed automatically from synced data. The eight judgment criteria — Employees,
+          Growth, Communication, CSR, Order Frequency, Specialty Billing, Contact, and Distance — are
+          set inside each company: click a row to open it and edit them there. Distance auto-fills from
+          the client's ZIP. Missing criteria are excluded and the remaining weights are re-normalized,
           so a partial score is still comparable to a complete one.
         </div>
         <div class="toolbar" style="justify-content:space-between">
@@ -4172,7 +4172,7 @@ const ENRICHMENT_FIELDS = [
       ACCOUNT_MANAGERS.map(function(a) { return [a, a]; })
     )
   },
-  { key: "employees", label: "Employee count (scorecard)", type: "select", options: [
+  { key: "employees", label: "Employee count (scorecard)", type: "select", section: "Scorecard criteria (1–5) — these drive the client's tier", options: [
     ["", "Not set"],
     ["501+", "5 – 501+ employees"],
     ["201-500", "4 – 201–500 employees"],
@@ -4610,9 +4610,7 @@ function renderScorecard() {
   }
   const scoreColMap = {
     company_name: "company_name", total: "total", tier: "tier_sort", completeness: "completeness_sort",
-    total_revenue: "revenue_sort", avg_invoice: "avg_invoice_sort", employees: "employees_sort",
-    growth: "growth_sort", comm: "comm_sort", csr: "csr_sort", freq: "freq_sort",
-    billing: "billing_sort", contact: "contact_sort", distance: "distance_sort"
+    total_revenue: "revenue_sort", avg_invoice: "avg_invoice_sort"
   };
   const scoreKey = scoreColMap[scoreSort.col] || "total";
   rows.sort(function(a, b) { return compareForSort(a[scoreKey], b[scoreKey], scoreSort.dir); });
@@ -4628,56 +4626,29 @@ function renderScorecard() {
     { key: "tier", label: "Tier", numeric: true, col: "col-tier" },
     { key: "completeness", label: "Used", numeric: true, col: "col-num", title: "Criteria used" },
     { key: "total_revenue", label: scoreBasis === "ytd" ? "Rev (YTD)" : "Revenue", numeric: true, col: "col-money" },
-    { key: "avg_invoice", label: "Avg Inv", numeric: true, col: "col-money", title: "Average Invoice" },
-    { key: "employees", label: "Emp.", numeric: true, col: "col-sel", title: "Employees" },
-    { key: "growth", label: "Grw", numeric: true, col: "col-sel", title: "Growth Potential" },
-    { key: "comm", label: "Com", numeric: true, col: "col-sel", title: "Client Communication" },
-    { key: "csr", label: "CSR", numeric: true, col: "col-sel", title: "CSR Needs" },
-    { key: "freq", label: "Frq", numeric: true, col: "col-sel", title: "Order Frequency" },
-    { key: "billing", label: "Bill", numeric: true, col: "col-sel", title: "Specialty Billing (5 = hard, lowers score)" },
-    { key: "contact", label: "Con", numeric: true, col: "col-sel", title: "Contact Person (5 = decision maker)" },
-    { key: "distance", label: "Dist", numeric: true, col: "col-sel", title: "Distance from shop (5 = closest)" }
+    { key: "avg_invoice", label: "Avg Inv", numeric: true, col: "col-money", title: "Average Invoice" }
   ];
   const colgroup = "<colgroup>" + SCORE_COLUMNS.map(function(c) { return '<col class="' + c.col + '"/>'; }).join("") + "</colgroup>";
   let html = "<table>" + colgroup + "<thead>" + buildSortableHeaderRow(SCORE_COLUMNS, scoreSort) + "</thead><tbody>";
   rows.forEach(function(r) {
     const avgInv = r.period_invoices > 0 ? fmtMoney(r.period_avg_invoice) : "—";
     const color = TIER_COLORS[r.tier] || "#374151";
-    const enrichment = state.enrichment[r.customer_id] || {};
-    const freqCell = r.criteria.frequency.auto
-      ? '<span title="Computed from order cadence (median ' + (r.median_gap_days !== undefined ? r.median_gap_days.toFixed(1) : "?") + ' days between orders)">' + r.criteria.frequency.score + ' ⓘ</span>'
-      : inlineSelectCell(r.customer_id, "order_frequency_monthly", enrichment.order_frequency_monthly);
-    const distCell = r.criteria.distance.auto
-      ? '<span title="Auto: ~' + (r.criteria.distance.miles !== null ? Math.round(r.criteria.distance.miles) + ' mi straight-line from shop' : 'computed') + ' — pick a value to override">' + r.criteria.distance.score + ' ⓘ</span>'
-      : inlineSelectCell(r.customer_id, "distance_from_shop", enrichment.distance_from_shop);
-    html += '<tr class="row" data-id="' + r.customer_id + '">' +
+    // The eight scorecard criteria (Employees, Growth, Comm, CSR, Frequency, Billing, Contact,
+    // Distance) are edited inside each company's detail panel now, not inline here. This table is
+    // read-only; clicking a row opens that company to edit them.
+    html += '<tr class="row" data-id="' + r.customer_id + '" style="cursor:pointer">' +
       '<td class="company-cell" title="' + r.company_name.replace(/"/g, "&quot;") + '">' + r.company_name + '</td>' +
       '<td>' + r.total.toFixed(2) + '</td>' +
       '<td><span class="badge" style="background:#F3F4F6;color:' + color + '">' + r.tier + '</span></td>' +
       '<td>' + r.completeness + '</td>' +
       '<td>' + fmtMoney(r.period_revenue) + '</td>' +
       '<td>' + avgInv + '</td>' +
-      '<td>' + inlineSelectCell(r.customer_id, "employees", enrichment.employees) + '</td>' +
-      '<td>' + inlineSelectCell(r.customer_id, "growth_potential", enrichment.growth_potential) + '</td>' +
-      '<td>' + inlineSelectCell(r.customer_id, "client_communication", enrichment.client_communication) + '</td>' +
-      '<td>' + inlineSelectCell(r.customer_id, "csr_needs", enrichment.csr_needs) + '</td>' +
-      '<td>' + freqCell + '</td>' +
-      '<td>' + inlineSelectCell(r.customer_id, "specialty_billing", enrichment.specialty_billing) + '</td>' +
-      '<td>' + inlineSelectCell(r.customer_id, "contact_role", enrichment.contact_role) + '</td>' +
-      '<td>' + distCell + '</td>' +
       '</tr>';
   });
   html += "</tbody></table>";
   wrap.innerHTML = html;
-  wrap.querySelectorAll("tr.row .company-cell").forEach(function(td) {
-    td.style.cursor = "pointer";
-    td.addEventListener("click", function() { openDetail(td.closest("tr").dataset.id); });
-  });
-  wrap.querySelectorAll("[data-inline-key]").forEach(function(el) {
-    el.addEventListener("change", function() {
-      handleInlineEnrichmentChange(el.closest("tr").dataset.id, el.dataset.inlineKey, el.value);
-    });
-    el.addEventListener("click", function(e) { e.stopPropagation(); });
+  wrap.querySelectorAll("tr.row").forEach(function(tr) {
+    tr.addEventListener("click", function() { openDetail(tr.dataset.id); });
   });
   attachSortHandlers(wrap, scoreSort, renderScorecard);
 }
@@ -5042,6 +5013,13 @@ function openDetail(customerId) {
   const grid = document.getElementById("enrichGrid");
   grid.innerHTML = "";
   ENRICHMENT_FIELDS.forEach(function(f) {
+    if (f.section) {
+      const sec = document.createElement("div");
+      sec.className = "enrich-field wide";
+      sec.style.cssText = "margin-top:6px;padding-top:10px;border-top:1px solid #E5E7EB;font-size:12px;font-weight:700;color:#111827";
+      sec.textContent = f.section;
+      grid.appendChild(sec);
+    }
     const wrapDiv = document.createElement("div");
     wrapDiv.className = "enrich-field" + (f.wide ? " wide" : "");
     const label = document.createElement("label");
@@ -5064,6 +5042,23 @@ function openDetail(customerId) {
     wrapDiv.appendChild(label);
     wrapDiv.appendChild(input);
     grid.appendChild(wrapDiv);
+    // Distance is auto-computed from the ZIP; show the live miles + resulting score under the
+    // dropdown so the AM can see what the auto value is and when a manual pick overrides it.
+    if (f.key === "distance_from_shop") {
+      const hint = document.createElement("div");
+      hint.className = "enrich-field wide";
+      hint.style.cssText = "font-size:12px;color:#6B7280;margin-top:-4px";
+      const miles = (enrichment.distance_miles !== undefined && enrichment.distance_miles !== null && enrichment.distance_miles !== "")
+        ? parseFloat(enrichment.distance_miles) : null;
+      const autoScore = miles !== null ? starForDistanceMiles(miles) : null;
+      if (miles !== null) {
+        hint.textContent = "Auto: ~" + Math.round(miles) + " mi straight-line → scores " + autoScore +
+          "★. Leave the dropdown on \"Not set / auto\" to use this, or pick a value to override.";
+      } else {
+        hint.textContent = "Enter a Customer ZIP above to auto-compute distance, or set a value manually.";
+      }
+      grid.appendChild(hint);
+    }
     if (f.key === "industry") {
       const amDiv = document.createElement("div");
       amDiv.className = "enrich-field wide";
@@ -5098,7 +5093,18 @@ async function handleSaveEnrichment() {
   grid.querySelectorAll("[data-key]").forEach(function(el) {
     values[el.dataset.key] = el.value;
   });
-  state.enrichment[activeCustomerId] = values;
+  // Merge onto the existing record rather than replacing it, so non-form fields the grid doesn't
+  // render (computed distance_miles, attached inquiries, etc.) survive a save.
+  const prev = state.enrichment[activeCustomerId] || {};
+  const merged = Object.assign({}, prev, values);
+  // If the ZIP changed, recompute straight-line distance so the auto Distance score stays in step.
+  if ((values.customer_zip || "") !== (prev.customer_zip || "")) {
+    merged.distance_miles = null;
+    state.enrichment[activeCustomerId] = merged;
+    try { calcDistanceFor(activeCustomerId); } catch (e) {}
+  } else {
+    state.enrichment[activeCustomerId] = merged;
+  }
   document.getElementById("saveStatus").textContent = "Saving...";
   try {
     await saveEnrichment(state.enrichment);
