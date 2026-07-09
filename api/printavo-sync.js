@@ -127,38 +127,71 @@ export default async function handler(req, res) {
     // the internal sales rep rather than the buying company.
     const linkCandidates = ["customer", "client", "contact", "owner"];
 
-    // Given an object type name, introspect ITS fields so we can locate an id
-    // and a company-name-ish field.
+    // Given an object type name, introspect ITS fields into a map of
+    // { fieldName: {typeName, kind} } so we can locate ids, names, AND nested
+    // object links (e.g. a Contact's parent Customer).
     async function fieldsOfType(typeName) {
       if (!typeName) return {};
-      const tq = `query{__type(name:"${typeName}"){fields{name}}}`;
+      const tq = `query{__type(name:"${typeName}"){fields{name type{name kind ofType{name kind}}}}}`;
       const td = await gql(tq);
-      const set = {};
-      ((td.__type && td.__type.fields) || []).forEach(f => { set[f.name] = true; });
-      return set;
+      const map = {};
+      ((td.__type && td.__type.fields) || []).forEach(f => {
+        const t = f.type || {};
+        const nm = t.name || (t.ofType && t.ofType.name) || null;
+        const kd = t.kind === "OBJECT" ? "OBJECT" : (t.ofType && t.ofType.kind) || t.kind;
+        map[f.name] = { typeName: nm, kind: kd };
+      });
+      return map;
+    }
+
+    function pickNameField(fieldSet) {
+      return fieldSet.companyName ? "companyName" :
+             fieldSet.company     ? "company" :
+             fieldSet.name        ? "name" : null;
+    }
+    function pickContactName(fieldSet) {
+      return fieldSet.fullName ? "fullName" :
+             fieldSet.firstName ? "firstName" : null;
     }
 
     for (const cand of linkCandidates) {
       const meta = fieldMap[cand];
       if (!meta || meta.kind !== "OBJECT" || !meta.typeName) continue;
       const sub = await fieldsOfType(meta.typeName);
-      if (!sub.id) continue; // need a stable id to group on
+      const subHas = {}; Object.keys(sub).forEach(k => { subHas[k] = true; });
+      if (!subHas.id) continue; // need a stable id to group on
 
-      // Prefer an explicit company name; fall back through common shapes.
-      const nameField =
-        sub.companyName ? "companyName" :
-        sub.company     ? "company" :
-        sub.name        ? "name" : null;
-      const contactNameField =
-        sub.fullName ? "fullName" :
-        sub.firstName ? "firstName" : null;
+      const directName = pickNameField(subHas);
+
+      // KEY FIX: if the chosen link is a person-level record (a Contact) with
+      // no direct company name, look for a PARENT company object reachable
+      // through it — a sub-field whose type is Customer/Company and which has
+      // its own id + name. Grouping by that parent's id collapses all of a
+      // company's contacts into one roster row (matching Apparelytics).
+      let parent = null;
+      if (!directName || cand === "contact") {
+        const parentCandidates = ["customer", "company", "client", "account", "parentCustomer"];
+        for (const pc of parentCandidates) {
+          const pm = sub[pc];
+          if (!pm || pm.kind !== "OBJECT" || !pm.typeName) continue;
+          const pf = await fieldsOfType(pm.typeName);
+          const pHas = {}; Object.keys(pf).forEach(k => { pHas[k] = true; });
+          const pName = pickNameField(pHas);
+          if (pHas.id && pName) {
+            parent = { field: pc, idField: "id", nameField: pName, typeName: pm.typeName };
+            break;
+          }
+        }
+      }
 
       return {
         linkField: cand,
         idField: "id",
-        nameField,
-        contactNameField,
+        nameField: directName,
+        contactNameField: pickContactName(subHas),
         linkedType: meta.typeName,
+        // When present, group by parent.field.id/name instead of the link's own.
+        parent,
       };
     }
 
@@ -172,9 +205,12 @@ export default async function handler(req, res) {
     const subFields = [plan.idField];
     if (plan.nameField) subFields.push(plan.nameField);
     if (plan.contactNameField && plan.contactNameField !== plan.nameField) subFields.push(plan.contactNameField);
+    // If we found a parent company through the link, request it nested so we
+    // can group by the company rather than the individual contact.
+    if (plan.parent) {
+      subFields.push(`${plan.parent.field}{${plan.parent.idField} ${plan.parent.nameField}}`);
+    }
     const link = `${plan.linkField}{${subFields.join(" ")}}`;
-    // We still grab contact{fullName} as an independent last-resort label even
-    // if the client link is a different field, since it costs little.
     const contactExtra = plan.linkField === "contact" ? "" : "contact{fullName}";
     return `nodes{id visualId createdAt total status{id name}${contactExtra}${link}}pageInfo{hasNextPage endCursor}`;
   }
@@ -185,16 +221,30 @@ export default async function handler(req, res) {
   // total_revenue means invoiced value, matching the existing seed data.
   function foldInvoice(acc, inv, plan) {
     const link = inv[plan.linkField];
-    if (!link || !link[plan.idField]) return;
+    if (!link) return;
+
+    // Prefer grouping by the PARENT company when the plan found one, so all of
+    // a company's contacts collapse into a single roster row. Fall back to the
+    // link's own id/name only if the parent is absent on this particular record.
+    let id, companyName;
+    if (plan.parent && link[plan.parent.field] && link[plan.parent.field][plan.parent.idField]) {
+      const p = link[plan.parent.field];
+      id = String(p[plan.parent.idField]);
+      companyName = p[plan.parent.nameField] || null;
+    } else if (link[plan.idField]) {
+      id = String(link[plan.idField]);
+      companyName =
+        (plan.nameField && link[plan.nameField]) ||
+        (plan.contactNameField && link[plan.contactNameField]) ||
+        (inv.contact && inv.contact.fullName) ||
+        "Unknown";
+    } else {
+      return; // no usable identity
+    }
+    if (!companyName) companyName = "Unknown";
+
     const amount = Number(inv.total) || 0;
     if (amount <= 0) return; // $0 filter
-
-    const id = String(link[plan.idField]);
-    const companyName =
-      (plan.nameField && link[plan.nameField]) ||
-      (plan.contactNameField && link[plan.contactNameField]) ||
-      (inv.contact && inv.contact.fullName) ||
-      "Unknown";
 
     if (!acc[id]) {
       acc[id] = {
@@ -321,7 +371,7 @@ export default async function handler(req, res) {
         ok: true, mode, status: "done", pages,
         customersTouched: Object.keys(acc).length, rosterSize: synced.length,
         highWater: newHighWater || sinceIso,
-        schema: { groupedBy: plan.linkField, companyNameFrom: plan.nameField, linkedType: plan.linkedType },
+        schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
       });
     }
 
@@ -384,7 +434,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true, mode, status: "done", pages,
         customers: Object.keys(acc).length, rosterSize: synced.length, reconciledAt: nowIso,
-        schema: { groupedBy: plan.linkField, companyNameFrom: plan.nameField, linkedType: plan.linkedType },
+        schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
       });
     }
 
