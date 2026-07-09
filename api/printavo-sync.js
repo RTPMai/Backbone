@@ -44,17 +44,34 @@ export default async function handler(req, res) {
   const resumeCursor = req.query.cursor || null;
 
   // --- Printavo GraphQL --------------------------------------------------
-  async function gql(query) {
+  async function gql(query, _attempt = 0) {
     const r = await fetch("https://www.printavo.com/api/v2", {
       method: "POST",
       headers: { "Content-Type": "application/json", email, token },
       body: JSON.stringify({ query }),
     });
+
+    // Rate limited (10 req / 5s per email/IP). Back off and retry rather than
+    // killing the whole run — a reconcile makes hundreds of calls and WILL hit
+    // this occasionally. Honor Retry-After if present, else exponential backoff.
+    if (r.status === 429) {
+      if (_attempt >= 5) throw new Error("Printavo HTTP 429 (still rate limited after backoff)");
+      const retryAfterHeader = parseInt(r.headers.get("retry-after") || "", 10);
+      const waitMs = Number.isFinite(retryAfterHeader)
+        ? retryAfterHeader * 1000
+        : Math.min(15000, 3000 * Math.pow(2, _attempt)); // 3s,6s,12s,15s,15s
+      await new Promise(res => setTimeout(res, waitMs));
+      return gql(query, _attempt + 1);
+    }
+
     if (!r.ok) throw new Error(`Printavo HTTP ${r.status}`);
     const json = await r.json();
     if (json.errors) throw new Error(json.errors.map(e => e.message).join(", "));
     return json.data;
   }
+
+  // Small helper to pace successive introspection calls under the rate limit.
+  const rlPause = () => new Promise(res => setTimeout(res, 600));
 
   // --- Upstash -----------------------------------------------------------
   async function kvGet(key) {
@@ -157,6 +174,7 @@ export default async function handler(req, res) {
     for (const cand of linkCandidates) {
       const meta = fieldMap[cand];
       if (!meta || meta.kind !== "OBJECT" || !meta.typeName) continue;
+      await rlPause();
       const sub = await fieldsOfType(meta.typeName);
       const subHas = {}; Object.keys(sub).forEach(k => { subHas[k] = true; });
       if (!subHas.id) continue; // need a stable id to group on
@@ -174,6 +192,7 @@ export default async function handler(req, res) {
         for (const pc of parentCandidates) {
           const pm = sub[pc];
           if (!pm || pm.kind !== "OBJECT" || !pm.typeName) continue;
+          await rlPause();
           const pf = await fieldsOfType(pm.typeName);
           const pHas = {}; Object.keys(pf).forEach(k => { pHas[k] = true; });
           const pName = pickNameField(pHas);
@@ -345,7 +364,7 @@ export default async function handler(req, res) {
         }
         cursor = data.invoices.pageInfo.hasNextPage ? data.invoices.pageInfo.endCursor : null;
         pages++;
-        if (cursor) await new Promise(r => setTimeout(r, 1200));
+        if (cursor) await new Promise(r => setTimeout(r, 1500));
       } while (cursor && Date.now() < deadline);
 
       // If we ran out of time mid-page, hand back a resume URL and DON'T advance
@@ -402,7 +421,7 @@ export default async function handler(req, res) {
         }
         cursor = data.invoices.pageInfo.hasNextPage ? data.invoices.pageInfo.endCursor : null;
         pages++;
-        if (cursor) await new Promise(r => setTimeout(r, 1200));
+        if (cursor) await new Promise(r => setTimeout(r, 1500));
       } while (cursor && Date.now() < deadline);
 
       await kvSet("backbone_reconcile_partial", { acc, seen: [...seen], updatedAt: new Date().toISOString() });
