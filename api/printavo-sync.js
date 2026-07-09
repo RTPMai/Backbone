@@ -272,16 +272,53 @@ export default async function handler(req, res) {
         invoice_count: 0,
         total_revenue: 0,
         last_invoice_date: null,
+        _dates: [], // collected here, converted to median_gap_days at finalize
       };
     }
     const row = acc[id];
     row.invoice_count += 1;
     row.total_revenue += amount;
     const d = inv.createdAt ? inv.createdAt.slice(0, 10) : null;
-    if (d && (!row.last_invoice_date || d > row.last_invoice_date)) row.last_invoice_date = d;
+    if (d) {
+      row._dates.push(d);
+      if (!row.last_invoice_date || d > row.last_invoice_date) row.last_invoice_date = d;
+    }
     if ((!row.company_name || row.company_name === "Unknown") && companyName !== "Unknown") {
       row.company_name = companyName;
     }
+  }
+
+  // Convert each customer's collected invoice dates into median_gap_days: the
+  // median number of days between consecutive orders. This is the same quantity
+  // Apparelytics' reorder-cadence report provides, so the Scorecard's Order
+  // Frequency criterion auto-computes from it exactly as before — no paste.
+  //
+  // Convention (matches the Scorecard's starForFrequency): a customer with
+  // fewer than 2 distinct order dates has no meaningful gap, and same-day
+  // clustering that yields a 0 median is a data artifact, not high-frequency —
+  // both are left as null so the criterion reads "unavailable" rather than
+  // silently scoring 5 stars. The dropdown-editable manual field still wins
+  // when a human has set one (merge logic preserves enrichment separately).
+  function finalizeMedianGaps(acc) {
+    Object.values(acc).forEach(row => {
+      const dates = row._dates || [];
+      delete row._dates;
+      // Unique day-level timestamps, ascending.
+      const uniq = Array.from(new Set(dates)).sort();
+      if (uniq.length < 2) { row.median_gap_days = null; return; }
+      const gaps = [];
+      for (let i = 1; i < uniq.length; i++) {
+        const a = new Date(uniq[i - 1] + "T00:00:00Z").getTime();
+        const b = new Date(uniq[i] + "T00:00:00Z").getTime();
+        gaps.push((b - a) / 86400000);
+      }
+      gaps.sort((x, y) => x - y);
+      const mid = Math.floor(gaps.length / 2);
+      const median = gaps.length % 2 ? gaps[mid] : (gaps[mid - 1] + gaps[mid]) / 2;
+      // A 0 median (all orders same day, or fewer than 2 distinct days after
+      // dedupe) is treated as unavailable per the documented gotcha.
+      row.median_gap_days = median > 0 ? Math.round(median * 1000) / 1000 : null;
+    });
   }
 
   // Merge freshly-aggregated Printavo rows into state.synced.
@@ -297,18 +334,29 @@ export default async function handler(req, res) {
     Object.values(aggregated).forEach(agg => {
       const id = String(agg.customer_id);
       const prev = byId[id];
+      // Strip any scratch field that shouldn't be persisted.
+      const cleanAgg = { ...agg };
+      delete cleanAgg._dates;
       if (!prev || replace) {
-        // Reconcile, or brand-new customer: take the aggregate as-is.
-        byId[id] = { ...(prev || {}), ...agg };
+        // Reconcile, or brand-new customer: take the aggregate as-is, but don't
+        // let a freshly-null median_gap_days (single-order customer) wipe a
+        // previously-good value that a human or earlier paste supplied.
+        const merged = { ...(prev || {}), ...cleanAgg };
+        if ((cleanAgg.median_gap_days == null) && prev && prev.median_gap_days != null) {
+          merged.median_gap_days = prev.median_gap_days;
+        }
+        byId[id] = merged;
       } else {
-        // Incremental: add the delta onto the running totals.
+        // Incremental: add the delta onto the running totals. Median gap is NOT
+        // recomputed here (a partial recent slice would be misleading) — the
+        // nightly reconcile owns that. Carry the existing value forward.
         byId[id] = {
           ...prev,
-          company_name: agg.company_name && agg.company_name !== "Unknown" ? agg.company_name : prev.company_name,
-          invoice_count: (Number(prev.invoice_count) || 0) + agg.invoice_count,
-          total_revenue: (Number(prev.total_revenue) || 0) + agg.total_revenue,
-          last_invoice_date: agg.last_invoice_date && (!prev.last_invoice_date || agg.last_invoice_date > prev.last_invoice_date)
-            ? agg.last_invoice_date : prev.last_invoice_date,
+          company_name: cleanAgg.company_name && cleanAgg.company_name !== "Unknown" ? cleanAgg.company_name : prev.company_name,
+          invoice_count: (Number(prev.invoice_count) || 0) + cleanAgg.invoice_count,
+          total_revenue: (Number(prev.total_revenue) || 0) + cleanAgg.total_revenue,
+          last_invoice_date: cleanAgg.last_invoice_date && (!prev.last_invoice_date || cleanAgg.last_invoice_date > prev.last_invoice_date)
+            ? cleanAgg.last_invoice_date : prev.last_invoice_date,
         };
       }
     });
@@ -434,6 +482,8 @@ export default async function handler(req, res) {
       }
 
       // Full pass complete — REPLACE real-customer aggregates authoritatively.
+      // Compute median_gap_days now that we have each customer's FULL date set.
+      finalizeMedianGaps(acc);
       const state = (await kvGet(stateKey)) || { synced: [], enrichment: {}, lastSynced: null };
       const synced = mergeIntoSynced(state.synced || [], acc, { replace: true });
       const nextState = { ...state, synced, lastSynced: new Date().toISOString() };
