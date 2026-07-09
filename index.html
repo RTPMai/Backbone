@@ -63,19 +63,15 @@ body{background:#F4F6F8;color:#111827;font-family:'Inter',sans-serif;font-size:1
 table{width:100%;border-collapse:collapse;font-size:13px}
 #tableWrap,#dashAmWrap{overflow-x:auto}
 #tableWrap table,#dashAmWrap table{min-width:100%}
-/* Scorecard has many columns. Fit them all to the viewport (no sideways scroll):
-   fixed layout + tight fixed widths on the compact score columns, Company flexes and
-   truncates with an ellipsis (full name shows on hover / click opens the record). */
-#scoreTableWrap{overflow-x:hidden}
-#scoreTableWrap table{table-layout:fixed;width:100%}
-#scoreTableWrap th,#scoreTableWrap td{padding:8px 6px;overflow:hidden;text-overflow:ellipsis}
-#scoreTableWrap select.field{padding:3px 2px;font-size:12px;width:100%;min-width:0}
-#scoreTableWrap .company-cell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#scoreTableWrap col.col-company{width:auto}
-#scoreTableWrap col.col-num{width:56px}
-#scoreTableWrap col.col-money{width:78px}
-#scoreTableWrap col.col-tier{width:74px}
-#scoreTableWrap col.col-sel{width:52px}
+/* Scorecard is now 6 read-only columns. Company flexes to fill all remaining width (no dead
+   space on the right); the numeric columns hug their content and right-align. */
+#scoreTableWrap{overflow-x:auto}
+#scoreTableWrap table{width:100%}
+#scoreTableWrap th,#scoreTableWrap td{padding:9px 10px;white-space:nowrap}
+#scoreTableWrap .company-cell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0;width:100%}
+/* Company column takes all remaining width; the numeric columns hug their content on the right. */
+#scoreTableWrap th:not(:first-child),#scoreTableWrap td:not(:first-child){width:1%;text-align:right}
+#scoreTableWrap th:first-child{text-align:left}
 #scoreTableWrap .badge{padding:2px 5px;font-size:11px}
 th{text-align:left;padding:10px 12px;border-bottom:1px solid #E5E7EB;background:#F9FAFB;font-weight:600;color:#374151;white-space:nowrap}
 td{padding:10px 12px;border-bottom:1px solid #F3F4F6;white-space:nowrap}
@@ -373,14 +369,26 @@ textarea.field{min-height:60px;resize:vertical}
         </div>
         <div class="toolbar" style="justify-content:space-between">
           <input class="search" id="scoreSearchBox" placeholder="Search company name"/>
-          <div class="sort-group" style="display:inline-flex;background:#F3F4F6;border-radius:6px;padding:2px">
-            <button class="sort-btn active" id="scoreBasisAll" data-basis="all">All time</button>
-            <button class="sort-btn" id="scoreBasisYtd" data-basis="ytd">2026 YTD</button>
+          <div style="display:inline-flex;align-items:center;gap:12px">
+            <div style="display:inline-flex;align-items:center;gap:6px">
+              <label style="font-size:12px;color:#6B7280">Show</label>
+              <select class="search" id="scorePageSize" style="min-width:76px;padding:6px 8px">
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <div class="sort-group" style="display:inline-flex;background:#F3F4F6;border-radius:6px;padding:2px">
+              <button class="sort-btn active" id="scoreBasisAll" data-basis="all">All time</button>
+              <button class="sort-btn" id="scoreBasisYtd" data-basis="ytd">2026 YTD</button>
+            </div>
           </div>
         </div>
         <div class="help" id="scoreBasisNote" style="margin-bottom:10px"></div>
         <div id="scoringLegendWrap" style="margin-bottom:14px"></div>
         <div id="scoreTableWrap"></div>
+        <div id="scorePagerWrap" style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:12px"></div>
         <div class="help" style="margin-top:10px">Click any column header to sort — click again to reverse.</div>
       </div>
     </div>
@@ -3937,6 +3945,8 @@ let searchQuery = "";
 let scoreSort = { col: "total", dir: "desc" };
 let scoreBasis = "all"; // "all" = lifetime totals, "ytd" = current calendar year so far
 let scoreSearchQuery = "";
+let scorePageSize = 25;   // 25 | 50 | 100 | "all"
+let scorePage = 1;        // 1-indexed current page
 let activeCustomerId = null;
 let state_leads = [];
 let leadsSearchQuery = "";
@@ -4618,19 +4628,30 @@ function renderScorecard() {
   const wrap = document.getElementById("scoreTableWrap");
   if (rows.length === 0) {
     wrap.innerHTML = '<div class="empty-state">No matches.</div>';
+    const pf0 = document.getElementById("scorePagerWrap");
+    if (pf0) pf0.innerHTML = "";
     return;
   }
+
+  // --- Pagination ---
+  const total = rows.length;
+  const pageSize = scorePageSize === "all" ? total : scorePageSize;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  if (scorePage > pageCount) scorePage = pageCount;   // clamp after search/filter shrinks the list
+  if (scorePage < 1) scorePage = 1;
+  const startIdx = (scorePage - 1) * pageSize;
+  const pageRows = rows.slice(startIdx, startIdx + pageSize);
+
   const SCORE_COLUMNS = [
-    { key: "company_name", label: "Company", numeric: false, col: "col-company" },
-    { key: "total", label: "Score", numeric: true, col: "col-num" },
-    { key: "tier", label: "Tier", numeric: true, col: "col-tier" },
-    { key: "completeness", label: "Used", numeric: true, col: "col-num", title: "Criteria used" },
-    { key: "total_revenue", label: scoreBasis === "ytd" ? "Rev (YTD)" : "Revenue", numeric: true, col: "col-money" },
-    { key: "avg_invoice", label: "Avg Inv", numeric: true, col: "col-money", title: "Average Invoice" }
+    { key: "company_name", label: "Company", numeric: false },
+    { key: "total", label: "Score", numeric: true },
+    { key: "tier", label: "Tier", numeric: true },
+    { key: "completeness", label: "Used", numeric: true, title: "Criteria used" },
+    { key: "total_revenue", label: scoreBasis === "ytd" ? "Rev (YTD)" : "Revenue", numeric: true },
+    { key: "avg_invoice", label: "Avg Inv", numeric: true, title: "Average Invoice" }
   ];
-  const colgroup = "<colgroup>" + SCORE_COLUMNS.map(function(c) { return '<col class="' + c.col + '"/>'; }).join("") + "</colgroup>";
-  let html = "<table>" + colgroup + "<thead>" + buildSortableHeaderRow(SCORE_COLUMNS, scoreSort) + "</thead><tbody>";
-  rows.forEach(function(r) {
+  let html = "<table><thead>" + buildSortableHeaderRow(SCORE_COLUMNS, scoreSort) + "</thead><tbody>";
+  pageRows.forEach(function(r) {
     const avgInv = r.period_invoices > 0 ? fmtMoney(r.period_avg_invoice) : "—";
     const color = TIER_COLORS[r.tier] || "#374151";
     // The eight scorecard criteria (Employees, Growth, Comm, CSR, Frequency, Billing, Contact,
@@ -4650,7 +4671,29 @@ function renderScorecard() {
   wrap.querySelectorAll("tr.row").forEach(function(tr) {
     tr.addEventListener("click", function() { openDetail(tr.dataset.id); });
   });
-  attachSortHandlers(wrap, scoreSort, renderScorecard);
+  attachSortHandlers(wrap, scoreSort, function() { scorePage = 1; renderScorecard(); });
+
+  // --- Pager footer ---
+  const pager = document.getElementById("scorePagerWrap");
+  if (pager) {
+    if (scorePageSize === "all" || pageCount === 1) {
+      pager.innerHTML = '<div class="help" style="margin:0">Showing all ' + total + ' companies.</div>';
+    } else {
+      const shownFrom = startIdx + 1;
+      const shownTo = Math.min(startIdx + pageSize, total);
+      pager.innerHTML =
+        '<div class="help" style="margin:0">Showing ' + shownFrom + '–' + shownTo + ' of ' + total + '</div>' +
+        '<div style="display:inline-flex;align-items:center;gap:6px">' +
+          '<button class="btn" id="scorePrev"' + (scorePage <= 1 ? " disabled" : "") + '>‹ Prev</button>' +
+          '<span style="font-size:13px;color:#374151">Page ' + scorePage + ' of ' + pageCount + '</span>' +
+          '<button class="btn" id="scoreNext"' + (scorePage >= pageCount ? " disabled" : "") + '>Next ›</button>' +
+        '</div>';
+      const prev = document.getElementById("scorePrev");
+      const next = document.getElementById("scoreNext");
+      if (prev) prev.addEventListener("click", function() { if (scorePage > 1) { scorePage--; renderScorecard(); } });
+      if (next) next.addEventListener("click", function() { if (scorePage < pageCount) { scorePage++; renderScorecard(); } });
+    }
+  }
 }
 
 // ---- Dashboard (Layer 3): portfolio health, AM workload, alerts ----
@@ -6035,16 +6078,24 @@ document.getElementById("searchBox").addEventListener("input", function(e) {
 });
 document.getElementById("scoreSearchBox").addEventListener("input", function(e) {
   scoreSearchQuery = e.target.value;
+  scorePage = 1;
+  renderScorecard();
+});
+document.getElementById("scorePageSize").addEventListener("change", function(e) {
+  scorePageSize = e.target.value === "all" ? "all" : parseInt(e.target.value, 10);
+  scorePage = 1;
   renderScorecard();
 });
 document.getElementById("scoreBasisAll").addEventListener("click", function() {
   if (scoreBasis === "all") return;
   scoreBasis = "all";
+  scorePage = 1;
   renderScorecard();
 });
 document.getElementById("scoreBasisYtd").addEventListener("click", function() {
   if (scoreBasis === "ytd") return;
   scoreBasis = "ytd";
+  scorePage = 1;
   renderScorecard();
 });
 document.getElementById("detailClose").addEventListener("click", closeDetail);
