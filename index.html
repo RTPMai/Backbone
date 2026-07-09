@@ -63,13 +63,16 @@ body{background:#F4F6F8;color:#111827;font-family:'Inter',sans-serif;font-size:1
 table{width:100%;border-collapse:collapse;font-size:13px}
 #tableWrap,#dashAmWrap{overflow-x:auto}
 #tableWrap table,#dashAmWrap table{min-width:100%}
-/* Scorecard is 6 read-only columns. The table fills the card; the Company column is the single
-   flexible column (takes all slack and truncates), the five number columns size to their content. */
+/* Scorecard: keep the columns clustered together on the left so the eye doesn't travel across
+   empty space. Company gets a comfortable but capped width and truncates; the number columns are
+   fixed-width and left-aligned right beside it; a trailing spacer column soaks up all leftover
+   width at the far right. */
 #scoreTableWrap{overflow-x:auto}
 #scoreTableWrap table{width:100%;table-layout:auto}
-#scoreTableWrap th,#scoreTableWrap td{padding:9px 12px;white-space:nowrap}
-#scoreTableWrap th.sc-company,#scoreTableWrap td.sc-company{width:99%;max-width:1px;overflow:hidden;text-overflow:ellipsis;text-align:left}
-#scoreTableWrap th.sc-num,#scoreTableWrap td.sc-num{width:1px;text-align:right}
+#scoreTableWrap th,#scoreTableWrap td{padding:9px 14px;white-space:nowrap}
+#scoreTableWrap th.sc-company,#scoreTableWrap td.sc-company{max-width:340px;overflow:hidden;text-overflow:ellipsis;text-align:left}
+#scoreTableWrap th.sc-num,#scoreTableWrap td.sc-num{width:1px;text-align:left}
+#scoreTableWrap th.sc-spacer,#scoreTableWrap td.sc-spacer{width:99%;padding:0}
 #scoreTableWrap .badge{padding:2px 5px;font-size:11px}
 th{text-align:left;padding:10px 12px;border-bottom:1px solid #E5E7EB;background:#F9FAFB;font-weight:600;color:#374151;white-space:nowrap}
 td{padding:10px 12px;border-bottom:1px solid #F3F4F6;white-space:nowrap}
@@ -4649,7 +4652,7 @@ function renderScorecard() {
     { key: "total_revenue", label: scoreBasis === "ytd" ? "Rev (YTD)" : "Revenue", numeric: true, cls: "sc-num" },
     { key: "avg_invoice", label: "Avg Inv", numeric: true, cls: "sc-num", title: "Average Invoice" }
   ];
-  let html = "<table><thead>" + buildSortableHeaderRow(SCORE_COLUMNS, scoreSort) + "</thead><tbody>";
+  let html = "<table><thead>" + buildSortableHeaderRow(SCORE_COLUMNS, scoreSort).replace("</tr>", '<th class="sc-spacer"></th></tr>') + "</thead><tbody>";
   pageRows.forEach(function(r) {
     const avgInv = r.period_invoices > 0 ? fmtMoney(r.period_avg_invoice) : "—";
     const color = TIER_COLORS[r.tier] || "#374151";
@@ -4663,6 +4666,7 @@ function renderScorecard() {
       '<td class="sc-num">' + r.completeness + '</td>' +
       '<td class="sc-num">' + fmtMoney(r.period_revenue) + '</td>' +
       '<td class="sc-num">' + avgInv + '</td>' +
+      '<td class="sc-spacer"></td>' +
       '</tr>';
   });
   html += "</tbody></table>";
