@@ -66,7 +66,19 @@ export default async function handler(req, res) {
 
     if (!r.ok) throw new Error(`Printavo HTTP ${r.status}`);
     const json = await r.json();
-    if (json.errors) throw new Error(json.errors.map(e => e.message).join(", "));
+    if (json.errors) {
+      const msg = json.errors.map(e => e.message).join(", ");
+      // Printavo occasionally returns a transient server-side timeout (e.g.
+      // "Timeout on ...") on heavier queries. Treat it like a 429: back off and
+      // retry the same query a few times before giving up, since these usually
+      // succeed on a second attempt once the server is less loaded.
+      if (/timeout/i.test(msg) && _attempt < 4) {
+        const waitMs = Math.min(15000, 2000 * Math.pow(2, _attempt)); // 2s,4s,8s,15s
+        await new Promise(res => setTimeout(res, waitMs));
+        return gql(query, _attempt + 1);
+      }
+      throw new Error(msg);
+    }
     return json.data;
   }
 
@@ -525,7 +537,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         mode: "ping",
-        buildVersion: "paid-yearwindow-v6",
+        buildVersion: "paid-yearwindow-v7",
         paidRule: "paymentStatus:PAID per-year window (fully-paid only)",
         fetchesAmountOutstanding: /amountOutstanding/.test(GQL_FIELDS),
         sort: { sortOn: sortPlan.sortOn, desc: sortPlan.desc, source: sortPlan.source },
@@ -629,14 +641,24 @@ export default async function handler(req, res) {
       for (let y = CURRENT_YEAR; y >= START_YEAR; y--) YEARS.push(y);
 
       let partial = await kvGet("backbone_reconcile_partial");
-      if (!resumeCursor && (!req.query.rstate)) partial = null; // fresh start
+      // Resume rules:
+      //  - ?reset=1 forces a fresh rebuild from year 0.
+      //  - Otherwise, resume an existing partial as long as it's recent (< 30 min).
+      //    This means that after a mid-run timeout you can just hit reconcile again
+      //    and it continues from where it stopped — no cursor needed in the URL,
+      //    no lost progress across the auto-looping UI or a manual retry.
+      //  - A stale/absent partial starts fresh.
+      const RESUME_WINDOW_MS = 30 * 60 * 1000;
+      const partialFresh = partial && partial.updatedAt &&
+        (Date.now() - new Date(partial.updatedAt).getTime() < RESUME_WINDOW_MS);
+      if (req.query.reset === "1" || !partialFresh) partial = null;
       if (!partial) partial = { acc: {}, seenPaid: [], seenAll: [], yearIdx: 0, pass: "paid" };
       const acc = partial.acc || {};
       const seenPaid = new Set(partial.seenPaid || []);
       const seenAll = new Set(partial.seenAll || []);
       let yearIdx = partial.yearIdx || 0;
       let pass = partial.pass || "paid";
-      let cursor = resumeCursor;
+      let cursor = resumeCursor || partial.cursor || null;
 
       let pages = 0;
       const deadline = Date.now() + 240000;
@@ -668,9 +690,30 @@ export default async function handler(req, res) {
 
         do {
           const after = cursor ? `,after:"${cursor}"` : "";
-          const data = await gql(
-            `query{invoices(first:25,sortOn:${sortPlan.sortOn}${statusArg}${windowArg}${after}){${GQL_FIELDS}}}`
-          );
+          // Keep this query lean. Printavo returned "Timeout on ..." on the
+          // heavier first:25 + sortOn form, so within a one-year window we use a
+          // smaller page and drop sortOn entirely — ordering is irrelevant to
+          // completeness here (we page the whole window), and omitting the sort
+          // makes the query cheaper for the server to resolve.
+          const qstr = `query{invoices(first:15${statusArg}${windowArg}${after}){${GQL_FIELDS}}}`;
+          let data;
+          try {
+            data = await gql(qstr);
+          } catch (qe) {
+            // Surface exactly which cell/query Printavo choked on, plus progress so
+            // far, instead of a bare message. Progress is already persisted below on
+            // the happy path; persist here too so a retry can resume, not restart.
+            await kvSet("backbone_reconcile_partial", {
+              acc, seenPaid: [...seenPaid], seenAll: [...seenAll],
+              yearIdx, pass, cursor: cursor || null, updatedAt: new Date().toISOString(),
+            });
+            return res.status(500).json({
+              error: (qe && qe.message) || "query failed",
+              failedAt: { year, pass, hasCursor: !!cursor, pageSize: 15, usedPaymentStatus: !!statusArg },
+              customersSoFar: Object.keys(acc).length,
+              hint: "Progress saved. Re-run reconcile to resume from this point.",
+            });
+          }
           for (const inv of data.invoices.nodes) {
             if (seen.has(inv.id)) continue;
             seen.add(inv.id);
@@ -678,7 +721,7 @@ export default async function handler(req, res) {
           }
           cursor = data.invoices.pageInfo.hasNextPage ? data.invoices.pageInfo.endCursor : null;
           pages++;
-          if (cursor) await new Promise(r => setTimeout(r, 1500));
+          if (cursor) await new Promise(r => setTimeout(r, 1200));
           if (Date.now() >= deadline) break outer;
         } while (cursor);
 
@@ -694,10 +737,11 @@ export default async function handler(req, res) {
 
       const finished = yearIdx >= YEARS.length;
 
-      // Persist progress (whether finished or resuming).
+      // Persist progress (whether finished or resuming), including the in-window
+      // cursor so a resume continues mid-year rather than restarting the year.
       await kvSet("backbone_reconcile_partial", {
         acc, seenPaid: [...seenPaid], seenAll: [...seenAll],
-        yearIdx, pass, updatedAt: new Date().toISOString(),
+        yearIdx, pass, cursor: cursor || null, updatedAt: new Date().toISOString(),
       });
 
       if (!finished) {
@@ -706,8 +750,9 @@ export default async function handler(req, res) {
           ok: true, mode, status: "partial", pages,
           customersSoFar: Object.keys(acc).length,
           progress: { year: curYear, pass, cursor: cursor || null },
-          // rstate flag tells the resumed call NOT to treat itself as a fresh start.
-          nextUrl: `/api/printavo-sync?mode=reconcile&rstate=1${cursor ? "&cursor=" + encodeURIComponent(cursor) : ""}`,
+          // Resume reads the saved partial (incl. cursor) automatically, so the
+          // URL just needs to re-trigger reconcile. No cursor/rstate needed.
+          nextUrl: `/api/printavo-sync?mode=reconcile`,
         });
       }
 
@@ -765,7 +810,7 @@ export default async function handler(req, res) {
         purgedStaleRows: Math.max(0, beforeCount - synced.length),
         protectedRowsKept: protectedCount,
         backupKey: "backbone_data_backup",
-        buildVersion: "paid-yearwindow-v6",
+        buildVersion: "paid-yearwindow-v7",
         totalPaidRevenue: Math.round(totalPaid * 100) / 100,
         byYear: yearDiag,
         schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
