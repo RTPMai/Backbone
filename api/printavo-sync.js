@@ -234,6 +234,52 @@ export default async function handler(req, res) {
     return `nodes{id visualId createdAt total amountOutstanding status{id name}${contactExtra}${link}}pageInfo{hasNextPage endCursor}`;
   }
 
+  // Resolve a VALID sort field for the invoices query by introspecting the
+  // OrderSortField enum. We can't hardcode one: CREATED_AT_DESC is NOT a valid
+  // value (Printavo rejects it), and the enum's exact names aren't documented.
+  // Returns { sortOn, desc } — desc indicates whether the chosen value already
+  // means newest-first, so callers know the paging direction.
+  async function resolveInvoiceSort() {
+    let values = [];
+    try {
+      const data = await gql(`query{__type(name:"OrderSortField"){enumValues{name}}}`);
+      values = ((data.__type && data.__type.enumValues) || []).map(v => v.name);
+    } catch (e) {
+      values = [];
+    }
+    const has = n => values.includes(n);
+    // Prefer an explicit created/timestamp descending value; then any created;
+    // then a generic timestamp/date; finally fall back to VISUAL_ID (always
+    // present historically). We record whether the pick is inherently desc.
+    const descCandidates = ["CREATED_AT_DESC", "CREATED_DESC", "TIMESTAMPS_DESC", "DATE_DESC", "UPDATED_AT_DESC"];
+    for (const c of descCandidates) if (has(c)) return { sortOn: c, desc: true, source: "enum-desc", enumValues: values };
+    const ascCandidates = ["CREATED_AT", "CREATED", "TIMESTAMPS", "DATE", "INVOICE_DATE"];
+    for (const c of ascCandidates) if (has(c)) return { sortOn: c, desc: false, source: "enum-asc", enumValues: values };
+    if (has("VISUAL_ID")) return { sortOn: "VISUAL_ID", desc: false, source: "fallback-visualid", enumValues: values };
+    // If introspection returned nothing usable, use VISUAL_ID unqualified — it's
+    // what the original code used and is accepted by the API.
+    return { sortOn: "VISUAL_ID", desc: false, source: "default", enumValues: values };
+  }
+
+  // Introspect the argument names available on the Query.invoices field, so we
+  // only pass filter args (like createdAfter) that actually exist — avoids the
+  // same class of error as the invalid sortOn value.
+  async function resolveInvoiceArgs() {
+    try {
+      const data = await gql(`query{__type(name:"Query"){fields{name args{name}}}}`);
+      const fields = (data.__type && data.__type.fields) || [];
+      const inv = fields.find(f => f.name === "invoices");
+      const argNames = inv ? (inv.args || []).map(a => a.name) : [];
+      return {
+        hasCreatedAfter: argNames.includes("createdAfter"),
+        hasInProductionAfter: argNames.includes("inProductionAfter"),
+        argNames,
+      };
+    } catch (e) {
+      return { hasCreatedAfter: false, hasInProductionAfter: false, argNames: [] };
+    }
+  }
+
   // Fold one invoice into a per-customer accumulator, using the resolved plan.
   // Skips $0 invoices so dormant accounts with recent $0 records don't read as
   // active (documented BackBone gotcha).
@@ -431,6 +477,8 @@ export default async function handler(req, res) {
       });
     }
     const GQL_FIELDS = buildFieldSelection(plan);
+    const sortPlan = await resolveInvoiceSort();
+    const argPlan = await resolveInvoiceArgs();
 
     // =====================================================================
     // PING — no data pull. Confirms which build is deployed and how the sync
@@ -440,9 +488,12 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         mode: "ping",
-        buildVersion: "paid-only-createddesc-v3",
+        buildVersion: "paid-only-sortfix-v4",
         paidRule: "amountOutstanding === 0 (fully-paid only)",
         fetchesAmountOutstanding: /amountOutstanding/.test(GQL_FIELDS),
+        sort: { sortOn: sortPlan.sortOn, desc: sortPlan.desc, source: sortPlan.source },
+        orderSortFieldValues: sortPlan.enumValues,
+        invoiceArgs: argPlan.argNames,
         schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
       });
     }
@@ -470,8 +521,14 @@ export default async function handler(req, res) {
 
       do {
         const after = cursor ? `,after:"${cursor}"` : "";
+        // Build the date filter from a verified argument only. createdAfter is
+        // preferred; inProductionAfter is the documented-working fallback; if
+        // neither exists we omit the bound and rely on id dedupe + high-water.
+        let dateArg = "";
+        if (argPlan.hasCreatedAfter) dateArg = `,createdAfter:"${overlapIso}"`;
+        else if (argPlan.hasInProductionAfter) dateArg = `,inProductionAfter:"${overlapIso}"`;
         const data = await gql(
-          `query{invoices(first:25,sortOn:CREATED_AT_DESC,createdAfter:"${overlapIso}"${after}){${GQL_FIELDS}}}`
+          `query{invoices(first:25,sortOn:${sortPlan.sortOn}${dateArg}${after}){${GQL_FIELDS}}}`
         );
         for (const inv of data.invoices.nodes) {
           if (seen.has(inv.id)) continue;
@@ -528,14 +585,13 @@ export default async function handler(req, res) {
 
       do {
         const after = cursor ? `,after:"${cursor}"` : "";
-        // Page newest-first by creation date. VISUAL_ID order is NOT guaranteed
-        // chronological in Printavo, so paging by it could reach hasNextPage:false
-        // without ever traversing the newest invoices — which silently dropped the
-        // current year (2026) from the roster. CREATED_AT_DESC is the same sort the
-        // incremental path uses successfully, and newest-first means recent years
-        // are captured on the first pages rather than the last.
+        // Page by a VALID resolved sort. Newest-first when the enum offers a
+        // descending value; either way we page the FULL history to the end, so
+        // completeness doesn't depend on the direction — only on reaching every
+        // page. (The earlier VISUAL_ID assumption about chronological order, and
+        // the invalid hardcoded CREATED_AT_DESC, are both replaced by this.)
         const data = await gql(
-          `query{invoices(first:25,sortOn:CREATED_AT_DESC${after}){${GQL_FIELDS}}}`
+          `query{invoices(first:25,sortOn:${sortPlan.sortOn}${after}){${GQL_FIELDS}}}`
         );
         for (const inv of data.invoices.nodes) {
           if (seen.has(inv.id)) continue;
@@ -610,7 +666,7 @@ export default async function handler(req, res) {
         purgedStaleRows: Math.max(0, beforeCount - synced.length),
         protectedRowsKept: protectedCount,
         backupKey: "backbone_data_backup",
-        buildVersion: "paid-only-createddesc-v3",
+        buildVersion: "paid-only-sortfix-v4",
         totalPaidRevenue: Math.round(totalPaid * 100) / 100,
         byYear: yearDiag,
         schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
