@@ -5330,9 +5330,26 @@ async function handleReconcile() {
       }
 
       if (d.status === "done") {
-        statusEl.textContent =
-          "Done — " + (d.customers != null ? d.customers : "?") + " customers, roster size " +
+        var msg = "Done — " + (d.customers != null ? d.customers : "?") + " customers, roster size " +
           (d.rosterSize != null ? d.rosterSize : "?") + ".";
+        if (d.totalPaidRevenue != null) {
+          msg += " Total paid: " + fmtMoney(d.totalPaidRevenue) + ".";
+        }
+        // Per-year paid revenue / invoice diagnostic — makes it obvious whether a
+        // year (e.g. 2026) was captured at all, and whether low revenue is real.
+        if (d.byYear && typeof d.byYear === "object") {
+          var yrs = Object.keys(d.byYear).sort().reverse();
+          var lines = yrs.map(function (y) {
+            var b = d.byYear[y];
+            return y + ": " + fmtMoney(b.paidRevenue) + " paid · " + b.invoices + " invoices";
+          });
+          statusEl.innerHTML = msg +
+            '<div style="margin-top:8px;font-size:12px;line-height:1.7;color:#374151">' +
+            (d.buildVersion ? '<div style="color:#9CA3AF">build ' + d.buildVersion + '</div>' : "") +
+            lines.join("<br>") + '</div>';
+        } else {
+          statusEl.textContent = msg + " (no byYear diagnostic — old sync build deployed)";
+        }
         // Pull the freshly-written backbone_data back into the UI.
         await loadData();
         break;
