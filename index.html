@@ -358,8 +358,8 @@ textarea.field{min-height:60px;resize:vertical}
       </div>
       <div class="kpi">
         <div class="kpi-lbl">Data source</div>
-        <div class="kpi-val" style="font-size:15px">Printavo (live)</div>
-        <div class="kpi-s">Auto-sync from Printavo</div>
+        <div class="kpi-val" style="font-size:15px">Apparelytics</div>
+        <div class="kpi-s">Manual paste · use paid basis, not invoiced</div>
       </div>
     </div>
 
@@ -4893,7 +4893,10 @@ function renderDashboard() {
   // --- Industry mix ---
   const industryMap = {};
   rows.forEach(function(r) {
-    const key = r.industry || "Unclassified";
+    // A record whose industry field holds two comma-joined industries can't be attributed to a
+    // single lane, so it shouldn't render as its own industry bucket. Fold it into "Needs review"
+    // alongside the genuinely unclassified ones.
+    const key = r.dualIndustry ? "Needs review" : (r.industry || "Unclassified");
     if (!industryMap[key]) industryMap[key] = { count: 0, revenue: 0 };
     industryMap[key].count++;
     industryMap[key].revenue += r.total_revenue || 0;
@@ -4906,7 +4909,7 @@ function renderDashboard() {
     '<div class="section-lbl" style="margin-top:0">By industry (client count)</div>' +
     industryList.map(function(i) {
       const pct = (i.count / maxIndustryCount * 100).toFixed(0);
-      const color = i.industry === "Unclassified" ? "#D1D5DB" : "#3D9A5C";
+      const color = (i.industry === "Unclassified" || i.industry === "Needs review") ? "#D1D5DB" : "#3D9A5C";
       return '<div class="mix-bar-row">' +
         '<div class="mix-bar-lbl">' + i.industry + '</div>' +
         '<div class="mix-bar-track"><div class="mix-bar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>' +
