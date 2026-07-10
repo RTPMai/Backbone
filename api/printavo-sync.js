@@ -562,6 +562,26 @@ export default async function handler(req, res) {
       await kvSet("backbone_reconcile_partial", { acc: {}, seen: [] }); // clear
 
       const protectedCount = (state.synced || []).filter(isProtectedRow).length;
+
+      // Per-year diagnostic so you can see exactly what the reconcile computed,
+      // without opening Upstash. paidRevenue = fully-paid-only revenue booked to
+      // each year; invoices = all non-$0 invoices in that year (paid or not).
+      const yearDiag = {};
+      Object.values(acc).forEach(function (r) {
+        Object.keys(r.revenue_by_year || {}).forEach(function (y) {
+          if (!yearDiag[y]) yearDiag[y] = { paidRevenue: 0, invoices: 0 };
+          yearDiag[y].paidRevenue += Number(r.revenue_by_year[y]) || 0;
+        });
+        Object.keys(r.invoices_by_year || {}).forEach(function (y) {
+          if (!yearDiag[y]) yearDiag[y] = { paidRevenue: 0, invoices: 0 };
+          yearDiag[y].invoices += Number(r.invoices_by_year[y]) || 0;
+        });
+      });
+      Object.keys(yearDiag).forEach(function (y) {
+        yearDiag[y].paidRevenue = Math.round(yearDiag[y].paidRevenue * 100) / 100;
+      });
+      const totalPaid = Object.values(acc).reduce(function (s, r) { return s + (Number(r.total_revenue) || 0); }, 0);
+
       return res.status(200).json({
         ok: true, mode, status: "done", pages,
         customers: Object.keys(acc).length, rosterSize: synced.length, reconciledAt: nowIso,
@@ -569,6 +589,8 @@ export default async function handler(req, res) {
         purgedStaleRows: Math.max(0, beforeCount - synced.length),
         protectedRowsKept: protectedCount,
         backupKey: "backbone_data_backup",
+        totalPaidRevenue: Math.round(totalPaid * 100) / 100,
+        byYear: yearDiag,
         schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
       });
     }
