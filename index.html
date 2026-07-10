@@ -190,6 +190,13 @@ textarea.field{min-height:60px;resize:vertical}
 .switch input:checked+.slider{background:#3D9A5C}
 .switch input:checked+.slider::before{transform:translateX(18px)}
 .admin-lock{text-align:center;padding:40px 20px}
+.scoring-legend-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:20px 28px;align-items:start}
+.scoring-legend-col{min-width:0}
+.scoring-legend-col>div:first-child{padding-bottom:5px;border-bottom:1px solid var(--line-soft);margin-bottom:6px}
+.scan-card-bar{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.scan-card-status{font-size:12px;color:var(--muted)}
+.scan-card-status.err{color:#DC2626}
+.scan-card-status.ok{color:var(--green)}
 .admin-lock input{width:240px;padding:10px 12px;border:1px solid #E5E7EB;border-radius:8px;font-size:14px;font-family:inherit;margin:12px 8px 0 0}
 .logout-link{font-size:12px;color:#6B7280;cursor:pointer;text-decoration:underline}
 .logout-link:hover{color:#111827}
@@ -275,6 +282,14 @@ textarea.field{min-height:60px;resize:vertical}
           the same industry/AM logic the Roster uses. "Promote to Roster" adds it as a
           $0 / 0-invoice prospect record you can track alongside real clients.
         </div>
+        <div class="scan-card-bar">
+          <button class="btn btn-gray" id="scanCardBtn" type="button">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M7 15h4"/><circle cx="17" cy="10" r="2"/><path d="M15 15c0-1.1.9-2 2-2s2 .9 2 2"/></svg>
+            Scan business card
+          </button>
+          <input type="file" id="scanCardInput" accept="image/*" capture="environment" style="display:none"/>
+          <span id="scanCardStatus" class="scan-card-status"></span>
+        </div>
         <div class="lead-form-grid">
           <div>
             <label class="field-lbl">Company name *</label>
@@ -341,8 +356,8 @@ textarea.field{min-height:60px;resize:vertical}
       </div>
       <div class="kpi">
         <div class="kpi-lbl">Data source</div>
-        <div class="kpi-val" style="font-size:15px">Apparelytics</div>
-        <div class="kpi-s">Manual refresh, ~100 record cap</div>
+        <div class="kpi-val" style="font-size:15px">Printavo (live)</div>
+        <div class="kpi-s">Auto-sync from Printavo</div>
       </div>
     </div>
 
@@ -4156,6 +4171,21 @@ function getAssignedAM(industry) {
   return { industry: "Other / Not Listed", am: "Abby Penton", isFallback: true };
 }
 
+// Detect records where two industries got stuck into one field (e.g.
+// "Blue Collar/Agriculture, Corporate/Small Business"). Tricky because one *legitimate*
+// lane name — "City Fire, EMS & Police" — itself contains a comma. So we don't just look
+// for a comma: we only flag as dual when the exact string isn't a known lane AND at least
+// two comma-separated parts are each valid lane names on their own.
+function isDualIndustry(industry) {
+  if (!industry || industry.indexOf(",") === -1) return false;
+  if (INDUSTRY_LANES.some(function(l) { return l.industry === industry; })) return false; // exact single lane (e.g. City Fire, EMS & Police)
+  const parts = industry.split(",").map(function(p) { return p.trim(); }).filter(Boolean);
+  const validParts = parts.filter(function(p) {
+    return INDUSTRY_LANES.some(function(l) { return l.industry === p; });
+  });
+  return validParts.length >= 2;
+}
+
 // Best-guess industry from company name alone -- used only as a fallback for clients NOT found in
 // the Monday.com Client Profiles export (e.g. brand new prospects). Never applied without a click.
 const INDUSTRY_NAME_RULES = [
@@ -4569,15 +4599,15 @@ function renderScoringLegend() {
           '<span style="font-weight:700;color:#374151;width:14px;flex-shrink:0">' + o[0] + '</span>' +
           '<span style="color:#6B7280">' + label + '</span></div>';
       }).join("");
-    return '<div style="min-width:220px;flex:1">' +
-      '<div style="font-size:12px;font-weight:700;color:#111827;margin-bottom:4px">' + field.label.replace(" (scorecard)", "") + '</div>' +
+    return '<div class="scoring-legend-col">' +
+      '<div style="font-size:12px;font-weight:700;color:#111827;margin-bottom:6px">' + field.label.replace(" (scorecard)", "") + '</div>' +
       rows + '</div>';
   }).join("");
 
   document.getElementById("scoringLegendWrap").innerHTML =
     '<details class="alert-group sev-low" open>' +
       '<summary>Scoring guide — what each number means</summary>' +
-      '<div class="alert-group-body" style="display:flex;gap:24px;flex-wrap:wrap">' + html + '</div>' +
+      '<div class="alert-group-body scoring-legend-grid">' + html + '</div>' +
     '</details>';
   scoringLegendRendered = true;
 }
@@ -4762,6 +4792,7 @@ function getDashboardData() {
     const daysSinceVal = daysSince(c.last_invoice_date); // recency always reflects real last activity, not the year filter
     const industry = enrichment.industry || "";
     const explicitAM = enrichment.account_manager || "";
+    const dualIndustry = isDualIndustry(industry);
     const lane = !explicitAM ? getAssignedAM(industry) : null;
     const resolvedAM = explicitAM || (lane && !lane.varies ? lane.am : "");
     return Object.assign({}, cc, sc, {
@@ -4769,7 +4800,11 @@ function getDashboardData() {
       industry: industry,
       am: resolvedAM,
       amExplicit: !!explicitAM,
-      needsReview: !industry && !explicitAM,
+      // Needs review if there's no industry AND no AM, OR if two industries are stuck
+      // together (e.g. "Blue Collar/Agriculture, Corporate/Small Business") — a comma-joined
+      // pair can't route to a single lane, so it needs a human to pick one.
+      needsReview: (!industry && !explicitAM) || dualIndustry,
+      dualIndustry: dualIndustry,
       hasYearData: adj.hasYearData
     });
   });
@@ -4981,8 +5016,13 @@ function renderDashboard() {
       "unassigned", "⚪ ",
       "Needs industry/AM assignment",
       unassigned, "sev-low", "amber",
-      function(r) { return fmtMoney(r.total_revenue) + " · " + r.invoice_count + " invoices"; },
-      "Every client has at least an industry or AM set."
+      function(r) {
+        const reason = r.dualIndustry
+          ? 'Two industries set (' + r.industry + ') — pick one'
+          : 'No industry or AM set';
+        return reason + ' · ' + fmtMoney(r.total_revenue);
+      },
+      "Every client has a single industry or an AM set."
     );
 
   document.getElementById("dashAlertsWrap").innerHTML = alertsHtml;
@@ -5424,6 +5464,74 @@ function renderLeadsPage() {
   });
 }
 
+function scanCardStatus(msg, cls) {
+  const el = document.getElementById("scanCardStatus");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.className = "scan-card-status" + (cls ? " " + cls : "");
+}
+
+function fileToBase64(file) {
+  return new Promise(function(resolve, reject) {
+    const r = new FileReader();
+    r.onload = function() { resolve(String(r.result).split(",")[1]); };
+    r.onerror = function() { reject(new Error("Could not read the image file.")); };
+    r.readAsDataURL(file);
+  });
+}
+
+async function handleScanCard(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = ""; // reset so the same file can be re-picked
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) { scanCardStatus("Image is over 8 MB — try a smaller photo.", "err"); return; }
+
+  const btn = document.getElementById("scanCardBtn");
+  btn.disabled = true;
+  scanCardStatus("Reading card…");
+  try {
+    const b64 = await fileToBase64(file);
+    const media_type = file.type && file.type.indexOf("image/") === 0 ? file.type : "image/jpeg";
+    const r = await fetch("/api/scan-card", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image: b64, media_type: media_type })
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) {
+      scanCardStatus("Scan failed: " + (data.error || ("HTTP " + r.status)) + ". You can still type the details in.", "err");
+      return;
+    }
+    // Fill only fields the card actually yielded; never clobber something already typed.
+    function setIf(id, val) {
+      if (!val) return false;
+      const el = document.getElementById(id);
+      if (el && !el.value.trim()) { el.value = val; return true; }
+      return false;
+    }
+    const filled = [];
+    if (setIf("leadCompanyName", data.company_name)) filled.push("company");
+    if (setIf("leadContactName", data.contact_name)) filled.push("contact");
+    if (setIf("leadWebsite", data.website_url)) filled.push("website");
+    // Fold phone/email/title into inquiry notes so nothing is lost.
+    const extras = [];
+    if (data.contact_title) extras.push("Title: " + data.contact_title);
+    if (data.email) extras.push("Email: " + data.email);
+    if (data.phone) extras.push("Phone: " + data.phone);
+    if (extras.length) {
+      const notes = document.getElementById("leadInquiryNotes");
+      const stamp = "Scanned from business card — " + extras.join(" · ");
+      notes.value = notes.value.trim() ? notes.value.trim() + "\n" + stamp : stamp;
+      filled.push("contact info");
+    }
+    scanCardStatus(filled.length ? "Filled: " + filled.join(", ") + ". Check before adding." : "No readable fields found — enter details manually.", filled.length ? "ok" : "err");
+  } catch (e) {
+    scanCardStatus("Scan error: " + (e && e.message ? e.message : "unknown") + ". Enter details manually.", "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function handleAddLead() {
   const name = document.getElementById("leadCompanyName").value.trim();
   const errEl = document.getElementById("addLeadErr");
@@ -5468,7 +5576,19 @@ function openLeadDetail(leadId) {
   activeLeadId = leadId;
   document.getElementById("leadDetailTitle").textContent = lead.company_name;
   document.getElementById("leadStatusSelect").value = lead.status;
-  renderLeadDetailBody(lead);
+  try {
+    renderLeadDetailBody(lead);
+  } catch (err) {
+    // Never let a malformed record leave the panel blank/unopenable — show what we can.
+    console.error("Lead detail render failed:", err);
+    document.getElementById("leadDetailBody").innerHTML =
+      '<div class="err">This lead\'s saved qualification data is malformed, so the full view couldn\'t render (' +
+      (err && err.message ? err.message : "unknown error") + '). ' +
+      'You can still re-run qualification below to rebuild it.</div>' +
+      '<div style="margin-top:12px"><button class="btn btn-green" id="rerunQualBtn">Run / re-run AI qualification</button></div>';
+    const rb = document.getElementById("rerunQualBtn");
+    if (rb) rb.addEventListener("click", handleRunQualification);
+  }
   document.getElementById("leadDetailOverlay").classList.add("open");
 }
 
@@ -5540,6 +5660,22 @@ function renderLeadDetailBody(lead) {
     document.getElementById("saveLeadIntakeBtn").addEventListener("click", handleSaveLeadIntake);
     return;
   }
+
+  // A qualification can be present but partial (older paste, truncated JSON, schema drift).
+  // Backfill every sub-object the render below reads so a missing field can't throw and
+  // silently prevent the panel from opening. Missing pieces just render as "—".
+  q.qualification_scoring = q.qualification_scoring || {};
+  if (q.qualification_scoring.total_score == null) q.qualification_scoring.total_score = "—";
+  if (!q.qualification_scoring.qualification_tier) q.qualification_scoring.qualification_tier = "Unscored";
+  q.company_overview   = q.company_overview   || {};
+  q.apparel_opportunity= q.apparel_opportunity|| {};
+  q.growth_signals     = q.growth_signals     || {};
+  q.routing            = q.routing            || {};
+  q.executive_summary  = q.executive_summary  || {};
+  q.red_flags          = q.red_flags          || {};
+  if (!Array.isArray(q.red_flags.red_flags_detected)) q.red_flags.red_flags_detected = [];
+  if (!Array.isArray(q.assumptions_flagged)) q.assumptions_flagged = [];
+  if (!Array.isArray(q.key_contacts)) q.key_contacts = q.key_contacts ? [] : [];
 
   const s = q.qualification_scoring;
   const suggestedAM = (function() {
@@ -6135,6 +6271,8 @@ document.getElementById("dashYearSelect").addEventListener("change", function(e)
 });
 
 document.getElementById("addLeadBtn").addEventListener("click", handleAddLead);
+document.getElementById("scanCardBtn").addEventListener("click", function() { document.getElementById("scanCardInput").click(); });
+document.getElementById("scanCardInput").addEventListener("change", handleScanCard);
 document.getElementById("leadsSearchBox").addEventListener("input", function(e) {
   leadsSearchQuery = e.target.value;
   renderLeadsPage();
