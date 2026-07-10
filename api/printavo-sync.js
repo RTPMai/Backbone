@@ -231,13 +231,19 @@ export default async function handler(req, res) {
     }
     const link = `${plan.linkField}{${subFields.join(" ")}}`;
     const contactExtra = plan.linkField === "contact" ? "" : "contact{fullName}";
-    return `nodes{id visualId createdAt total status{id name}${contactExtra}${link}}pageInfo{hasNextPage endCursor}`;
+    return `nodes{id visualId createdAt total amountOutstanding status{id name}${contactExtra}${link}}pageInfo{hasNextPage endCursor}`;
   }
 
   // Fold one invoice into a per-customer accumulator, using the resolved plan.
   // Skips $0 invoices so dormant accounts with recent $0 records don't read as
-  // active (documented BackBone gotcha). Unpaid non-$0 invoices still count —
-  // total_revenue means invoiced value, matching the existing seed data.
+  // active (documented BackBone gotcha).
+  //
+  // Revenue rule (paid-only): an invoice contributes its full `total` to revenue
+  // ONLY when it is fully paid (amountOutstanding === 0). A partially-paid or
+  // unpaid invoice contributes $0 to revenue. Invoice COUNT, by contrast, still
+  // includes every real (non-$0) invoice regardless of payment status, so order
+  // frequency / median-gap reflect actual order cadence rather than collection
+  // timing. This is why total_revenue and invoice_count can legitimately diverge.
   function foldInvoice(acc, inv, plan) {
     const link = inv[plan.linkField];
     if (!link) return;
@@ -265,20 +271,41 @@ export default async function handler(req, res) {
     const amount = Number(inv.total) || 0;
     if (amount <= 0) return; // $0 filter
 
+    // Fully-paid only: outstanding must be exactly 0 (within a cent, to absorb
+    // floating-point noise) for the invoice's total to count as revenue.
+    const outstanding = Number(inv.amountOutstanding);
+    const isFullyPaid = Number.isFinite(outstanding) && outstanding < 0.005;
+    const paidAmount = isFullyPaid ? amount : 0;
+
+    const d = inv.createdAt ? inv.createdAt.slice(0, 10) : null;
+    const year = d ? d.slice(0, 4) : null;
+
     if (!acc[id]) {
       acc[id] = {
         customer_id: id,
         company_name: companyName,
         invoice_count: 0,
         total_revenue: 0,
+        revenue_by_year: {},   // paid-only revenue per calendar year
+        invoices_by_year: {},  // invoice count per calendar year (all non-$0 invoices)
         last_invoice_date: null,
         _dates: [], // collected here, converted to median_gap_days at finalize
       };
     }
     const row = acc[id];
     row.invoice_count += 1;
-    row.total_revenue += amount;
-    const d = inv.createdAt ? inv.createdAt.slice(0, 10) : null;
+    row.total_revenue += paidAmount;
+    if (year) {
+      row.invoices_by_year[year] = (row.invoices_by_year[year] || 0) + 1;
+      if (paidAmount > 0) {
+        row.revenue_by_year[year] = (row.revenue_by_year[year] || 0) + paidAmount;
+      } else if (row.revenue_by_year[year] === undefined) {
+        // Ensure the year key exists (as 0) if the customer had activity that year
+        // but no paid revenue — keeps the dashboard year filter from treating the
+        // year as "missing data" when it's really "$0 collected".
+        row.revenue_by_year[year] = 0;
+      }
+    }
     if (d) {
       row._dates.push(d);
       if (!row.last_invoice_date || d > row.last_invoice_date) row.last_invoice_date = d;
@@ -359,12 +386,29 @@ export default async function handler(req, res) {
         // Incremental: add the delta onto the running totals. Median gap is NOT
         // recomputed here (a partial recent slice would be misleading) — the
         // nightly reconcile owns that. Carry the existing value forward.
+        //
+        // Paid-revenue caveat: incremental pulls invoices by createdAt high-water
+        // mark, so a payment that CLEARS an older invoice (created before the
+        // window) is not re-seen here and its revenue won't appear until the
+        // nightly reconcile rebuilds from scratch. Reconcile is the source of
+        // truth for paid revenue; incremental keeps it approximately fresh.
         const cur = byId[id];
+        // Merge per-year buckets additively (delta counts/revenue land in their year).
+        const mergedRevByYear = { ...(cur.revenue_by_year || {}) };
+        Object.keys(cleanAgg.revenue_by_year || {}).forEach(y => {
+          mergedRevByYear[y] = (Number(mergedRevByYear[y]) || 0) + (Number(cleanAgg.revenue_by_year[y]) || 0);
+        });
+        const mergedInvByYear = { ...(cur.invoices_by_year || {}) };
+        Object.keys(cleanAgg.invoices_by_year || {}).forEach(y => {
+          mergedInvByYear[y] = (Number(mergedInvByYear[y]) || 0) + (Number(cleanAgg.invoices_by_year[y]) || 0);
+        });
         byId[id] = {
           ...cur,
           company_name: cleanAgg.company_name && cleanAgg.company_name !== "Unknown" ? cleanAgg.company_name : cur.company_name,
           invoice_count: (Number(cur.invoice_count) || 0) + cleanAgg.invoice_count,
           total_revenue: (Number(cur.total_revenue) || 0) + cleanAgg.total_revenue,
+          revenue_by_year: mergedRevByYear,
+          invoices_by_year: mergedInvByYear,
           last_invoice_date: cleanAgg.last_invoice_date && (!cur.last_invoice_date || cleanAgg.last_invoice_date > cur.last_invoice_date)
             ? cleanAgg.last_invoice_date : cur.last_invoice_date,
         };
