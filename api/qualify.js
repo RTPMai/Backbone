@@ -68,6 +68,20 @@ Marketing (owns promo product/event merchandise), and Owner/President/GM for sma
 where one person likely controls purchasing. Only report names, titles, and contact details
 that are genuinely public — never guess or fabricate a name, email, or phone number.
 
+EMAIL IS A PRIORITY. The sales team needs a working email for each contact. For every contact,
+put their email in the dedicated "email" field and phone in the "phone" field (do NOT bury them
+inside a freeform blob). Work hard to find an email:
+  1. First look for a directly published address on the company site, LinkedIn, or a broker.
+  2. If none is published BUT you can confirm the company's email pattern from any other
+     employee address you found (e.g. jsmith@acme.com implies first-initial+last), you may
+     construct this person's likely address using that confirmed pattern — set confidence to
+     "third-party unverified" and note in "source" that it is pattern-inferred from <example>.
+  3. If you cannot confirm a pattern, still record a generic company inbox (info@, sales@,
+     contact@) in a separate contact row labeled "General inbox" so there is always at least
+     one reachable email.
+Never invent a pattern you have not seen evidence for. If truly nothing is findable, leave
+"email" as an empty string and say so in assumptions_flagged.
+
 For every contact, set "confidence" to exactly one of:
   "confirmed" — found directly on the company's own site/page (first-party)
   "third-party unverified" — from a data broker (ZoomInfo, RocketReach, success.ai, etc.),
@@ -93,7 +107,7 @@ cannot determine — never fabricate specifics):
     "urgency": "why now vs. later"
   },
   "key_contacts": [
-    { "name": "", "title": "", "relevance": "", "confidence": "", "source": "", "contact_info": "" }
+    { "name": "", "title": "", "relevance": "", "confidence": "", "source": "", "email": "", "phone": "", "contact_info": "" }
   ],
   "company_overview": {
     "company_name": "", "website": "", "hq_location": "", "number_of_locations": "",
@@ -139,10 +153,38 @@ cannot determine — never fabricate specifics):
   "assumptions_flagged": []
 }
 
-Note: industry_classification should be your best single-word-or-phrase read of the
-industry (e.g. "K-12", "Blue Collar/Agriculture", "Corporate/Small Business") — the
-app maps that to an Account Manager itself using its own industry table, so do not
-invent an AM name. Leave routing_note for anything routing-relevant that doesn't fit
+Note: industry_classification MUST be chosen from EXACTLY this fixed list of the app's
+industry lanes — copy the label verbatim, including punctuation and spelling. Do NOT
+invent a new label, and do NOT return a generic term like "Construction",
+"Manufacturing", "Healthcare", "Technology", or "Nonprofit"; map those onto the closest
+lane below. The app routes to an Account Manager off this exact string, so a mismatch
+mis-routes the lead.
+
+Allowed values (pick the single best fit):
+  "Blue Collar/Agriculture"  (construction, trades, manufacturing, ag, landscaping, logistics)
+  "Cities/Associations"      (municipal, government, nonprofits, associations)
+  "City Fire, EMS & Police"  (fire depts, EMS, law enforcement, public safety)
+  "Contract"
+  "Military/Reserve"
+  "Heathcare & Wellness"     (note the app spells it "Heathcare"; use it verbatim — medical, clinics, wellness)
+  "Church"                   (religious, ministries, faith orgs)
+  "Clubs - Non sports"
+  "Dance"
+  "Events"                   (festivals, one-off event orgs)
+  "FART: Fun Activities & Rec"
+  "Marketing Firm"           (agencies, advertising, marketing)
+  "Music & Entertainment"
+  "Real Estate"
+  "Lifestyle Brands"
+  "Food & Hospitality"       (restaurants, hospitality, food service)
+  "Club Sports/School Athletics" (youth/club sports, school athletics)
+  "Higher Education/Universities"
+  "K-12"                     (schools, districts, education)
+  "PTO/Boosters"
+  "Corporate/Small Business" (general B2B, corporate, professional services, tech, small business)
+  "Personal Order"
+
+If nothing fits, use "Corporate/Small Business". Do not invent an AM name. Leave routing_note for anything routing-relevant that doesn't fit
 elsewhere (e.g. "existing client expansion — route to current AM" if this looks like
 an existing account, or "large strategic account — flag for Sales Director review"
 for very large prospects).`;
