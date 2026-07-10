@@ -4772,17 +4772,25 @@ function getDashboardYears() {
 }
 
 function yearAdjustedCustomer(c, year) {
-  if (year === "all" || !c.revenue_by_year || c.revenue_by_year[year] === undefined) {
-    return { customer: c, hasYearData: year === "all" };
+  if (year === "all") {
+    return { customer: c, hasYearData: true };
   }
-  const yearRevenue = c.revenue_by_year[year];
-  const yearInvoices = (c.invoices_by_year && c.invoices_by_year[year] !== undefined) ? c.invoices_by_year[year] : null;
+  // A specific year is selected. If this customer has no revenue_by_year data for
+  // that year, they made $0 that year — they must NOT fall back to their all-time
+  // total_revenue (that's what inflated the yearly dashboard to the all-time sum).
+  // Zero them out for the year and flag hasYearData:false so the "missing data"
+  // note can distinguish genuine $0 from absent breakdowns.
+  const hasBreakdown = c.revenue_by_year && typeof c.revenue_by_year === "object";
+  const yearRevenue = hasBreakdown && c.revenue_by_year[year] !== undefined ? c.revenue_by_year[year] : 0;
+  const yearInvoices = (c.invoices_by_year && c.invoices_by_year[year] !== undefined) ? c.invoices_by_year[year] : 0;
   return {
     customer: Object.assign({}, c, {
       total_revenue: yearRevenue,
-      invoice_count: yearInvoices !== null ? yearInvoices : c.invoice_count
+      invoice_count: yearInvoices
     }),
-    hasYearData: true
+    // hasYearData is true only when this customer actually has a breakdown entry for
+    // the year (even $0). Records with no revenue_by_year at all are "missing data".
+    hasYearData: !!(hasBreakdown && c.revenue_by_year[year] !== undefined)
   };
 }
 
@@ -4841,6 +4849,11 @@ function renderDashboard() {
     return;
   }
 
+  // Records with no revenue_by_year breakdown at all — the signal that a sync hasn't
+  // populated year buckets yet (as opposed to a client who simply had a $0 year).
+  const noBreakdownCount = dashYear !== "all"
+    ? rows.filter(function(r) { return !r.revenue_by_year || typeof r.revenue_by_year !== "object" || Object.keys(r.revenue_by_year).length === 0; }).length
+    : 0;
   const missingYearData = dashYear !== "all" ? rows.filter(function(r) { return !r.hasYearData; }).length : 0;
 
   // --- Portfolio health KPIs ---
@@ -4850,10 +4863,22 @@ function renderDashboard() {
   rows.forEach(function(r) { tierCounts[r.tier]++; });
   const topTierShare = ((tierCounts["Platinum"] + tierCounts["Gold"]) / rows.length * 100).toFixed(0);
 
+  // Choose the more informative sub-note: if a large share of the roster has no year
+  // breakdown at all, that's a "run a reconcile" signal, not a per-client $0 fact.
+  var yearSubNote = "";
+  if (dashYear !== "all") {
+    if (noBreakdownCount >= Math.max(1, Math.floor(rows.length * 0.5))) {
+      yearSubNote = '<div class="kpi-s" style="color:#D97706">' + noBreakdownCount + ' of ' + rows.length +
+        ' clients have no per-year data — run a full Printavo reconcile to populate ' + dashYear + ' figures</div>';
+    } else if (missingYearData) {
+      yearSubNote = '<div class="kpi-s" style="color:#D97706">' + missingYearData + ' clients had no ' + dashYear + ' orders (counted as $0)</div>';
+    }
+  }
+
   const kpiGrid = document.getElementById("dashPortfolioKpiGrid");
   kpiGrid.innerHTML =
     '<div class="kpi"><div class="kpi-lbl">' + (dashYear === "all" ? "Total roster revenue" : dashYear + " revenue") + '</div><div class="kpi-val">' + fmtMoney(totalRevenue) + '</div>' +
-      (missingYearData ? '<div class="kpi-s" style="color:#D97706">' + missingYearData + ' clients missing ' + dashYear + ' data (counted as $0)</div>' : '') + '</div>' +
+      yearSubNote + '</div>' +
     '<div class="kpi"><div class="kpi-lbl">Total clients</div><div class="kpi-val">' + rows.length + '</div></div>' +
     '<div class="kpi"><div class="kpi-lbl">Avg score</div><div class="kpi-val">' + avgScore.toFixed(2) + '</div><div class="kpi-s">out of 5' + (dashYear !== "all" ? " · this year's revenue/invoices" : "") + '</div></div>' +
     '<div class="kpi"><div class="kpi-lbl">Platinum + Gold</div><div class="kpi-val">' + topTierShare + '%</div><div class="kpi-s">of roster' + (dashYear !== "all" ? ", " + dashYear + " basis" : "") + '</div></div>';
