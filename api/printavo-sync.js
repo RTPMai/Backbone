@@ -433,6 +433,21 @@ export default async function handler(req, res) {
     const GQL_FIELDS = buildFieldSelection(plan);
 
     // =====================================================================
+    // PING — no data pull. Confirms which build is deployed and how the sync
+    // resolved Printavo's schema. Hit /api/printavo-sync?mode=ping to check.
+    // =====================================================================
+    if (mode === "ping") {
+      return res.status(200).json({
+        ok: true,
+        mode: "ping",
+        buildVersion: "paid-only-yearbuckets-v2",
+        paidRule: "amountOutstanding === 0 (fully-paid only)",
+        fetchesAmountOutstanding: /amountOutstanding/.test(GQL_FIELDS),
+        schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
+      });
+    }
+
+    // =====================================================================
     // INCREMENTAL — pull only invoices created after the high-water mark.
     // =====================================================================
     if (mode === "incremental") {
@@ -589,6 +604,7 @@ export default async function handler(req, res) {
         purgedStaleRows: Math.max(0, beforeCount - synced.length),
         protectedRowsKept: protectedCount,
         backupKey: "backbone_data_backup",
+        buildVersion: "paid-only-yearbuckets-v2",
         totalPaidRevenue: Math.round(totalPaid * 100) / 100,
         byYear: yearDiag,
         schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
