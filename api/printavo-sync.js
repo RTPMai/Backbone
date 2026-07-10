@@ -266,17 +266,44 @@ export default async function handler(req, res) {
   // same class of error as the invalid sortOn value.
   async function resolveInvoiceArgs() {
     try {
-      const data = await gql(`query{__type(name:"Query"){fields{name args{name}}}}`);
+      // Grab arg names AND their type info so we can learn what paymentStatus accepts.
+      const data = await gql(`query{__type(name:"Query"){fields{name args{name type{name kind ofType{name kind}}}}}}`);
       const fields = (data.__type && data.__type.fields) || [];
       const inv = fields.find(f => f.name === "invoices");
-      const argNames = inv ? (inv.args || []).map(a => a.name) : [];
+      const args = inv ? (inv.args || []) : [];
+      const argNames = args.map(a => a.name);
+
+      // Resolve the underlying type name of paymentStatus (unwrap NON_NULL/LIST).
+      let paymentStatusType = null;
+      const psArg = args.find(a => a.name === "paymentStatus");
+      if (psArg && psArg.type) {
+        paymentStatusType = psArg.type.name || (psArg.type.ofType && psArg.type.ofType.name) || null;
+      }
+
+      // If it's an enum, fetch its allowed values so we filter with a VALID one.
+      let paymentStatusValues = [];
+      if (paymentStatusType) {
+        try {
+          await rlPause();
+          const ed = await gql(`query{__type(name:"${paymentStatusType}"){kind enumValues{name}}}`);
+          if (ed.__type && ed.__type.enumValues) {
+            paymentStatusValues = ed.__type.enumValues.map(v => v.name);
+          }
+        } catch (e) { /* leave empty */ }
+      }
+
       return {
         hasCreatedAfter: argNames.includes("createdAfter"),
         hasInProductionAfter: argNames.includes("inProductionAfter"),
+        hasInProductionBefore: argNames.includes("inProductionBefore"),
+        hasPaymentStatus: argNames.includes("paymentStatus"),
+        hasSortDescending: argNames.includes("sortDescending"),
+        paymentStatusType,
+        paymentStatusValues,
         argNames,
       };
     } catch (e) {
-      return { hasCreatedAfter: false, hasInProductionAfter: false, argNames: [] };
+      return { hasCreatedAfter: false, hasInProductionAfter: false, hasInProductionBefore: false, hasPaymentStatus: false, hasSortDescending: false, paymentStatusType: null, paymentStatusValues: [], argNames: [] };
     }
   }
 
@@ -488,12 +515,14 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         mode: "ping",
-        buildVersion: "paid-only-sortfix-v4",
+        buildVersion: "paid-only-paymentstatus-v5",
         paidRule: "amountOutstanding === 0 (fully-paid only)",
         fetchesAmountOutstanding: /amountOutstanding/.test(GQL_FIELDS),
         sort: { sortOn: sortPlan.sortOn, desc: sortPlan.desc, source: sortPlan.source },
         orderSortFieldValues: sortPlan.enumValues,
         invoiceArgs: argPlan.argNames,
+        paymentStatus: { type: argPlan.paymentStatusType, values: argPlan.paymentStatusValues, usable: argPlan.hasPaymentStatus },
+        dateFilters: { inProductionAfter: argPlan.hasInProductionAfter, inProductionBefore: argPlan.hasInProductionBefore },
         schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
       });
     }
@@ -527,8 +556,9 @@ export default async function handler(req, res) {
         let dateArg = "";
         if (argPlan.hasCreatedAfter) dateArg = `,createdAfter:"${overlapIso}"`;
         else if (argPlan.hasInProductionAfter) dateArg = `,inProductionAfter:"${overlapIso}"`;
+        const descI = argPlan.hasSortDescending ? ",sortDescending:true" : "";
         const data = await gql(
-          `query{invoices(first:25,sortOn:${sortPlan.sortOn}${dateArg}${after}){${GQL_FIELDS}}}`
+          `query{invoices(first:25,sortOn:${sortPlan.sortOn}${descI}${dateArg}${after}){${GQL_FIELDS}}}`
         );
         for (const inv of data.invoices.nodes) {
           if (seen.has(inv.id)) continue;
@@ -585,13 +615,18 @@ export default async function handler(req, res) {
 
       do {
         const after = cursor ? `,after:"${cursor}"` : "";
-        // Page by a VALID resolved sort. Newest-first when the enum offers a
-        // descending value; either way we page the FULL history to the end, so
-        // completeness doesn't depend on the direction — only on reaching every
-        // page. (The earlier VISUAL_ID assumption about chronological order, and
-        // the invalid hardcoded CREATED_AT_DESC, are both replaced by this.)
+        // Page by the resolved valid sort. Printavo has no created-date sort in
+        // its enum (values: CUSTOMER_DUE_AT, CUSTOMER_NAME, STATUS, OWNER, TOTAL,
+        // VISUAL_ID), so we use VISUAL_ID with sortDescending:true — higher visual
+        // IDs are newer, so descending pages the newest invoices FIRST. That means
+        // the current year is captured up front instead of being stranded at the
+        // tail (the bug that dropped 2026). We still page to the very end for a
+        // complete rebuild; direction just decides what's captured first if a run
+        // is interrupted. (A future revision can window by inProductionAfter/Before
+        // + paymentStatus once those enum/arg values are confirmed via ping.)
+        const desc = argPlan.hasSortDescending ? ",sortDescending:true" : "";
         const data = await gql(
-          `query{invoices(first:25,sortOn:${sortPlan.sortOn}${after}){${GQL_FIELDS}}}`
+          `query{invoices(first:25,sortOn:${sortPlan.sortOn}${desc}${after}){${GQL_FIELDS}}}`
         );
         for (const inv of data.invoices.nodes) {
           if (seen.has(inv.id)) continue;
@@ -666,7 +701,7 @@ export default async function handler(req, res) {
         purgedStaleRows: Math.max(0, beforeCount - synced.length),
         protectedRowsKept: protectedCount,
         backupKey: "backbone_data_backup",
-        buildVersion: "paid-only-sortfix-v4",
+        buildVersion: "paid-only-paymentstatus-v5",
         totalPaidRevenue: Math.round(totalPaid * 100) / 100,
         byYear: yearDiag,
         schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
