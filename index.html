@@ -4164,8 +4164,79 @@ const INDUSTRY_LANES = [
 // mention at all: Jacob Whitman (Sales Director, largest single book of business) and Ryan Toney.
 const ACCOUNT_MANAGERS = ["Alexis Davis", "Abby Penton", "Hannah Posey", "Jacob Whitman", "Ryan Toney", "Megan Griffith"];
 
+// AM email addresses follow firstname@pmapparel.com.
+function amEmail(amName) {
+  if (!amName) return "";
+  const first = amName.trim().split(/\s+/)[0].toLowerCase();
+  return first + "@pmapparel.com";
+}
+
+// Maps loose / model-invented industry strings onto our exact lane names. The qualify agent
+// (and older pasted JSON) sometimes returns labels like "Construction" or "Manufacturing" that
+// don't match a lane verbatim, which used to silently fall through to the Abby Penton fallback
+// and mis-route the lead. This catches the common variants before exact matching.
+const INDUSTRY_ALIASES = {
+  "construction": "Blue Collar/Agriculture",
+  "manufacturing": "Blue Collar/Agriculture",
+  "agriculture": "Blue Collar/Agriculture",
+  "trades": "Blue Collar/Agriculture",
+  "landscaping": "Blue Collar/Agriculture",
+  "blue collar": "Blue Collar/Agriculture",
+  "healthcare": "Heathcare & Wellness",
+  "health care": "Heathcare & Wellness",
+  "healthcare & wellness": "Heathcare & Wellness",
+  "wellness": "Heathcare & Wellness",
+  "medical": "Heathcare & Wellness",
+  "fire": "City Fire, EMS & Police",
+  "ems": "City Fire, EMS & Police",
+  "police": "City Fire, EMS & Police",
+  "public safety": "City Fire, EMS & Police",
+  "first responders": "City Fire, EMS & Police",
+  "k12": "K-12", "k-12 education": "K-12", "school": "K-12", "schools": "K-12",
+  "education": "K-12",
+  "higher education": "Higher Education/Universities",
+  "university": "Higher Education/Universities",
+  "college": "Higher Education/Universities",
+  "athletics": "Club Sports/School Athletics",
+  "sports": "Club Sports/School Athletics",
+  "youth sports": "Club Sports/School Athletics",
+  "pto": "PTO/Boosters", "booster": "PTO/Boosters", "boosters": "PTO/Boosters",
+  "corporate": "Corporate/Small Business",
+  "small business": "Corporate/Small Business",
+  "corporate/small business": "Corporate/Small Business",
+  "b2b": "Corporate/Small Business",
+  "technology": "Corporate/Small Business",
+  "professional services": "Corporate/Small Business",
+  "nonprofit": "Cities/Associations", "non-profit": "Cities/Associations",
+  "association": "Cities/Associations", "government": "Cities/Associations",
+  "municipal": "Cities/Associations", "city": "Cities/Associations",
+  "religious": "Church", "faith": "Church", "ministry": "Church",
+  "hospitality": "Food & Hospitality", "restaurant": "Food & Hospitality",
+  "food service": "Food & Hospitality", "food": "Food & Hospitality",
+  "real estate": "Real Estate",
+  "marketing": "Marketing Firm", "advertising": "Marketing Firm", "agency": "Marketing Firm",
+  "entertainment": "Music & Entertainment", "music": "Music & Entertainment",
+  "events": "Events", "event": "Events",
+  "military": "Military/Reserve", "reserve": "Military/Reserve",
+  "dance": "Dance"
+};
+
+function normalizeIndustry(industry) {
+  if (!industry) return industry;
+  // Exact lane match wins immediately.
+  if (INDUSTRY_LANES.some(function(l) { return l.industry === industry; })) return industry;
+  const key = industry.trim().toLowerCase();
+  if (INDUSTRY_ALIASES[key]) return INDUSTRY_ALIASES[key];
+  // Substring pass: catch e.g. "Commercial Construction" -> Blue Collar/Agriculture.
+  for (const alias in INDUSTRY_ALIASES) {
+    if (key.indexOf(alias) !== -1) return INDUSTRY_ALIASES[alias];
+  }
+  return industry;
+}
+
 function getAssignedAM(industry) {
   if (!industry) return null;
+  industry = normalizeIndustry(industry);
   const lane = INDUSTRY_LANES.find(function(l) { return l.industry === industry; });
   if (lane) {
     if (lane.varies) return { industry: lane.industry, am: "Varies by account", varies: true };
@@ -5305,7 +5376,9 @@ async function handleReconcile() {
   statusEl.textContent = "Starting full pull from Printavo…";
 
   try {
-    var url = "/api/printavo-sync?mode=reconcile" + secretQS;
+    // Explicit click = fresh rebuild, so pass reset=1 on the FIRST call. The
+    // nextUrl returned for resumes deliberately omits reset so it continues.
+    var url = "/api/printavo-sync?mode=reconcile&reset=1" + secretQS;
     var pass = 0;
     var guardMax = 200; // safety ceiling on resume loops
 
@@ -5318,8 +5391,20 @@ async function handleReconcile() {
       var d = await r.json();
 
       if (!r.ok || d.error) {
-        throw new Error(d.error || ("HTTP " + r.status));
+        // A per-query timeout returns 500 with failedAt + saved progress. Since
+        // progress is persisted, we can simply resume (re-trigger reconcile, no
+        // reset). Retry a few times before surfacing the error to the user.
+        var isTimeout = d.error && /timeout/i.test(d.error);
+        if (isTimeout && (window.__reconcileTimeoutRetries = (window.__reconcileTimeoutRetries || 0) + 1) <= 5) {
+          var where = d.failedAt ? (" (" + d.failedAt.year + "/" + d.failedAt.pass + ")") : "";
+          statusEl.textContent = "Printavo timed out" + where + " — resuming (retry " + window.__reconcileTimeoutRetries + ")…";
+          await new Promise(function (res) { setTimeout(res, 3000); });
+          url = "/api/printavo-sync?mode=reconcile" + secretQS; // no reset → resume
+          continue;
+        }
+        throw new Error((d.error || ("HTTP " + r.status)) + (d.failedAt ? " at " + d.failedAt.year + "/" + d.failedAt.pass : ""));
       }
+      window.__reconcileTimeoutRetries = 0; // reset on any successful call
 
       if (d.status === "partial") {
         var soFar = d.customersSoFar != null ? d.customersSoFar : "…";
@@ -5462,6 +5547,118 @@ function getLeadsRows() {
   return rows;
 }
 
+// --- Lead selection + "Email to AM" -------------------------------------------------
+const selectedLeadIds = new Set();
+
+// Pull the best email + phone we can for a lead out of its qualification key_contacts.
+// Handles both the new explicit email/phone fields and the older single contact_info string.
+function leadBestContact(lead) {
+  const q = lead.qualification;
+  const out = { name: lead.contact_name || "", title: "", email: "", phone: "" };
+  if (q && Array.isArray(q.key_contacts)) {
+    for (const c of q.key_contacts) {
+      if (!out.name && c.name) out.name = c.name;
+      if (!out.title && c.title) out.title = c.title;
+      if (!out.email) {
+        if (c.email) out.email = c.email;
+        else if (c.contact_info) {
+          const m = String(c.contact_info).match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+          if (m) out.email = m[0];
+        }
+      }
+      if (!out.phone) {
+        if (c.phone) out.phone = c.phone;
+        else if (c.contact_info) {
+          const m = String(c.contact_info).match(/(\+?\d[\d\-().\s]{7,}\d)/);
+          if (m) out.phone = m[1].trim();
+        }
+      }
+      if (out.email && out.phone && out.name) break;
+    }
+  }
+  return out;
+}
+
+function leadRundownBlock(lead) {
+  const q = lead.qualification;
+  const c = leadBestContact(lead);
+  const industry = q ? normalizeIndustry(q.company_overview.industry_classification || "") : (lead.industry || "");
+  const lines = [];
+  lines.push("Company: " + lead.company_name);
+  if (lead.website_url) lines.push("Website: " + lead.website_url);
+  if (industry) lines.push("Industry: " + industry);
+  if (q && q.qualification_scoring) {
+    lines.push("Score / Tier: " + (q.qualification_scoring.total_score || "—") + "/50 — " + (q.qualification_scoring.qualification_tier || "—"));
+  }
+  if (q && q.routing && q.routing.follow_up_speed) lines.push("Follow-up: " + q.routing.follow_up_speed);
+  lines.push("");
+  lines.push("Contact: " + (c.name || "—") + (c.title ? " (" + c.title + ")" : ""));
+  lines.push("  Email: " + (c.email || "NOT FOUND — needs manual lookup"));
+  lines.push("  Phone: " + (c.phone || "—"));
+  if (q && q.at_a_glance && q.at_a_glance.summary) {
+    lines.push("");
+    lines.push("Rundown: " + q.at_a_glance.summary);
+    if (q.at_a_glance.top_opportunity) lines.push("Top opportunity: " + q.at_a_glance.top_opportunity);
+  }
+  if (q && q.next_steps && q.next_steps.recommended_action) {
+    lines.push("Recommended next step: " + q.next_steps.recommended_action);
+  }
+  return lines.join("\n");
+}
+
+function emailSelectedLeadsToAM() {
+  const chosen = state_leads.filter(function(l) { return selectedLeadIds.has(l.lead_id); });
+  if (chosen.length === 0) { alert("Select one or more leads first (checkbox on the left)."); return; }
+
+  // Group by suggested AM so each AM gets only their leads.
+  const groups = {};
+  chosen.forEach(function(l) {
+    const q = l.qualification;
+    const ind = q ? (q.company_overview.industry_classification || "") : (l.industry || "");
+    const lane = ind ? getAssignedAM(ind) : null;
+    let am = lane && !lane.varies ? lane.am : (lane && lane.varies ? "" : "");
+    const key = am || "Unassigned (varies / no industry)";
+    (groups[key] = groups[key] || []).push(l);
+  });
+
+  const amNames = Object.keys(groups);
+  // If everything routes to a single real AM, send one mailto straight to them. Otherwise
+  // (mixed AMs, or varies/unassigned) open one compose per group so nothing is misdirected.
+  amNames.forEach(function(am, idx) {
+    const leads = groups[am];
+    const realAM = ACCOUNT_MANAGERS.indexOf(am) !== -1;
+    const to = realAM ? amEmail(am) : "";
+    const subject = "Lead handoff: " + leads.length + " lead" + (leads.length > 1 ? "s" : "") +
+      (realAM ? " for " + am : " — needs AM assignment");
+    let bodyParts = [];
+    bodyParts.push(realAM ? "Hi " + am.split(" ")[0] + "," : "Team,");
+    bodyParts.push("");
+    bodyParts.push(realAM
+      ? "Passing you the following lead" + (leads.length > 1 ? "s" : "") + " from BackBone:"
+      : "These leads route to a 'varies' lane or have no industry set — please assign an AM:");
+    bodyParts.push("");
+    leads.forEach(function(l, i) {
+      bodyParts.push("── " + (i + 1) + " ─────────────────────────");
+      bodyParts.push(leadRundownBlock(l));
+      bodyParts.push("");
+    });
+    bodyParts.push("— Sent from BackBone");
+    const href = "mailto:" + encodeURIComponent(to) +
+      "?subject=" + encodeURIComponent(subject) +
+      "&body=" + encodeURIComponent(bodyParts.join("\n"));
+    // Slight stagger so multiple compose windows don't get swallowed by the browser.
+    setTimeout(function() { window.location.href = href; }, idx * 400);
+  });
+}
+
+function toggleLeadSelected(leadId, checked) {
+  if (checked) selectedLeadIds.add(leadId); else selectedLeadIds.delete(leadId);
+  const btn = document.getElementById("emailSelectedBtn");
+  const cnt = document.getElementById("selectedCount");
+  if (cnt) cnt.textContent = selectedLeadIds.size;
+  if (btn) btn.disabled = selectedLeadIds.size === 0;
+}
+
 function renderLeadsPage() {
   const total = state_leads.length;
   const qualified = state_leads.filter(function(l) { return l.qualification; }).length;
@@ -5488,11 +5685,21 @@ function renderLeadsPage() {
     return;
   }
 
-  let html = "<table><thead>" + buildSortableHeaderRow(LEADS_COLUMNS, leadsSort) + "</thead><tbody>";
+  // Selection toolbar (email chosen leads to their AM).
+  let html = '<div class="toolbar" style="justify-content:flex-end;gap:10px;margin-bottom:10px">' +
+    '<button id="emailSelectedBtn" class="btn btn-green" disabled>' +
+      'Email selected to AM (<span id="selectedCount">0</span>)</button>' +
+    '</div>';
+
+  html += "<table><thead>" + buildSortableHeaderRow(LEADS_COLUMNS, leadsSort).replace(
+    "<tr>", '<tr><th style="width:34px;text-align:center"><input type="checkbox" id="leadsSelectAll"/></th>'
+  ) + "</thead><tbody>";
   rows.forEach(function(l) {
     const d = l._display;
     const tierHtml = d.tier ? '<span class="qual-tier-badge ' + qualTierClass(d.tier) + '">' + d.tier + '</span>' : "—";
+    const checked = selectedLeadIds.has(l.lead_id) ? " checked" : "";
     html += '<tr class="row" data-lead-id="' + l.lead_id + '">' +
+      '<td style="text-align:center"><input type="checkbox" class="lead-select" data-lead-id="' + l.lead_id + '"' + checked + '/></td>' +
       '<td class="company-cell">' + l.company_name + '</td>' +
       '<td>' + (l.source_type || "—") + '</td>' +
       '<td><span class="lead-status-pill lead-status-' + l.status + '">' + l.status + '</span></td>' +
@@ -5507,9 +5714,33 @@ function renderLeadsPage() {
   wrap.innerHTML = html;
 
   attachSortHandlers(wrap, leadsSort, renderLeadsPage);
+  // Row click opens detail — but not when the click originated on the checkbox cell.
   wrap.querySelectorAll("tr.row").forEach(function(tr) {
-    tr.addEventListener("click", function() { openLeadDetail(tr.dataset.leadId); });
+    tr.addEventListener("click", function(e) {
+      if (e.target.classList.contains("lead-select") || e.target.type === "checkbox") return;
+      openLeadDetail(tr.dataset.leadId);
+    });
   });
+  wrap.querySelectorAll(".lead-select").forEach(function(cb) {
+    cb.addEventListener("change", function(e) {
+      e.stopPropagation();
+      toggleLeadSelected(cb.dataset.leadId, cb.checked);
+    });
+  });
+  const selectAll = document.getElementById("leadsSelectAll");
+  if (selectAll) {
+    selectAll.checked = rows.length > 0 && rows.every(function(r) { return selectedLeadIds.has(r.lead_id); });
+    selectAll.addEventListener("change", function() {
+      rows.forEach(function(r) { toggleLeadSelected(r.lead_id, selectAll.checked); });
+      renderLeadsPage();
+    });
+  }
+  const emailBtn = document.getElementById("emailSelectedBtn");
+  if (emailBtn) {
+    emailBtn.disabled = selectedLeadIds.size === 0;
+    document.getElementById("selectedCount").textContent = selectedLeadIds.size;
+    emailBtn.addEventListener("click", emailSelectedLeadsToAM);
+  }
 }
 
 function scanCardStatus(msg, cls) {
@@ -5771,13 +6002,28 @@ function renderLeadDetailBody(lead) {
     contacts = '<div class="qual-section"><h4>Key contacts</h4>' +
       q.key_contacts.map(function(c) {
         const conf = c.confidence || "";
+        // Prefer explicit fields; fall back to parsing the legacy freeform contact_info string.
+        let email = c.email || "";
+        let phone = c.phone || "";
+        if ((!email || !phone) && c.contact_info) {
+          if (!email) { const m = String(c.contact_info).match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i); if (m) email = m[0]; }
+          if (!phone) { const m = String(c.contact_info).match(/(\+?\d[\d\-().\s]{7,}\d)/); if (m) phone = m[1].trim(); }
+        }
+        // Anything in contact_info that wasn't the email/phone (e.g. LinkedIn URL, notes).
+        let extra = c.contact_info || "";
+        if (extra) { if (email) extra = extra.replace(email, ""); if (phone) extra = extra.replace(phone, ""); extra = extra.replace(/^[\s,;|]+|[\s,;|]+$/g, ""); }
+        const emailHtml = email
+          ? '<a href="mailto:' + email + '" style="color:#3D9A5C;font-weight:600">' + email + '</a>'
+          : '<span style="color:#B45309;font-weight:600">Email not found — needs manual lookup</span>';
         return '<div style="margin-bottom:10px;padding:8px 10px;background:#F9FAFB;border:1px solid #F3F4F6;border-radius:6px">' +
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
           '<div style="font-weight:600;font-size:13px">' + (c.name || "Name not public") + (c.title ? ' — ' + c.title : '') + '</div>' +
           (conf ? '<span style="white-space:nowrap;padding:1px 7px;border-radius:99px;font-size:10px;font-weight:700;' + confidenceStyle(conf) + '">' + conf + '</span>' : '') +
           '</div>' +
           (c.relevance ? '<div style="font-size:12px;color:#6B7280;margin-top:2px">' + c.relevance + '</div>' : '') +
-          '<div style="font-size:12px;margin-top:2px">' + (c.contact_info || "No contact info found") + '</div>' +
+          '<div style="font-size:12px;margin-top:4px">✉ ' + emailHtml + '</div>' +
+          '<div style="font-size:12px;margin-top:2px">☎ ' + (phone || "—") + '</div>' +
+          (extra ? '<div style="font-size:12px;color:#6B7280;margin-top:2px">' + extra + '</div>' : '') +
           (c.source ? '<div style="font-size:11px;color:#9CA3AF;margin-top:2px">Source: ' + c.source + '</div>' : '') +
           '</div>';
       }).join("") +
