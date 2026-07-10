@@ -26,6 +26,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;font-s
 .btn:active{transform:translateY(.5px)}
 .btn-green{background:var(--green);color:#fff;box-shadow:0 1px 2px rgba(61,154,92,.25)}.btn-green:hover{background:var(--green-dk)}
 .btn-gray{background:#fff;color:#374151;border:1px solid var(--line);box-shadow:var(--shadow-card)}.btn-gray:hover{background:#F9FAFB;border-color:#E2E6EA}
+.btn-danger{background:#fff;color:#DC2626;border:1px solid #F3D2D2;box-shadow:var(--shadow-card)}.btn-danger:hover{background:#FEF2F2;border-color:#F1BDBD}
+.btn-danger.confirm{background:#DC2626;color:#fff;border-color:#DC2626}.btn-danger.confirm:hover{background:#B91C1C}
 .btn-sm{padding:5px 11px;font-size:12px}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .last-updated{font-size:11px;color:var(--faint)}
@@ -620,7 +622,8 @@ textarea.field{min-height:60px;resize:vertical}
           <option>Contacted</option><option>Won</option><option>Dead</option>
         </select>
       </div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-danger btn-sm" id="deleteLeadBtn">Delete lead</button>
         <button class="btn btn-gray btn-sm" id="rerunQualBtn">Run / re-run AI qualification (API)</button>
         <button class="btn btn-green btn-sm" id="promoteLeadBtn">Promote to Roster</button>
       </div>
@@ -5574,6 +5577,7 @@ function openLeadDetail(leadId) {
   const lead = state_leads.find(function(l) { return l.lead_id === leadId; });
   if (!lead) return;
   activeLeadId = leadId;
+  resetDeleteLeadBtn();
   document.getElementById("leadDetailTitle").textContent = lead.company_name;
   document.getElementById("leadStatusSelect").value = lead.status;
   try {
@@ -5890,6 +5894,56 @@ async function handlePromoteToRoster() {
   alert(lead.company_name + " added to Roster as a prospect (" + customerId + ", $0 / 0 invoices). " +
     "When it actually transacts in Printavo, delete this LEAD- row manually — there's no " +
     "automatic merge between the two IDs.");
+}
+
+let deleteLeadArmed = false;
+let deleteLeadTimer = null;
+
+function resetDeleteLeadBtn() {
+  deleteLeadArmed = false;
+  if (deleteLeadTimer) { clearTimeout(deleteLeadTimer); deleteLeadTimer = null; }
+  const btn = document.getElementById("deleteLeadBtn");
+  if (btn) { btn.classList.remove("confirm"); btn.textContent = "Delete lead"; }
+}
+
+async function handleDeleteLead() {
+  const btn = document.getElementById("deleteLeadBtn");
+  const lead = state_leads.find(function(l) { return l.lead_id === activeLeadId; });
+  if (!lead) return;
+
+  // First click arms; second click within the window actually deletes. Avoids one-tap accidents
+  // without a jarring browser confirm() dialog.
+  if (!deleteLeadArmed) {
+    deleteLeadArmed = true;
+    btn.classList.add("confirm");
+    btn.textContent = lead.promoted_customer_id ? "Delete lead only? Click again" : "Click again to delete";
+    deleteLeadTimer = setTimeout(resetDeleteLeadBtn, 3500);
+    return;
+  }
+
+  resetDeleteLeadBtn();
+  btn.disabled = true;
+  const idx = state_leads.findIndex(function(l) { return l.lead_id === activeLeadId; });
+  if (idx === -1) { btn.disabled = false; return; }
+  state_leads.splice(idx, 1);
+  try {
+    await saveLeads();
+  } catch (e) {
+    // Put it back if the save failed so the UI matches what's persisted.
+    state_leads.splice(idx, 0, lead);
+    btn.disabled = false;
+    alert("Couldn't delete the lead — save failed. Nothing was removed. (" + (e && e.message ? e.message : "unknown error") + ")");
+    return;
+  }
+  btn.disabled = false;
+  document.getElementById("leadDetailOverlay").classList.remove("open");
+  activeLeadId = null;
+  renderLeadsPage();
+  // A promoted lead leaves its LEAD- Roster row untouched by design — the two aren't auto-merged.
+  if (lead.promoted_customer_id) {
+    alert('Deleted the lead "' + lead.company_name + '". Its Roster prospect row (' +
+      lead.promoted_customer_id + ') was left in place — remove that separately on the Roster if you no longer want it.');
+  }
 }
 
 // ---- Inbox module (Layer 0 front door — intake submissions) ----
@@ -6280,13 +6334,16 @@ document.getElementById("leadsSearchBox").addEventListener("input", function(e) 
 document.getElementById("leadDetailClose").addEventListener("click", function() {
   document.getElementById("leadDetailOverlay").classList.remove("open");
   activeLeadId = null;
+  resetDeleteLeadBtn();
 });
 document.getElementById("leadDetailOverlay").addEventListener("click", function(e) {
   if (e.target.id === "leadDetailOverlay") {
     document.getElementById("leadDetailOverlay").classList.remove("open");
     activeLeadId = null;
+    resetDeleteLeadBtn();
   }
 });
+document.getElementById("deleteLeadBtn").addEventListener("click", handleDeleteLead);
 document.getElementById("rerunQualBtn").addEventListener("click", handleRunQualification);
 document.getElementById("pasteQualBtn").addEventListener("click", handlePasteQualification);
 document.getElementById("leadStatusSelect").addEventListener("change", handleLeadStatusChange);
