@@ -307,23 +307,26 @@ export default async function handler(req, res) {
     }
   }
 
-  // Fold one invoice into a per-customer accumulator, using the resolved plan.
-  // Skips $0 invoices so dormant accounts with recent $0 records don't read as
-  // active (documented BackBone gotcha).
+  // Fold one invoice into a per-customer accumulator.
   //
-  // Revenue rule (paid-only): an invoice contributes its full `total` to revenue
-  // ONLY when it is fully paid (amountOutstanding === 0). A partially-paid or
-  // unpaid invoice contributes $0 to revenue. Invoice COUNT, by contrast, still
-  // includes every real (non-$0) invoice regardless of payment status, so order
-  // frequency / median-gap reflect actual order cadence rather than collection
-  // timing. This is why total_revenue and invoice_count can legitimately diverge.
-  function foldInvoice(acc, inv, plan) {
+  // Two-pass reconcile model:
+  //   mode "revenue" — invoice came from a paymentStatus:PAID query, so its full
+  //                    total is booked as paid revenue. Does NOT touch counts.
+  //   mode "count"   — invoice came from an unfiltered (all-status) query, so it
+  //                    contributes to invoice_count / per-year counts / cadence
+  //                    dates. Does NOT touch revenue.
+  //   mode "both"    — legacy single-pass (incremental): infer paid from
+  //                    amountOutstanding and do revenue + counts together.
+  //
+  // bucketYear: the calendar year to attribute this invoice to. During a
+  // year-windowed reconcile we pass the WINDOW year (from inProductionAfter/Before)
+  // so revenue and counts land in the same year regardless of which date field
+  // Printavo exposes. When null, falls back to the invoice's createdAt year.
+  function foldInvoice(acc, inv, plan, mode, bucketYear) {
+    mode = mode || "both";
     const link = inv[plan.linkField];
     if (!link) return;
 
-    // Prefer grouping by the PARENT company when the plan found one, so all of
-    // a company's contacts collapse into a single roster row. Fall back to the
-    // link's own id/name only if the parent is absent on this particular record.
     let id, companyName;
     if (plan.parent && link[plan.parent.field] && link[plan.parent.field][plan.parent.idField]) {
       const p = link[plan.parent.field];
@@ -344,14 +347,8 @@ export default async function handler(req, res) {
     const amount = Number(inv.total) || 0;
     if (amount <= 0) return; // $0 filter
 
-    // Fully-paid only: outstanding must be exactly 0 (within a cent, to absorb
-    // floating-point noise) for the invoice's total to count as revenue.
-    const outstanding = Number(inv.amountOutstanding);
-    const isFullyPaid = Number.isFinite(outstanding) && outstanding < 0.005;
-    const paidAmount = isFullyPaid ? amount : 0;
-
     const d = inv.createdAt ? inv.createdAt.slice(0, 10) : null;
-    const year = d ? d.slice(0, 4) : null;
+    const year = bucketYear || (d ? d.slice(0, 4) : null);
 
     if (!acc[id]) {
       acc[id] = {
@@ -366,26 +363,39 @@ export default async function handler(req, res) {
       };
     }
     const row = acc[id];
-    row.invoice_count += 1;
-    row.total_revenue += paidAmount;
-    if (year) {
-      row.invoices_by_year[year] = (row.invoices_by_year[year] || 0) + 1;
-      if (paidAmount > 0) {
-        row.revenue_by_year[year] = (row.revenue_by_year[year] || 0) + paidAmount;
-      } else if (row.revenue_by_year[year] === undefined) {
-        // Ensure the year key exists (as 0) if the customer had activity that year
-        // but no paid revenue — keeps the dashboard year filter from treating the
-        // year as "missing data" when it's really "$0 collected".
-        row.revenue_by_year[year] = 0;
-      }
-    }
-    if (d) {
-      row._dates.push(d);
-      if (!row.last_invoice_date || d > row.last_invoice_date) row.last_invoice_date = d;
-    }
+
+    // Company name can be filled in by either pass.
     if ((!row.company_name || row.company_name === "Unknown") && companyName !== "Unknown") {
       row.company_name = companyName;
     }
+
+    if (mode === "revenue" || (mode === "both" && isPaidInvoice(inv))) {
+      const paid = amount;
+      row.total_revenue += paid;
+      if (year) row.revenue_by_year[year] = (row.revenue_by_year[year] || 0) + paid;
+    }
+    if (mode === "both" && !isPaidInvoice(inv) && year && row.revenue_by_year[year] === undefined) {
+      // keep the year key present (as 0) so the dashboard doesn't read it as "missing"
+      row.revenue_by_year[year] = 0;
+    }
+
+    if (mode === "count" || mode === "both") {
+      row.invoice_count += 1;
+      if (year) {
+        row.invoices_by_year[year] = (row.invoices_by_year[year] || 0) + 1;
+        if (row.revenue_by_year[year] === undefined) row.revenue_by_year[year] = 0;
+      }
+      if (d) {
+        row._dates.push(d);
+        if (!row.last_invoice_date || d > row.last_invoice_date) row.last_invoice_date = d;
+      }
+    }
+  }
+
+  // Fully-paid check for single-pass ("both") mode: outstanding within a cent of 0.
+  function isPaidInvoice(inv) {
+    const outstanding = Number(inv.amountOutstanding);
+    return Number.isFinite(outstanding) && outstanding < 0.005;
   }
 
   // Convert each customer's collected invoice dates into median_gap_days: the
@@ -515,8 +525,8 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         mode: "ping",
-        buildVersion: "paid-only-paymentstatus-v5",
-        paidRule: "amountOutstanding === 0 (fully-paid only)",
+        buildVersion: "paid-yearwindow-v6",
+        paidRule: "paymentStatus:PAID per-year window (fully-paid only)",
         fetchesAmountOutstanding: /amountOutstanding/.test(GQL_FIELDS),
         sort: { sortOn: sortPlan.sortOn, desc: sortPlan.desc, source: sortPlan.source },
         orderSortFieldValues: sortPlan.enumValues,
@@ -602,48 +612,102 @@ export default async function handler(req, res) {
     // RECONCILE — rebuild every customer's aggregates from full history.
     // =====================================================================
     if (mode === "reconcile") {
-      // Accumulate across resumable calls in a partial key so a 300s timeout
-      // doesn't force us to start over.
-      let partial = await kvGet("backbone_reconcile_partial");
-      if (!resumeCursor || !partial) partial = { acc: {}, seen: [] };
-      const acc = partial.acc || {};
-      const seen = new Set(partial.seen || []);
+      // Year-windowed two-pass reconcile. Instead of paging the entire invoice
+      // list by an ID and hoping pagination reaches the newest records (which
+      // silently dropped 2026), we query each YEAR explicitly via inProduction
+      // After/Before. Every year is therefore guaranteed to be visited.
+      //
+      // Two passes per year:
+      //   PAID pass  (paymentStatus:PAID) → authoritative paid revenue
+      //   ALL pass   (no status filter)   → invoice counts + cadence (incl. unpaid)
+      //
+      // Resume state tracks acc, seen sets (separate per pass so an invoice can be
+      // folded once for revenue and once for counts), the year index, and the pass.
+      const CURRENT_YEAR = new Date().getFullYear();
+      const START_YEAR = 2018; // safely older than any P&M Printavo history
+      const YEARS = [];
+      for (let y = CURRENT_YEAR; y >= START_YEAR; y--) YEARS.push(y);
 
+      let partial = await kvGet("backbone_reconcile_partial");
+      if (!resumeCursor && (!req.query.rstate)) partial = null; // fresh start
+      if (!partial) partial = { acc: {}, seenPaid: [], seenAll: [], yearIdx: 0, pass: "paid" };
+      const acc = partial.acc || {};
+      const seenPaid = new Set(partial.seenPaid || []);
+      const seenAll = new Set(partial.seenAll || []);
+      let yearIdx = partial.yearIdx || 0;
+      let pass = partial.pass || "paid";
       let cursor = resumeCursor;
+
       let pages = 0;
       const deadline = Date.now() + 240000;
+      const canWindow = argPlan.hasInProductionAfter && argPlan.hasInProductionBefore;
+      const canPaid = argPlan.hasPaymentStatus && argPlan.paymentStatusValues.includes("PAID");
 
-      do {
-        const after = cursor ? `,after:"${cursor}"` : "";
-        // Page by the resolved valid sort. Printavo has no created-date sort in
-        // its enum (values: CUSTOMER_DUE_AT, CUSTOMER_NAME, STATUS, OWNER, TOTAL,
-        // VISUAL_ID), so we use VISUAL_ID with sortDescending:true — higher visual
-        // IDs are newer, so descending pages the newest invoices FIRST. That means
-        // the current year is captured up front instead of being stranded at the
-        // tail (the bug that dropped 2026). We still page to the very end for a
-        // complete rebuild; direction just decides what's captured first if a run
-        // is interrupted. (A future revision can window by inProductionAfter/Before
-        // + paymentStatus once those enum/arg values are confirmed via ping.)
-        const desc = argPlan.hasSortDescending ? ",sortDescending:true" : "";
-        const data = await gql(
-          `query{invoices(first:25,sortOn:${sortPlan.sortOn}${desc}${after}){${GQL_FIELDS}}}`
-        );
-        for (const inv of data.invoices.nodes) {
-          if (seen.has(inv.id)) continue;
-          seen.add(inv.id);
-          foldInvoice(acc, inv, plan);
+      // Year-windowing REQUIRES the inProduction date args. Without them, querying
+      // per-year would fold the entire unfiltered list into every year's bucket
+      // (bucketYear is forced), badly corrupting the breakdown. Refuse rather than
+      // silently produce garbage — this shouldn't happen (ping confirmed the args)
+      // but a schema change must fail loud, not quiet.
+      if (!canWindow) {
+        return res.status(500).json({
+          error: "Reconcile needs inProductionAfter/inProductionBefore args on the invoices query, which are missing from the current Printavo schema. Check /api/printavo-sync?mode=ping (dateFilters).",
+        });
+      }
+
+      // Walk (year, pass) cells until we run out of time or finish all years.
+      outer:
+      while (yearIdx < YEARS.length) {
+        if (Date.now() >= deadline) break; // out of time between cells; resume later
+        const year = YEARS[yearIdx];
+        const from = `${year}-01-01T00:00:00Z`;
+        const to = `${year + 1}-01-01T00:00:00Z`;
+        const windowArg = canWindow ? `,inProductionAfter:"${from}",inProductionBefore:"${to}"` : "";
+        const statusArg = (pass === "paid" && canPaid) ? `,paymentStatus:PAID` : "";
+        const seen = pass === "paid" ? seenPaid : seenAll;
+        const foldMode = pass === "paid" ? "revenue" : "count";
+
+        do {
+          const after = cursor ? `,after:"${cursor}"` : "";
+          const data = await gql(
+            `query{invoices(first:25,sortOn:${sortPlan.sortOn}${statusArg}${windowArg}${after}){${GQL_FIELDS}}}`
+          );
+          for (const inv of data.invoices.nodes) {
+            if (seen.has(inv.id)) continue;
+            seen.add(inv.id);
+            foldInvoice(acc, inv, plan, foldMode, String(year));
+          }
+          cursor = data.invoices.pageInfo.hasNextPage ? data.invoices.pageInfo.endCursor : null;
+          pages++;
+          if (cursor) await new Promise(r => setTimeout(r, 1500));
+          if (Date.now() >= deadline) break outer;
+        } while (cursor);
+
+        // This (year, pass) cell is done. Advance: paid → all, then next year.
+        cursor = null;
+        if (pass === "paid" && canPaid) {
+          pass = "all";
+        } else {
+          pass = "paid";
+          yearIdx++;
         }
-        cursor = data.invoices.pageInfo.hasNextPage ? data.invoices.pageInfo.endCursor : null;
-        pages++;
-        if (cursor) await new Promise(r => setTimeout(r, 1500));
-      } while (cursor && Date.now() < deadline);
+      }
 
-      await kvSet("backbone_reconcile_partial", { acc, seen: [...seen], updatedAt: new Date().toISOString() });
+      const finished = yearIdx >= YEARS.length;
 
-      if (cursor) {
+      // Persist progress (whether finished or resuming).
+      await kvSet("backbone_reconcile_partial", {
+        acc, seenPaid: [...seenPaid], seenAll: [...seenAll],
+        yearIdx, pass, updatedAt: new Date().toISOString(),
+      });
+
+      if (!finished) {
+        const curYear = YEARS[yearIdx];
         return res.status(200).json({
-          ok: true, mode, status: "partial", pages, customersSoFar: Object.keys(acc).length,
-          nextUrl: `/api/printavo-sync?mode=reconcile&cursor=${encodeURIComponent(cursor)}`,
+          ok: true, mode, status: "partial", pages,
+          customersSoFar: Object.keys(acc).length,
+          progress: { year: curYear, pass, cursor: cursor || null },
+          // rstate flag tells the resumed call NOT to treat itself as a fresh start.
+          nextUrl: `/api/printavo-sync?mode=reconcile&rstate=1${cursor ? "&cursor=" + encodeURIComponent(cursor) : ""}`,
         });
       }
 
@@ -701,7 +765,7 @@ export default async function handler(req, res) {
         purgedStaleRows: Math.max(0, beforeCount - synced.length),
         protectedRowsKept: protectedCount,
         backupKey: "backbone_data_backup",
-        buildVersion: "paid-only-paymentstatus-v5",
+        buildVersion: "paid-yearwindow-v6",
         totalPaidRevenue: Math.round(totalPaid * 100) / 100,
         byYear: yearDiag,
         schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
