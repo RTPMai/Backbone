@@ -440,7 +440,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         mode: "ping",
-        buildVersion: "paid-only-yearbuckets-v2",
+        buildVersion: "paid-only-createddesc-v3",
         paidRule: "amountOutstanding === 0 (fully-paid only)",
         fetchesAmountOutstanding: /amountOutstanding/.test(GQL_FIELDS),
         schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
@@ -528,8 +528,14 @@ export default async function handler(req, res) {
 
       do {
         const after = cursor ? `,after:"${cursor}"` : "";
+        // Page newest-first by creation date. VISUAL_ID order is NOT guaranteed
+        // chronological in Printavo, so paging by it could reach hasNextPage:false
+        // without ever traversing the newest invoices — which silently dropped the
+        // current year (2026) from the roster. CREATED_AT_DESC is the same sort the
+        // incremental path uses successfully, and newest-first means recent years
+        // are captured on the first pages rather than the last.
         const data = await gql(
-          `query{invoices(first:25,sortOn:VISUAL_ID${after}){${GQL_FIELDS}}}`
+          `query{invoices(first:25,sortOn:CREATED_AT_DESC${after}){${GQL_FIELDS}}}`
         );
         for (const inv of data.invoices.nodes) {
           if (seen.has(inv.id)) continue;
@@ -604,7 +610,7 @@ export default async function handler(req, res) {
         purgedStaleRows: Math.max(0, beforeCount - synced.length),
         protectedRowsKept: protectedCount,
         backupKey: "backbone_data_backup",
-        buildVersion: "paid-only-yearbuckets-v2",
+        buildVersion: "paid-only-createddesc-v3",
         totalPaidRevenue: Math.round(totalPaid * 100) / 100,
         byYear: yearDiag,
         schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
