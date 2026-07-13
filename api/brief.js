@@ -322,14 +322,17 @@ export default async function handler(req, res) {
     return res.status(200).json({ url: blob.url, lead_id: lead.lead_id });
   } catch (e) {
     console.error("brief error:", e);
-    // Surface the two failures that actually happen in practice with a fix attached,
-    // rather than a generic 500 that sends you digging through function logs.
-    let msg = e.message || "Failed to generate brief";
-    if (/access/i.test(msg) && /private|public/i.test(msg)) {
-      msg = "Blob store is Private — this needs a Public store. Delete it and recreate with access set to Public.";
-    } else if (/token|unauthorized|forbidden|401|403/i.test(msg)) {
-      msg = "Blob token rejected. Check BLOB_READ_WRITE_TOKEN is set on this project, then REDEPLOY.";
-    }
-    return res.status(500).json({ error: msg });
+    // Do NOT guess at the cause and overwrite the real message — that hides the actual
+    // problem behind whatever I assumed it was. Pass the SDK's own error straight
+    // through, plus which credentials the function can actually see, so the failure is
+    // diagnosable from the UI instead of from the function logs.
+    return res.status(500).json({
+      error: e.message || "Failed to generate brief",
+      diag: {
+        oidc: !!process.env.VERCEL_OIDC_TOKEN,
+        storeId: !!process.env.BLOB_STORE_ID,
+        rwToken: !!process.env.BLOB_READ_WRITE_TOKEN
+      }
+    });
   }
 }
