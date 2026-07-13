@@ -202,17 +202,14 @@ textarea.field{min-height:60px;resize:vertical}
 .admin-lock input{width:240px;padding:10px 12px;border:1px solid #E5E7EB;border-radius:8px;font-size:14px;font-family:inherit;margin:12px 8px 0 0}
 .logout-link{font-size:12px;color:#6B7280;cursor:pointer;text-decoration:underline}
 .logout-link:hover{color:#111827}
-.lead-email-cell { max-width: 210px; }
-.lead-email-link {
-  color: #3D9A5C; font-weight: 600; text-decoration: none;
-  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.lead-email-link:hover { text-decoration: underline; }
-.lead-email-missing {
+.contact-tag {
   display: inline-block; font-size: 11px; font-weight: 600;
-  color: #B45309; background: #FEF3C7;
-  padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+  padding: 2px 8px; border-radius: 999px; white-space: nowrap; cursor: default;
 }
+.contact-tag.ct-both  { color: #1E7A44; background: #E4F4EA; }
+.contact-tag.ct-email { color: #1D4ED8; background: #E3EBFD; }
+.contact-tag.ct-phone { color: #92400E; background: #FDF0D5; }
+.contact-tag.ct-none  { color: #B42318; background: #FDE7E5; }
 </style>
 </head>
 <body>
@@ -5541,7 +5538,7 @@ let leadsSort = { col: "created", dir: "desc" };
 
 const LEADS_COLUMNS = [
   { key: "company_name", label: "Company", numeric: false },
-  { key: "email", label: "Email", numeric: false },
+  { key: "email", label: "Contact", numeric: true },
   { key: "source_type", label: "Source", numeric: false },
   { key: "status", label: "Status", numeric: false },
   { key: "score", label: "Score", numeric: true },
@@ -5566,7 +5563,7 @@ function getLeadsRows() {
       tier_sort: tier,
       am_sort: amText,
       followup_sort: followUp,
-      email_sort: contact.email || "",
+      email_sort: (contact.email && contact.phone) ? 0 : (contact.email ? 1 : (contact.phone ? 2 : 3)),
       created_sort: new Date(l.created_at).getTime(),
       _display: { score: score, tier: tier, am: amText, followUp: followUp, contact: contact }
     });
@@ -5574,8 +5571,9 @@ function getLeadsRows() {
   if (leadsSearchQuery.trim()) {
     const q2 = leadsSearchQuery.trim().toLowerCase();
     rows = rows.filter(function(r) {
+      const em = (r._display && r._display.contact && r._display.contact.email) || "";
       return r.company_name.toLowerCase().indexOf(q2) !== -1 ||
-        (r.email_sort || "").toLowerCase().indexOf(q2) !== -1;
+        em.toLowerCase().indexOf(q2) !== -1;
     });
   }
   const colMap = {
@@ -5624,17 +5622,22 @@ function leadBestContact(lead) {
   return out;
 }
 
-// Compact email cell for the leads table: a click-to-mail link, or an amber "missing" flag.
-function leadEmailCellHtml(contact) {
+// Compact contact tag for the leads table: at-a-glance view of what we can reach them on.
+function leadContactTag(contact) {
   const c = contact || {};
-  if (c.email) {
-    return '<a href="mailto:' + escapeHtml(c.email) + '" class="lead-email-link" title="' +
-      escapeHtml(c.email) + '" onclick="event.stopPropagation()">' + escapeHtml(c.email) + '</a>';
+  const hasEmail = !!c.email, hasPhone = !!c.phone;
+  let cls, label, tip;
+  if (hasEmail && hasPhone) {
+    cls = "ct-both"; label = "Phone and email";
+    tip = c.email + " \u00B7 " + c.phone;
+  } else if (hasEmail) {
+    cls = "ct-email"; label = "Email only"; tip = c.email;
+  } else if (hasPhone) {
+    cls = "ct-phone"; label = "Phone only"; tip = c.phone;
+  } else {
+    cls = "ct-none"; label = "No contact"; tip = "No email or phone on file";
   }
-  const hasPhone = !!c.phone;
-  return '<span class="lead-email-missing" title="' +
-    (hasPhone ? 'No email on file — phone: ' + escapeHtml(c.phone) : 'No email or phone on file') +
-    '">' + (hasPhone ? '\u260E phone only' : '\u26A0 no email') + '</span>';
+  return '<span class="contact-tag ' + cls + '" title="' + escapeHtml(tip) + '">' + label + '</span>';
 }
 
 // After a qualification lands, lift the first real email/phone it found onto the lead itself
@@ -5951,7 +5954,7 @@ function renderLeadsPage() {
     html += '<tr class="row" data-lead-id="' + l.lead_id + '">' +
       '<td style="text-align:center"><input type="checkbox" class="lead-select" data-lead-id="' + l.lead_id + '"' + checked + '/></td>' +
       '<td class="company-cell">' + l.company_name + '</td>' +
-      '<td class="lead-email-cell">' + leadEmailCellHtml(d.contact) + '</td>' +
+      '<td>' + leadContactTag(d.contact) + '</td>' +
       '<td>' + (l.source_type || "—") + '</td>' +
       '<td><span class="lead-status-pill lead-status-' + l.status + '">' + l.status + '</span></td>' +
       '<td>' + (d.score === null ? "—" : d.score) + '</td>' +
