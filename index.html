@@ -210,6 +210,13 @@ textarea.field{min-height:60px;resize:vertical}
 .contact-tag.ct-email { color: #1D4ED8; background: #E3EBFD; }
 .contact-tag.ct-phone { color: #92400E; background: #FDF0D5; }
 .contact-tag.ct-none  { color: #B42318; background: #FDE7E5; }
+.lead-no-contact-banner {
+  display: flex; flex-direction: column; gap: 3px;
+  background: #FDE7E5; border: 1px solid #F5B5B0; border-left: 4px solid #B42318;
+  border-radius: 10px; padding: 10px 14px; margin-bottom: 14px;
+}
+.lead-no-contact-banner strong { color: #B42318; font-size: 13px; }
+.lead-no-contact-banner span { color: #7A2018; font-size: 12px; line-height: 1.45; }
 </style>
 </head>
 <body>
@@ -5590,36 +5597,75 @@ const selectedLeadIds = new Set();
 
 // Pull the best email + phone we can for a lead out of its qualification key_contacts.
 // Handles both the new explicit email/phone fields and the older single contact_info string.
+// Qualification JSON is required to emit a value for every field, so missing data comes
+// back as "not found" / "N/A" / "unknown" rather than being omitted. Those are NOT contacts.
+const CONTACT_PLACEHOLDER_RE = /^(not\s*found|none|n\/?a|null|unknown|unavailable|not\s*(listed|available|provided|public|disclosed)|tbd|-{1,}|\u2014)$/i;
+
+function cleanContactValue(v) {
+  const t = String(v == null ? "" : v).trim();
+  if (!t || CONTACT_PLACEHOLDER_RE.test(t)) return "";
+  return t;
+}
+
+// A real email needs an @ with something either side and a dotted domain.
+function cleanEmail(v) {
+  const t = cleanContactValue(v);
+  if (!t) return "";
+  const m = t.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+  return m ? m[0] : "";
+}
+
+// A real phone needs at least 7 digits. Strips "ext." noise and placeholder text.
+function cleanPhone(v) {
+  const t = cleanContactValue(v);
+  if (!t) return "";
+  const digits = t.replace(/\D/g, "");
+  if (digits.length < 7) return "";
+  return t;
+}
+
 function leadBestContact(lead) {
   const q = lead.qualification;
   const out = {
-    name: lead.contact_name || "",
+    name: cleanContactValue(lead.contact_name),
     title: "",
-    email: lead.contact_email || "",
-    phone: lead.contact_phone || ""
+    email: cleanEmail(lead.contact_email),
+    phone: cleanPhone(lead.contact_phone)
   };
   if (q && Array.isArray(q.key_contacts)) {
     for (const c of q.key_contacts) {
-      if (!out.name && c.name) out.name = c.name;
-      if (!out.title && c.title) out.title = c.title;
+      if (!out.name) out.name = cleanContactValue(c.name);
+      if (!out.title) out.title = cleanContactValue(c.title);
       if (!out.email) {
-        if (c.email) out.email = c.email;
-        else if (c.contact_info) {
-          const m = String(c.contact_info).match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
-          if (m) out.email = m[0];
-        }
+        out.email = cleanEmail(c.email) || cleanEmail(c.contact_info);
       }
       if (!out.phone) {
-        if (c.phone) out.phone = c.phone;
-        else if (c.contact_info) {
+        out.phone = cleanPhone(c.phone);
+        if (!out.phone && c.contact_info) {
           const m = String(c.contact_info).match(/(\+?\d[\d\-().\s]{7,}\d)/);
-          if (m) out.phone = m[1].trim();
+          if (m) out.phone = cleanPhone(m[1]);
         }
       }
       if (out.email && out.phone && out.name) break;
     }
   }
   return out;
+}
+
+// True when we have no way at all to reach this lead.
+function leadHasNoContact(lead) {
+  const c = leadBestContact(lead);
+  return !c.email && !c.phone;
+}
+
+// Red banner at the top of a lead record when we can't reach them at all.
+function leadContactBanner(lead) {
+  if (!leadHasNoContact(lead)) return "";
+  return '<div class="lead-no-contact-banner">' +
+    '<strong>\u26A0 No contact information</strong>' +
+    '<span>This lead has no email and no phone number. It can\'t be actioned or emailed to an AM ' +
+    'until a contact is found \u2014 add one in the Intake section below.</span>' +
+  '</div>';
 }
 
 // Compact contact tag for the leads table: at-a-glance view of what we can reach them on.
@@ -5644,9 +5690,18 @@ function leadContactTag(contact) {
 // so the Leads table + AM emails can use it without anyone opening the record.
 function backfillLeadContactFromQual(lead) {
   const c = leadBestContact(lead);
-  if (!lead.contact_name && c.name) lead.contact_name = c.name;
-  if (!lead.contact_email && c.email) lead.contact_email = c.email;
-  if (!lead.contact_phone && c.phone) lead.contact_phone = c.phone;
+  if (!cleanContactValue(lead.contact_name) && c.name) lead.contact_name = c.name;
+  if (!cleanEmail(lead.contact_email) && c.email) lead.contact_email = c.email;
+  if (!cleanPhone(lead.contact_phone) && c.phone) lead.contact_phone = c.phone;
+  return !c.email && !c.phone;
+}
+
+// Shown after a qualification lands with nothing reachable on it.
+function warnNoContactAfterQual(lead) {
+  alert("\u26A0 No contact information found for " + lead.company_name + ".\n\n" +
+    "The qualification came back without a usable email or phone number \u2014 this lead " +
+    "can't be actioned or emailed to an AM until someone tracks a contact down.\n\n" +
+    "Add an email or phone in the Intake section of this record.");
 }
 
 function leadRundownBlock(lead) {
@@ -6082,13 +6137,36 @@ async function handleAddLead() {
     return;
   }
 
+  const rawEmail = document.getElementById("leadContactEmail").value.trim();
+  const rawPhone = document.getElementById("leadContactPhone").value.trim();
+  const email = cleanEmail(rawEmail);
+  const phone = cleanPhone(rawPhone);
+
+  // Typo guard: something was typed but it isn't a usable email/phone.
+  if (rawEmail && !email) {
+    errEl.textContent = '"' + rawEmail + '" doesn\'t look like a valid email address.';
+    return;
+  }
+  if (rawPhone && !phone) {
+    errEl.textContent = '"' + rawPhone + '" doesn\'t look like a valid phone number (needs at least 7 digits).';
+    return;
+  }
+  // No way to reach them at all — make the AM confirm that's intentional.
+  if (!email && !phone) {
+    const ok = confirm("\u26A0 No contact information for " + name + ".\n\n" +
+      "There's no email and no phone on this lead, so nobody can action it or email it to an AM. " +
+      "It'll be flagged \"No contact\" in the pipeline.\n\n" +
+      "Add it anyway?");
+    if (!ok) return;
+  }
+
   const lead = {
     lead_id: uid(),
     company_name: name,
     website_url: document.getElementById("leadWebsite").value.trim(),
     contact_name: document.getElementById("leadContactName").value.trim(),
-    contact_email: document.getElementById("leadContactEmail").value.trim(),
-    contact_phone: document.getElementById("leadContactPhone").value.trim(),
+    contact_email: email,
+    contact_phone: phone,
     source_type: document.getElementById("leadSourceType").value,
     industry: document.getElementById("leadIndustry").value,
     inquiry_notes: document.getElementById("leadInquiryNotes").value.trim(),
@@ -6199,7 +6277,7 @@ function renderLeadDetailBody(lead) {
   const intake = buildIntakeEditForm(lead);
 
   if (!q) {
-    body.innerHTML = intake + '<div class="empty-state">Not qualified yet. Click "Run / re-run AI qualification" below — it researches the company via web search, typically takes 15-30 seconds.</div>';
+    body.innerHTML = leadContactBanner(lead) + intake + '<div class="empty-state">Not qualified yet. Click "Run / re-run AI qualification" below — it researches the company via web search, typically takes 15-30 seconds.</div>';
     document.getElementById("saveLeadIntakeBtn").addEventListener("click", handleSaveLeadIntake);
     return;
   }
@@ -6322,7 +6400,7 @@ function renderLeadDetailBody(lead) {
     (q.assumptions_flagged.length ? '<div class="qual-section"><h4>Assumptions flagged</h4><div style="font-size:12px;color:#6B7280">' + q.assumptions_flagged.join("; ") + '</div></div>' : '') +
     '</details>';
 
-  body.innerHTML = intake + rundown + nextSteps + contacts + details;
+  body.innerHTML = leadContactBanner(lead) + intake + rundown + nextSteps + contacts + details;
   document.getElementById("saveLeadIntakeBtn").addEventListener("click", handleSaveLeadIntake);
 }
 
@@ -6354,12 +6432,13 @@ async function handleRunQualification() {
       return;
     }
     lead.qualification = result;
-    backfillLeadContactFromQual(lead);
+    const noContact = backfillLeadContactFromQual(lead);
     if (lead.status === "New") lead.status = "Qualified";
     document.getElementById("leadStatusSelect").value = lead.status;
     await saveLeads();
     renderLeadDetailBody(lead);
     renderLeadsPage();
+    if (noContact) warnNoContactAfterQual(lead);
   } catch (e) {
     alert("Qualification request failed: " + e.message);
   } finally {
@@ -6390,13 +6469,14 @@ async function handlePasteQualification() {
   }
   parsed.qualified_at = new Date().toISOString();
   lead.qualification = parsed;
-  backfillLeadContactFromQual(lead);
+  const noContact = backfillLeadContactFromQual(lead);
   if (lead.status === "New") lead.status = "Qualified";
   document.getElementById("leadStatusSelect").value = lead.status;
   await saveLeads();
   box.value = "";
   renderLeadDetailBody(lead);
   renderLeadsPage();
+  if (noContact) warnNoContactAfterQual(lead);
 }
 
 async function handleLeadStatusChange() {
