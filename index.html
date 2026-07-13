@@ -5606,6 +5606,95 @@ function leadRundownBlock(lead) {
   return lines.join("\n");
 }
 
+// Compact one-liner per lead, used when the full rundown would overflow the mailto limit.
+function leadCompactLine(lead) {
+  const q = lead.qualification;
+  const c = leadBestContact(lead);
+  const score = (q && q.qualification_scoring && q.qualification_scoring.total_score) || "—";
+  const tier = (q && q.qualification_scoring && q.qualification_scoring.qualification_tier) || "—";
+  return "• " + lead.company_name + " — " + score + "/50 " + tier +
+    " | " + (c.name || "contact TBD") +
+    " | " + (c.email || "EMAIL NOT FOUND");
+}
+
+// Most mail clients (notably Outlook) silently refuse to open a mailto: past ~2000 chars.
+// That failure is invisible — the click just does nothing — so we hard-cap the URL length.
+const MAILTO_MAX = 1900;
+
+function buildLeadMailto(am, leads) {
+  const realAM = ACCOUNT_MANAGERS.indexOf(am) !== -1;
+  const to = realAM ? amEmail(am) : "";
+  const subject = "Lead handoff: " + leads.length + " lead" + (leads.length > 1 ? "s" : "") +
+    (realAM ? " for " + am : " — needs AM assignment");
+
+  const greeting = realAM ? "Hi " + am.split(" ")[0] + "," : "Team,";
+  const intro = realAM
+    ? "Passing you the following lead" + (leads.length > 1 ? "s" : "") + " from BackBone:"
+    : "These leads route to a 'varies' lane or have no industry set — please assign an AM:";
+
+  function assemble(detailed) {
+    const parts = [greeting, "", intro, ""];
+    leads.forEach(function(l, i) {
+      if (detailed) {
+        parts.push("── " + (i + 1) + " ─────────────────────────");
+        parts.push(leadRundownBlock(l));
+        parts.push("");
+      } else {
+        parts.push(leadCompactLine(l));
+      }
+    });
+    if (!detailed) {
+      parts.push("");
+      parts.push("(Full rundowns copied to your clipboard — paste below.)");
+    }
+    parts.push("");
+    parts.push("— Sent from BackBone");
+    return parts.join("\n");
+  }
+
+  function hrefFor(body) {
+    // The recipient before "?" must be RAW — encoding the "@" to %40 makes many clients
+    // refuse to open. Only the query params get percent-encoded.
+    return "mailto:" + to +
+      "?subject=" + encodeURIComponent(subject) +
+      "&body=" + encodeURIComponent(body);
+  }
+
+  // Prefer the full detailed body; fall back to compact if it would blow the URL limit.
+  let body = assemble(true);
+  let href = hrefFor(body);
+  let truncated = false;
+  if (href.length > MAILTO_MAX) {
+    body = assemble(false);
+    href = hrefFor(body);
+    truncated = true;
+    // If even the compact body is too long (a lot of leads selected), trim to a bare list.
+    if (href.length > MAILTO_MAX) {
+      const bare = [greeting, "", intro, ""]
+        .concat(leads.map(function(l) { return "• " + l.company_name; }))
+        .concat(["", "(Full details copied to your clipboard — paste below.)", "", "— Sent from BackBone"])
+        .join("\n");
+      body = bare;
+      href = hrefFor(bare);
+    }
+  }
+
+  // The full text always exists, even when the mailto body was compacted.
+  const fullBody = assemble(true);
+  return { to: to, subject: subject, body: body, fullBody: fullBody, href: href, truncated: truncated };
+}
+
+// Opening a mailto: is more reliable via a real anchor click than window.location.href,
+// and lets us detect the "nothing happened" case (no default mail client) and fall back.
+function openMailto(href) {
+  const a = document.createElement("a");
+  a.href = href;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function() { document.body.removeChild(a); }, 0);
+}
+
 function emailSelectedLeadsToAM() {
   const chosen = state_leads.filter(function(l) { return selectedLeadIds.has(l.lead_id); });
   if (chosen.length === 0) { alert("Select one or more leads first (checkbox on the left)."); return; }
@@ -5616,39 +5705,68 @@ function emailSelectedLeadsToAM() {
     const q = l.qualification;
     const ind = q ? (q.company_overview.industry_classification || "") : (l.industry || "");
     const lane = ind ? getAssignedAM(ind) : null;
-    let am = lane && !lane.varies ? lane.am : (lane && lane.varies ? "" : "");
+    let am = lane && !lane.varies ? lane.am : "";
     const key = am || "Unassigned (varies / no industry)";
     (groups[key] = groups[key] || []).push(l);
   });
 
   const amNames = Object.keys(groups);
-  // If everything routes to a single real AM, send one mailto straight to them. Otherwise
-  // (mixed AMs, or varies/unassigned) open one compose per group so nothing is misdirected.
-  amNames.forEach(function(am, idx) {
-    const leads = groups[am];
-    const realAM = ACCOUNT_MANAGERS.indexOf(am) !== -1;
-    const to = realAM ? amEmail(am) : "";
-    const subject = "Lead handoff: " + leads.length + " lead" + (leads.length > 1 ? "s" : "") +
-      (realAM ? " for " + am : " — needs AM assignment");
-    let bodyParts = [];
-    bodyParts.push(realAM ? "Hi " + am.split(" ")[0] + "," : "Team,");
-    bodyParts.push("");
-    bodyParts.push(realAM
-      ? "Passing you the following lead" + (leads.length > 1 ? "s" : "") + " from BackBone:"
-      : "These leads route to a 'varies' lane or have no industry set — please assign an AM:");
-    bodyParts.push("");
-    leads.forEach(function(l, i) {
-      bodyParts.push("── " + (i + 1) + " ─────────────────────────");
-      bodyParts.push(leadRundownBlock(l));
-      bodyParts.push("");
-    });
-    bodyParts.push("— Sent from BackBone");
-    const href = "mailto:" + encodeURIComponent(to) +
-      "?subject=" + encodeURIComponent(subject) +
-      "&body=" + encodeURIComponent(bodyParts.join("\n"));
-    // Slight stagger so multiple compose windows don't get swallowed by the browser.
-    setTimeout(function() { window.location.href = href; }, idx * 400);
-  });
+  const drafts = amNames.map(function(am) { return Object.assign({ am: am }, buildLeadMailto(am, groups[am])); });
+
+  // Always stash the drafts so the "Copy draft" fallback works even if no mail client opened.
+  window.__lastLeadDraft = drafts[0];
+  window.__lastLeadDrafts = drafts;
+
+  // If any draft had to be compacted to fit the mailto limit, put the FULL text on the
+  // clipboard so the AM still gets everything — they just paste it into the open draft.
+  const anyTruncated = drafts.some(function(d) { return d.truncated; });
+  if (anyTruncated && navigator.clipboard && navigator.clipboard.writeText) {
+    const full = drafts.map(function(d) {
+      return "To: " + (d.to || "(assign an AM)") + "\nSubject: " + d.subject + "\n\n" + d.fullBody;
+    }).join("\n\n==========\n\n");
+    navigator.clipboard.writeText(full).catch(function() {});
+  }
+
+  // Multiple AM groups can't all be opened reliably (browsers honor only the last
+  // navigation). Open the first now, then offer the rest one at a time.
+  let idx = 0;
+  function openNext() {
+    if (idx >= drafts.length) return;
+    const d = drafts[idx];
+    openMailto(d.href);
+    idx++;
+    if (idx < drafts.length) {
+      setTimeout(function() {
+        if (confirm("Opened a draft for " + drafts[idx - 1].am + ".\n\nOpen the next one (" +
+          drafts[idx].am + ", " + groups[drafts[idx].am].length + " lead(s))?")) openNext();
+      }, 600);
+    }
+  }
+  openNext();
+
+  if (anyTruncated) {
+    setTimeout(function() {
+      alert("That's a lot of detail for one email link, so the draft has a short summary list.\n\n" +
+            "The full rundowns are on your clipboard — just paste into the open draft.\n\n" +
+            "(If no mail app opened, hit 'Copy draft' and paste into a new email.)");
+    }, 800);
+  }
+}
+
+// Manual fallback the user can trigger if no mail client opened: copies the full draft(s).
+function copyLastLeadDraft() {
+  const drafts = window.__lastLeadDrafts;
+  if (!drafts || !drafts.length) { alert("No draft to copy yet — click 'Email selected to AM' first."); return; }
+  const text = drafts.map(function(d) {
+    return "To: " + (d.to || "(assign an AM)") + "\nSubject: " + d.subject + "\n\n" + d.fullBody;
+  }).join("\n\n==========\n\n");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      alert("Draft copied to clipboard — paste it into a new email.");
+    }).catch(function() { prompt("Copy this draft:", text); });
+  } else {
+    prompt("Copy this draft:", text);
+  }
 }
 
 function toggleLeadSelected(leadId, checked) {
@@ -5689,6 +5807,8 @@ function renderLeadsPage() {
   let html = '<div class="toolbar" style="justify-content:flex-end;gap:10px;margin-bottom:10px">' +
     '<button id="emailSelectedBtn" class="btn btn-green" disabled>' +
       'Email selected to AM (<span id="selectedCount">0</span>)</button>' +
+    '<button id="copyDraftBtn" class="btn btn-gray" title="Use this if no mail client opened">' +
+      'Copy draft</button>' +
     '</div>';
 
   html += "<table><thead>" + buildSortableHeaderRow(LEADS_COLUMNS, leadsSort).replace(
@@ -5741,6 +5861,8 @@ function renderLeadsPage() {
     document.getElementById("selectedCount").textContent = selectedLeadIds.size;
     emailBtn.addEventListener("click", emailSelectedLeadsToAM);
   }
+  const copyBtn = document.getElementById("copyDraftBtn");
+  if (copyBtn) copyBtn.addEventListener("click", copyLastLeadDraft);
 }
 
 function scanCardStatus(msg, cls) {
