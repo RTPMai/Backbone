@@ -5756,16 +5756,25 @@ function cleanPhone(v) {
   return t;
 }
 
-// Return every contact on a lead as an INTACT PERSON, ranked by confidence.
+// Return every contact on a lead as an INTACT PERSON, ranked by usefulness to an AM.
 //
-// This exists because leadBestContact() merges fields ACROSS people — it takes the
-// first name it finds, then the first email from any contact, then the first phone
-// from any other. That produces a contact who doesn't exist (Marcus's name next to
-// Priya's email), which is fine for a one-line table cell but actively dangerous in a
-// handoff email: an AM emails the wrong person believing it's the right one.
+// This exists because leadBestContact() merges fields ACROSS people — first name it
+// finds, then the first email from any contact, then the first phone from any other.
+// That invents a person who doesn't exist (Marcus's name beside Priya's email). Fine
+// for a one-line table cell; dangerous in a handoff email, where an AM would email the
+// wrong person believing it's the right one.
 //
-// Ranked by the schema's confidence field, with reachability as the tiebreak — a
-// "confirmed" contact you can't reach loses to a less certain one you can.
+// RANKING. Three signals, in priority order:
+//   1. REACHABLE — a contact with an email outranks one without, always. An AM whose
+//      first move is email cannot act on a name with no address, however senior.
+//   2. BUYING ROLE — marketing / HR / procurement / brand people actually sign off on
+//      apparel spend. A "confirmed" receptionist is worth less than a probable
+//      marketing director.
+//   3. CONFIDENCE — only breaks ties between contacts that are equally reachable and
+//      equally likely to be the buyer.
+// Confidence used to dominate, which meant a certain-but-useless contact could beat the
+// person who actually writes the cheque.
+
 const CONF_RANK = {
   "confirmed": 0,
   "third-party unverified": 1,
@@ -5773,11 +5782,47 @@ const CONF_RANK = {
   "not found": 3
 };
 
+// Titles that decide or influence apparel/merch purchasing. Ordered rough-strongest
+// first; the score is what matters, not the position.
+const BUYING_ROLES = [
+  { re: /\b(chief marketing|cmo)\b/i,                          score: 10 },
+  { re: /\bmarketing\b/i,                                      score: 9 },
+  { re: /\b(brand|creative)\b/i,                               score: 9 },
+  { re: /\b(purchas|procure|buyer|sourcing)\b/i,               score: 9 },
+  { re: /\b(human resources|\bhr\b|people|talent|culture)\b/i, score: 8 },
+  { re: /\b(merch|apparel|uniform|swag|promo)\b/i,             score: 8 },
+  { re: /\b(event|trade ?show|community|engagement)\b/i,       score: 7 },
+  { re: /\b(communications|comms|pr)\b/i,                      score: 6 },
+  { re: /\b(operations|ops|facilit|safety)\b/i,                score: 5 },
+  { re: /\b(owner|founder|president|principal)\b/i,            score: 5 },
+  { re: /\b(ceo|coo|chief)\b/i,                                score: 4 },
+  { re: /\b(office manager|admin|executive assistant|\bea\b)\b/i, score: 4 },
+  { re: /\b(sales|account)\b/i,                                score: 2 }
+];
+
+// Score a person's title (and relevance blurb) for buying influence. The qualification's
+// `relevance` field often says "owns merch spend" outright, so it's worth reading too.
+function buyingScore(p) {
+  const hay = ((p.title || "") + " " + (p.relevance || "")).trim();
+  if (!hay) return 0;
+  let best = 0;
+  for (const r of BUYING_ROLES) {
+    if (r.re.test(hay) && r.score > best) best = r.score;
+  }
+  // Explicit purchasing language in the relevance blurb is a strong signal on its own.
+  if (/\b(budget|spend|sign.?off|approves|decision|orders|purchas)\b/i.test(p.relevance || "")) {
+    best = Math.max(best, 8);
+  }
+  return best;
+}
+
 function leadContacts(lead) {
   const q = lead.qualification;
   const list = (q && Array.isArray(q.key_contacts)) ? q.key_contacts : [];
 
   const people = list.map(function(c) {
+    // Explicit fields first, then fall back to parsing the legacy freeform
+    // contact_info string — older qualifications only populate that.
     let email = cleanEmail(c.email) || cleanEmail(c.contact_info);
     let phone = cleanPhone(c.phone);
     if (!phone && c.contact_info) {
@@ -5794,13 +5839,13 @@ function leadContacts(lead) {
     };
   });
 
-  // The lead's own intake fields are a real person too — include them if the
-  // qualification didn't already surface that email.
+  // The lead's own intake fields are a real person too — an AM typed them in, so treat
+  // them as confirmed. Skip if the qualification already surfaced the same person.
   const own = {
     name: cleanContactValue(lead.contact_name),
     title: "",
     relevance: "",
-    confidence: "confirmed", // hand-entered by an AM, so treat as confirmed
+    confidence: "confirmed",
     email: cleanEmail(lead.contact_email),
     phone: cleanPhone(lead.contact_phone)
   };
@@ -5809,16 +5854,30 @@ function leadContacts(lead) {
       return (own.email && p.email && p.email.toLowerCase() === own.email.toLowerCase()) ||
              (own.name && p.name && p.name.toLowerCase() === own.name.toLowerCase());
     });
-    if (!dupe) people.unshift(own);
+    if (!dupe) people.push(own);
   }
 
-  return people.sort(function(x, y) {
-    const rx = CONF_RANK[String(x.confidence).toLowerCase()];
-    const ry = CONF_RANK[String(y.confidence).toLowerCase()];
-    const d = (rx == null ? 2 : rx) - (ry == null ? 2 : ry);
+  // Drop entries that are entirely empty — a contact with no name, no email and no
+  // phone is a placeholder, not a person.
+  const real = people.filter(function(p) { return p.name || p.email || p.phone; });
+
+  return real.sort(function(x, y) {
+    // 1. Has an email. Non-negotiable — email-first AMs can't use anything else.
+    const ex = x.email ? 1 : 0, ey = y.email ? 1 : 0;
+    if (ex !== ey) return ey - ex;
+
+    // 2. Likely to be the buyer.
+    const bx = buyingScore(x), by = buyingScore(y);
+    if (bx !== by) return by - bx;
+
+    // 3. How sure we are.
+    const cx = CONF_RANK[String(x.confidence).toLowerCase()];
+    const cy = CONF_RANK[String(y.confidence).toLowerCase()];
+    const d = (cx == null ? 2 : cx) - (cy == null ? 2 : cy);
     if (d !== 0) return d;
-    const reach = function(p) { return (p.email ? 2 : 0) + (p.phone ? 1 : 0); };
-    return reach(y) - reach(x);
+
+    // 4. Last resort: a phone is better than nothing.
+    return (y.phone ? 1 : 0) - (x.phone ? 1 : 0);
   });
 }
 
@@ -6135,8 +6194,12 @@ function buildLeadMailto(am, leads) {
         }
         parts.push("");
       } else {
+        // Loud on purpose. An empty contact block silently shipping to an AM is worse
+        // than an obvious warning — they'd assume the lead simply has no people yet.
         parts.push("WHO TO CONTACT");
-        parts.push("  \u26A0 No contacts captured yet \u2014 needs manual lookup");
+        parts.push("  \u26A0 NO CONTACTS ON THIS LEAD.");
+        parts.push("  Nothing was captured during qualification \u2014 this one needs a");
+        parts.push("  manual lookup before you can reach out.");
         parts.push("");
       }
 
