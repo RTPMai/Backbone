@@ -22,7 +22,7 @@ import { requireAuth } from "../lib/auth.js";
 // Bump this whenever brief.js changes. It's echoed in every error so we can tell at a
 // glance whether the deployed file is the one we think it is — several rounds of this
 // debug were spent diagnosing a build that had never actually shipped.
-const BUILD = "brief-v8";
+const BUILD = "brief-v9";
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -150,15 +150,18 @@ function renderBrief(lead, am) {
       '</div>' +
       (clean(c.title) ? '<div class="call-title">' + esc(c.title) + '</div>' : '') +
       (clean(c.relevance) ? '<div class="call-rel">' + esc(c.relevance) + '</div>' : '') +
+      // AMs reach out by EMAIL first, so email is the primary (tier-coloured) action
+      // and phone is the secondary fallback. Reversing these would put the button they
+      // use least under their thumb.
       '<div class="call-acts">' +
+        (b.email
+          ? '<a class="act act-primary" href="mailto:' + esc(b.email) + '">' +
+              '<span class="act-i">\u2709</span> Email ' + esc(b.email) + '</a>'
+          : '<div class="act act-none">No email found \u2014 needs manual lookup</div>') +
         (b.phone
-          ? '<a class="act act-call" href="tel:' + esc(b.phone.replace(/[^\d+]/g, "")) + '">' +
+          ? '<a class="act act-secondary" href="tel:' + esc(b.phone.replace(/[^\d+]/g, "")) + '">' +
               '<span class="act-i">\u2706</span> Call ' + esc(b.phone) + '</a>'
           : '') +
-        (b.email
-          ? '<a class="act act-mail" href="mailto:' + esc(b.email) + '">' +
-              '<span class="act-i">\u2709</span> ' + esc(b.email) + '</a>'
-          : '<div class="act act-none">No email found \u2014 needs manual lookup</div>') +
       '</div>';
   } else {
     callHtml = '<div class="act act-none">No contact captured yet \u2014 needs manual lookup</div>';
@@ -179,12 +182,12 @@ function renderBrief(lead, am) {
             '</div>' +
             (clean(c.relevance) ? '<div class="oc-rel">' + esc(c.relevance) + '</div>' : '') +
             '<div class="oc-acts">' +
+              (b.email
+                ? '<a class="oc-link oc-mail" href="mailto:' + esc(b.email) + '">\u2709 ' + esc(b.email) + '</a>'
+                : '<span class="oc-none">No email found</span>') +
               (b.phone
                 ? '<a class="oc-link" href="tel:' + esc(b.phone.replace(/[^\d+]/g, "")) + '">\u2706 ' + esc(b.phone) + '</a>'
                 : '') +
-              (b.email
-                ? '<a class="oc-link" href="mailto:' + esc(b.email) + '">\u2709 ' + esc(b.email) + '</a>'
-                : '<span class="oc-none">No email found</span>') +
             '</div>' +
           '</div>';
         }).join("") +
@@ -253,13 +256,14 @@ function renderBrief(lead, am) {
 '.oc-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}' +
 '.oc-link{display:inline-flex;align-items:center;gap:5px;padding:8px 12px;border-radius:9px;' +
   'background:#F4F6F8;color:#111827;font-size:13px;font-weight:600;text-decoration:none}' +
+'.oc-mail{background:#EAF5EE;color:#1F6B3D}' +
 '.oc-none{font-size:12px;font-weight:600;color:#B45309;padding:8px 0}' +
 '.call-acts{margin-top:14px;display:flex;flex-direction:column;gap:8px}' +
 '.act{display:flex;align-items:center;gap:9px;padding:13px 15px;border-radius:11px;' +
   'font-size:14.5px;font-weight:600;text-decoration:none}' +
 '.act-i{font-size:15px;opacity:.85}' +
-'.act-call{background:' + tc.bar + ';color:#fff}' +
-'.act-mail{background:#F4F6F8;color:#111827}' +
+'.act-primary{background:' + tc.bar + ';color:#fff}' +
+'.act-secondary{background:#F4F6F8;color:#111827}' +
 '.act-none{background:#FEF3C7;color:#92400E;font-size:13px;font-weight:600}' +
 
 /* the pitch */
@@ -305,7 +309,7 @@ function renderBrief(lead, am) {
 
 // THE CALL
 '<div class="call">' +
-  '<div class="call-l">Who to call first</div>' +
+  '<div class="call-l">Contact first</div>' +
   callHtml +
 '</div>' +
 
