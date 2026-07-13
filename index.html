@@ -6013,6 +6013,10 @@ function toggleLeadSelected(leadId, checked) {
   if (bulkSel) bulkSel.disabled = n === 0;
   const bulkBtn = document.getElementById("bulkStatusApplyBtn");
   if (bulkBtn) bulkBtn.disabled = n === 0;
+  const delCnt = document.getElementById("bulkDeleteCount");
+  if (delCnt) delCnt.textContent = n;
+  const delBtn = document.getElementById("bulkDeleteBtn");
+  if (delBtn) delBtn.disabled = n === 0;
 }
 
 function renderLeadsPage() {
@@ -6053,6 +6057,8 @@ function renderLeadsPage() {
       '<button id="bulkStatusApplyBtn" class="btn btn-gray btn-sm"' + disabled + '>' +
         'Apply to <span id="bulkStatusCount">0</span></button>' +
     '</div>' +
+    '<button id="bulkDeleteBtn" class="btn btn-danger btn-sm"' + disabled + '>' +
+      'Delete (<span id="bulkDeleteCount">0</span>)</button>' +
     '<button id="emailSelectedBtn" class="btn btn-green" disabled>' +
       'Email selected to AM (<span id="selectedCount">0</span>)</button>' +
     '<button id="copyDraftBtn" class="btn btn-gray" title="Use this if no mail client opened">' +
@@ -6118,6 +6124,68 @@ function renderLeadsPage() {
   if (bulkBtn) bulkBtn.addEventListener("click", handleBulkStatusChange);
   const bulkCount = document.getElementById("bulkStatusCount");
   if (bulkCount) bulkCount.textContent = selectedLeadIds.size;
+
+  const delBtn = document.getElementById("bulkDeleteBtn");
+  if (delBtn) delBtn.addEventListener("click", handleBulkDeleteLeads);
+  const delCount = document.getElementById("bulkDeleteCount");
+  if (delCount) delCount.textContent = selectedLeadIds.size;
+}
+
+// Delete every checked lead in one save. Rolls back cleanly if the save fails.
+async function handleBulkDeleteLeads() {
+  const targets = state_leads.filter(function(l) { return selectedLeadIds.has(l.lead_id); });
+  if (targets.length === 0) return;
+
+  // Name them so nobody nukes the wrong rows — cap the list so it stays readable.
+  const names = targets.slice(0, 12).map(function(l) { return "  \u2022 " + l.company_name; }).join("\n") +
+    (targets.length > 12 ? "\n  \u2026and " + (targets.length - 12) + " more" : "");
+
+  const promoted = targets.filter(function(l) { return l.promoted_customer_id; });
+
+  let msg = "Permanently delete " + targets.length + " lead" + (targets.length > 1 ? "s" : "") + "?\n\n" + names +
+    "\n\nThis can't be undone.";
+  if (promoted.length) {
+    msg += "\n\n\u26A0 " + promoted.length + " of these " + (promoted.length > 1 ? "were" : "was") +
+      " promoted to the Roster. The Roster prospect row(s) will be LEFT IN PLACE \u2014 " +
+      "remove those separately on the Roster if you don't want them.";
+  }
+  if (!confirm(msg)) return;
+
+  // Snapshot with original indexes so a failed save restores exact ordering.
+  const removed = [];
+  for (let i = state_leads.length - 1; i >= 0; i--) {
+    if (selectedLeadIds.has(state_leads[i].lead_id)) {
+      removed.push({ idx: i, lead: state_leads[i] });
+      state_leads.splice(i, 1);
+    }
+  }
+
+  try {
+    await saveLeads();
+  } catch (e) {
+    // Reinsert low-index-first to land everything back where it was.
+    removed.sort(function(a, b) { return a.idx - b.idx; })
+      .forEach(function(r) { state_leads.splice(r.idx, 0, r.lead); });
+    alert("Couldn't delete \u2014 save failed. Nothing was removed.\n\n" +
+      (e && e.message ? e.message : "unknown error"));
+    renderLeadsPage();
+    return;
+  }
+
+  // Close the detail modal if the lead it was showing just got deleted.
+  if (activeLeadId && selectedLeadIds.has(activeLeadId)) {
+    const overlay = document.getElementById("leadDetailOverlay");
+    if (overlay) overlay.classList.remove("open");
+    activeLeadId = null;
+  }
+  selectedLeadIds.clear();
+  renderLeadsPage();
+
+  if (promoted.length) {
+    alert("Deleted " + targets.length + " lead" + (targets.length > 1 ? "s" : "") + ".\n\n" +
+      promoted.length + " Roster prospect row(s) were left in place: " +
+      promoted.map(function(l) { return l.promoted_customer_id; }).join(", "));
+  }
 }
 
 // Apply one status to every checked lead in a single save.
