@@ -368,6 +368,24 @@ textarea.field{min-height:60px;resize:vertical}
       </div>
     </div>
 
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-hd"><h3>Create lead from qualification JSON</h3></div>
+      <div class="card-bd">
+        <div class="help">
+          Already have a qualification JSON from a Claude chat? Paste it here and it'll create the
+          lead <em>and</em> attach the qualification in one step — no need to add the lead first.
+          Company name, website, contact, and industry are pulled from the JSON automatically.
+        </div>
+        <textarea class="field" id="newLeadJsonBox" style="width:100%;min-height:160px;font-family:monospace;font-size:11px" placeholder="Paste the full qualification JSON object here"></textarea>
+        <div style="margin-top:10px">
+          <button class="btn btn-green" id="newLeadJsonBtn">Create lead from JSON</button>
+          <button class="btn btn-gray btn-sm" id="newLeadJsonClearBtn" style="margin-left:6px">Clear</button>
+          <span id="newLeadJsonErr" style="color:#DC2626;font-size:12px;margin-left:10px"></span>
+          <span id="newLeadJsonOk" style="color:#3D9A5C;font-size:12px;margin-left:10px"></span>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-hd"><h3>Pipeline</h3></div>
       <div class="card-bd">
@@ -6648,6 +6666,130 @@ async function handlePasteQualification() {
   if (noContact) warnNoContactAfterQual(lead);
 }
 
+// ---- Create a lead directly from a pasted qualification JSON --------------------
+// Same schema check as handlePasteQualification, but builds the lead record from the
+// JSON instead of requiring an empty lead to already exist.
+
+const QUAL_REQUIRED_KEYS = ["company_overview", "apparel_opportunity", "growth_signals",
+  "qualification_scoring", "routing", "red_flags", "executive_summary", "assumptions_flagged"];
+
+// Pull the first usable email/phone out of key_contacts[]. Reuses the same cleaners the
+// rest of the app uses, so "not found" placeholders get stripped rather than stored.
+function contactsFromQual(parsed) {
+  const out = { name: "", email: "", phone: "" };
+  const list = Array.isArray(parsed.key_contacts) ? parsed.key_contacts : [];
+  for (const c of list) {
+    if (!c) continue;
+    if (!out.name) out.name = cleanContactValue(c.name);
+    if (!out.email) out.email = cleanEmail(c.email) || cleanEmail(c.contact_info);
+    if (!out.phone) {
+      out.phone = cleanPhone(c.phone);
+      if (!out.phone && c.contact_info) {
+        const m = String(c.contact_info).match(/(\+?\d[\d\-().\s]{7,}\d)/);
+        if (m) out.phone = cleanPhone(m[1]);
+      }
+    }
+    if (out.name && out.email && out.phone) break;
+  }
+  return out;
+}
+
+async function handleCreateLeadFromJson() {
+  const box = document.getElementById("newLeadJsonBox");
+  const errEl = document.getElementById("newLeadJsonErr");
+  const okEl = document.getElementById("newLeadJsonOk");
+  const btn = document.getElementById("newLeadJsonBtn");
+  errEl.textContent = "";
+  okEl.textContent = "";
+
+  const raw = box.value.trim();
+  if (!raw) { errEl.textContent = "Nothing to parse — paste a qualification JSON first."; return; }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    errEl.textContent = "That's not valid JSON.";
+    return;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    errEl.textContent = "Expected a single JSON object.";
+    return;
+  }
+  for (let i = 0; i < QUAL_REQUIRED_KEYS.length; i++) {
+    if (!(QUAL_REQUIRED_KEYS[i] in parsed)) {
+      errEl.textContent = 'Missing "' + QUAL_REQUIRED_KEYS[i] + '" — this doesn\'t match the qualification schema.';
+      return;
+    }
+  }
+
+  const co = parsed.company_overview || {};
+  const name = cleanContactValue(co.company_name);
+  if (!name) {
+    errEl.textContent = 'No usable "company_overview.company_name" in the JSON — can\'t create a lead without a company name.';
+    return;
+  }
+
+  // Same duplicate guards as handleAddLead, plus a check against the leads pipeline itself.
+  const dupRoster = state.synced.find(function(c) {
+    return c.company_name && c.company_name.toLowerCase() === name.toLowerCase();
+  });
+  if (dupRoster) {
+    errEl.textContent = 'A customer named "' + name + '" already exists in the Roster — check before adding as a new lead.';
+    return;
+  }
+  const dupLead = state_leads.find(function(l) {
+    return l.company_name && l.company_name.toLowerCase() === name.toLowerCase();
+  });
+  if (dupLead) {
+    const ok = confirm('A lead named "' + name + '" is already in the pipeline (status: ' + dupLead.status + ').\n\n' +
+      'Create a second lead record anyway?');
+    if (!ok) return;
+  }
+
+  btn.disabled = true;
+  try {
+    const c = contactsFromQual(parsed);
+    const industry = normalizeIndustry(cleanContactValue(co.industry_classification) || "");
+    const website = cleanContactValue(co.website) || "";
+
+    parsed.qualified_at = new Date().toISOString();
+
+    const lead = {
+      lead_id: uid(),
+      company_name: name,
+      website_url: website,
+      contact_name: c.name,
+      contact_email: c.email,
+      contact_phone: c.phone,
+      source_type: "Outbound prospecting",
+      industry: industry,
+      inquiry_notes: "",
+      existing_crm_notes: "Created from pasted qualification JSON on " + new Date().toLocaleDateString() + ".",
+      status: "Qualified",
+      created_at: new Date().toISOString(),
+      qualification: parsed,
+      promoted_customer_id: null
+    };
+
+    state_leads.push(lead);
+    await saveLeads();
+    box.value = "";
+    renderLeadsPage();
+
+    const qs = parsed.qualification_scoring || {};
+    okEl.textContent = "Created \u201C" + name + "\u201D" +
+      (qs.total_score != null ? " \u2014 " + qs.total_score + "/50, " + (qs.qualification_tier || "") : "") + ".";
+
+    if (!c.email && !c.phone) warnNoContactAfterQual(lead);
+    openLeadDetail(lead.lead_id);
+  } catch (e) {
+    errEl.textContent = "Couldn't create the lead: " + (e && e.message ? e.message : "unknown error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function handleLeadStatusChange() {
   const lead = state_leads.find(function(l) { return l.lead_id === activeLeadId; });
   if (!lead) return;
@@ -7156,6 +7298,12 @@ document.getElementById("leadDetailOverlay").addEventListener("click", function(
 document.getElementById("deleteLeadBtn").addEventListener("click", handleDeleteLead);
 document.getElementById("rerunQualBtn").addEventListener("click", handleRunQualification);
 document.getElementById("pasteQualBtn").addEventListener("click", handlePasteQualification);
+document.getElementById("newLeadJsonBtn").addEventListener("click", handleCreateLeadFromJson);
+document.getElementById("newLeadJsonClearBtn").addEventListener("click", function() {
+  document.getElementById("newLeadJsonBox").value = "";
+  document.getElementById("newLeadJsonErr").textContent = "";
+  document.getElementById("newLeadJsonOk").textContent = "";
+});
 (function populateLeadStatusSelect() {
   const el = document.getElementById("leadStatusSelect");
   if (!el) return;
