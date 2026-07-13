@@ -5919,10 +5919,19 @@ async function generateBrief(lead, am) {
     if (!r.ok) {
       const e = await r.json().catch(function() { return {}; });
       // A 404 means api/brief.js isn't deployed at all — a very different fix
-      // from "Blob isn't configured", so don't collapse them into one message.
-      const reason = r.status === 404
+      // from a credential problem, so don't collapse them into one message.
+      let reason = r.status === 404
         ? "/api/brief not found — is api/brief.js deployed?"
         : (e.error || ("HTTP " + r.status));
+      // The server reports which credentials it can actually see. Append it, since
+      // "all three false" means the redeploy didn't take, while OIDC present + an
+      // access error means the store is the wrong type.
+      if (e.diag) {
+        const d = e.diag;
+        reason += "  [oidc:" + (d.oidc ? "yes" : "NO") +
+                  " storeId:" + (d.storeId ? "yes" : "NO") +
+                  " rwToken:" + (d.rwToken ? "yes" : "NO") + "]";
+      }
       briefErrors[lead.lead_id] = reason;
       console.warn("Brief generation failed for " + lead.company_name + ":", reason);
       return null;
@@ -6031,18 +6040,34 @@ function buildLeadMailto(am, leads) {
   let body = assemble(true);
   let href = hrefFor(body);
   let truncated = false;
+
+  // If every lead has a brief link, the compact body is not actually lossy — the link
+  // carries the full detail. So dropping to compact costs nothing and should NOT raise
+  // the "full rundowns go to your clipboard" warning, which would be false.
+  const allHaveBriefs = leads.every(function(l) { return briefUrls[l.lead_id]; });
+
   if (href.length > MAILTO_MAX) {
     body = assemble(false);
     href = hrefFor(body);
-    truncated = true;
+    truncated = !allHaveBriefs;
     // If even the compact body is too long (a lot of leads selected), trim to a bare list.
     if (href.length > MAILTO_MAX) {
       const bare = [greeting, "", intro, ""]
-        .concat(leads.map(function(l) { return "• " + l.company_name; }))
-        .concat(["", "(Full details copied to your clipboard — paste below.)", "", "— Sent from BackBone"])
+        .concat(leads.map(function(l) {
+          const u = briefUrls[l.lead_id];
+          return "\u2022 " + l.company_name + (u ? " \u2014 " + u : "");
+        }))
+        .concat([
+          "",
+          allHaveBriefs ? "" : "(Full details copied to your clipboard \u2014 paste below.)",
+          "",
+          "\u2014 Sent from BackBone"
+        ])
         .join("\n");
       body = bare;
       href = hrefFor(bare);
+      // A bare list DOES lose the inline detail — unless the briefs cover it.
+      truncated = !allHaveBriefs;
     }
   }
 
