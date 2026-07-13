@@ -19,6 +19,11 @@
 import { put } from "@vercel/blob";
 import { requireAuth } from "../lib/auth.js";
 
+// Bump this whenever brief.js changes. It's echoed in every error so we can tell at a
+// glance whether the deployed file is the one we think it is — several rounds of this
+// debug were spent diagnosing a build that had never actually shipped.
+const BUILD = "brief-v4";
+
 // ---- helpers ---------------------------------------------------------------
 
 function esc(v) {
@@ -275,21 +280,17 @@ export default async function handler(req, res) {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed" });
   }
-  // Vercel Blob authenticates one of two ways, and the SDK picks automatically:
-  //   1. OIDC (preferred) — needs VERCEL_OIDC_TOKEN + BLOB_STORE_ID. Both are injected
-  //      when you "Connect to Project" from the store. Short-lived, auto-rotating.
-  //   2. BLOB_READ_WRITE_TOKEN — a long-lived static token, added at store-creation
-  //      time if you tick the environments there.
-  // Either is fine. Only bail if NEITHER is present, or the SDK throws a confusing
-  // credential error at runtime with no hint about which setup step was missed.
-  const hasOidc = !!(process.env.VERCEL_OIDC_TOKEN && process.env.BLOB_STORE_ID);
-  const hasToken = !!process.env.BLOB_READ_WRITE_TOKEN;
-  if (!hasOidc && !hasToken) {
-    return res.status(500).json({
-      error: "Blob not connected. In Vercel > Storage > your Blob store > Projects tab, " +
-             "click 'Connect to Project' and pick this project. Then redeploy."
-    });
-  }
+  // No credential precheck here. Guessing which env vars "should" be present and
+  // refusing to run has already produced two wrong diagnoses in this project — the
+  // SDK resolves credentials in its own order (explicit token > OIDC pair > static
+  // token) and knows better than I do. Just attempt the upload and report exactly
+  // what comes back, with the credential state attached.
+  const diag = {
+    oidc: !!process.env.VERCEL_OIDC_TOKEN,
+    storeId: !!process.env.BLOB_STORE_ID,
+    rwToken: !!process.env.BLOB_READ_WRITE_TOKEN,
+    build: BUILD
+  };
 
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
@@ -319,20 +320,13 @@ export default async function handler(req, res) {
       addRandomSuffix: true
     });
 
-    return res.status(200).json({ url: blob.url, lead_id: lead.lead_id });
+    return res.status(200).json({ url: blob.url, lead_id: lead.lead_id, build: BUILD });
   } catch (e) {
     console.error("brief error:", e);
-    // Do NOT guess at the cause and overwrite the real message — that hides the actual
-    // problem behind whatever I assumed it was. Pass the SDK's own error straight
-    // through, plus which credentials the function can actually see, so the failure is
-    // diagnosable from the UI instead of from the function logs.
+    // Pass the SDK's own error straight through. Do not reinterpret it.
     return res.status(500).json({
       error: e.message || "Failed to generate brief",
-      diag: {
-        oidc: !!process.env.VERCEL_OIDC_TOKEN,
-        storeId: !!process.env.BLOB_STORE_ID,
-        rwToken: !!process.env.BLOB_READ_WRITE_TOKEN
-      }
+      diag: diag
     });
   }
 }
