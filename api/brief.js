@@ -22,7 +22,7 @@ import { requireAuth } from "../lib/auth.js";
 // Bump this whenever brief.js changes. It's echoed in every error so we can tell at a
 // glance whether the deployed file is the one we think it is — several rounds of this
 // debug were spent diagnosing a build that had never actually shipped.
-const BUILD = "brief-v6";
+const BUILD = "brief-v7";
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -79,10 +79,7 @@ function renderBrief(lead, am) {
   const exec = q.executive_summary || {};
   const co = q.company_overview || {};
   const routing = q.routing || {};
-  const opp = q.apparel_opportunity || {};
-  const growth = q.growth_signals || {};
   const flags = (q.red_flags && q.red_flags.red_flags_detected) || [];
-  const assumptions = Array.isArray(q.assumptions_flagged) ? q.assumptions_flagged : [];
   const contacts = Array.isArray(q.key_contacts) ? q.key_contacts : [];
 
   const score = qs.total_score;
@@ -95,182 +92,177 @@ function renderBrief(lead, am) {
   const urgency = next.urgency || exec.urgency || routing.follow_up_speed || "";
   const uc = urgencyColor(urgency);
 
-  // Contact cards — the single most important thing on the page, so it goes high
-  // and loud. A missing email is called out in amber, not silently blank.
-  const contactHtml = contacts.length ? contacts.map(function(c) {
-    const b = contactBits(c);
-    return '<div class="contact">' +
-      '<div class="c-hd">' +
-        '<div class="c-name">' + dash(c.name || "Name not public") +
-          (clean(c.title) ? '<span class="c-title"> &middot; ' + esc(c.title) + '</span>' : '') +
-        '</div>' +
-        (clean(c.confidence) ? '<span class="c-conf">' + esc(c.confidence) + '</span>' : '') +
-      '</div>' +
-      (clean(c.relevance) ? '<div class="c-rel">' + esc(c.relevance) + '</div>' : '') +
-      '<div class="c-lines">' +
-        (b.email
-          ? '<a class="c-link" href="mailto:' + esc(b.email) + '">' + esc(b.email) + '</a>'
-          : '<span class="c-missing">No email found &mdash; needs manual lookup</span>') +
-        (b.phone ? '<a class="c-link" href="tel:' + esc(b.phone.replace(/[^\d+]/g, "")) + '">' + esc(b.phone) + '</a>' : '') +
-      '</div>' +
-    '</div>';
-  }).join("") : '<div class="c-missing" style="padding:10px 0">No contacts captured on this lead yet.</div>';
-
-  function kvBlock(obj) {
-    const keys = Object.keys(obj || {});
-    if (!keys.length) return '<div class="muted">&mdash;</div>';
-    return keys.map(function(k) {
-      return '<div class="kv"><span class="kv-k">' + esc(k.replace(/_/g, " ")) + '</span>' +
-        '<span class="kv-v">' + dash(obj[k]) + '</span></div>';
-    }).join("");
-  }
+  // Rank out of 5 from the /50 score. An AM reads this before any words.
+  const stars = scoreNum == null ? 0 : Math.max(1, Math.round(scoreNum / 10));
 
   const company = lead.company_name || co.company_name || "Lead";
   const website = clean(lead.website) || clean(co.website);
   const industry = clean(co.industry_classification) || clean(lead.industry);
 
+  // THE CALL. This is the whole point of the page, so it gets the most weight.
+  // Only the primary contact — a list of five names is a research doc, not a handoff.
+  // Extra contacts get named at the bottom, without detail.
+  let primary = null;
+  for (let i = 0; i < contacts.length; i++) {
+    const b = contactBits(contacts[i]);
+    if (b.email || b.phone) { primary = { c: contacts[i], b: b }; break; }
+  }
+  if (!primary && contacts.length) primary = { c: contacts[0], b: contactBits(contacts[0]) };
+
+  let callHtml;
+  if (primary) {
+    const c = primary.c, b = primary.b;
+    callHtml =
+      '<div class="call-name">' + dash(c.name || "Name not public") + '</div>' +
+      (clean(c.title) ? '<div class="call-title">' + esc(c.title) + '</div>' : '') +
+      '<div class="call-acts">' +
+        (b.phone
+          ? '<a class="act act-call" href="tel:' + esc(b.phone.replace(/[^\d+]/g, "")) + '">' +
+              '<span class="act-i">\u2706</span> Call ' + esc(b.phone) + '</a>'
+          : '') +
+        (b.email
+          ? '<a class="act act-mail" href="mailto:' + esc(b.email) + '">' +
+              '<span class="act-i">\u2709</span> ' + esc(b.email) + '</a>'
+          : '<div class="act act-none">No email found \u2014 needs manual lookup</div>') +
+      '</div>';
+  } else {
+    callHtml = '<div class="act act-none">No contact captured yet \u2014 needs manual lookup</div>';
+  }
+
+  // Everyone else, names only.
+  const others = contacts.filter(function(c) { return !primary || c !== primary.c; });
+  const othersHtml = others.length
+    ? '<div class="others"><span>Also at ' + esc(company) + ':</span> ' +
+        others.map(function(c) {
+          return esc(c.name || "?") + (clean(c.title) ? " (" + esc(c.title) + ")" : "");
+        }).join(", ") +
+      '</div>'
+    : '';
+
   return '<!doctype html><html lang="en"><head>' +
 '<meta charset="utf-8"/>' +
 '<meta name="viewport" content="width=device-width,initial-scale=1"/>' +
-'<title>' + esc(company) + ' — Lead Brief | BackBone</title>' +
+'<title>' + esc(company) + ' \u2014 Lead Brief</title>' +
 '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>' +
 '<style>' +
 '*{box-sizing:border-box;margin:0;padding:0}' +
 'body{font-family:Inter,-apple-system,system-ui,sans-serif;background:#F4F6F8;color:#111827;' +
-  '-webkit-font-smoothing:antialiased;padding:28px 18px 60px;line-height:1.5}' +
-'.sheet{max-width:780px;margin:0 auto}' +
-'.card{background:#fff;border-radius:14px;box-shadow:0 1px 3px rgba(16,24,40,.07);' +
-  'padding:22px 24px;margin-bottom:14px}' +
-'.brand{display:flex;align-items:center;gap:9px;margin-bottom:16px}' +
-'.badge{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,#3D9A5C,#2F7D48);' +
-  'display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px}' +
-'.brand-t{font-weight:700;font-size:13px;letter-spacing:.02em}' +
-'.brand-s{font-size:11px;color:#9CA3AF;margin-left:auto}' +
+  '-webkit-font-smoothing:antialiased;padding:20px 14px 44px;line-height:1.5}' +
+'.sheet{max-width:520px;margin:0 auto}' +
+'.card{background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(16,24,40,.07);' +
+  'padding:20px;margin-bottom:12px}' +
 
-/* hero */
-'.hero{display:flex;gap:22px;align-items:center;flex-wrap:wrap}' +
-'.hero-l{flex:1 1 260px;min-width:0}' +
-'.co{font-size:27px;font-weight:800;letter-spacing:-.02em;line-height:1.2}' +
-'.meta{font-size:13px;color:#6B7280;margin-top:5px}' +
-'.meta a{color:#3D9A5C;text-decoration:none;font-weight:600}' +
-'.dial{flex:0 0 auto;text-align:center;min-width:132px}' +
-'.dial-n{font-size:42px;font-weight:800;letter-spacing:-.03em;line-height:1;color:' + tc.bar + '}' +
-'.dial-n small{font-size:15px;font-weight:500;color:#9CA3AF}' +
-'.dial-bar{height:6px;border-radius:99px;background:#EEF1F4;margin:9px 0 8px;overflow:hidden}' +
+'.top{display:flex;align-items:center;gap:8px;margin-bottom:14px}' +
+'.badge{width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,#3D9A5C,#2F7D48);' +
+  'display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:12px}' +
+'.top-t{font-weight:700;font-size:12px;letter-spacing:.02em;color:#6B7280}' +
+'.top-am{margin-left:auto;font-size:11px;color:#B7BEC7}' +
+
+/* hero: score is the headline */
+'.hero{text-align:center;padding:22px 20px 20px}' +
+'.stars{font-size:19px;letter-spacing:3px;color:' + tc.bar + ';margin-bottom:10px}' +
+'.stars .off{color:#E5E9ED}' +
+'.co{font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1.2}' +
+'.ind{font-size:13px;color:#9CA3AF;margin-top:4px}' +
+'.ind a{color:#3D9A5C;text-decoration:none;font-weight:600}' +
+'.dial{margin-top:16px}' +
+'.dial-n{font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1;color:' + tc.bar + '}' +
+'.dial-n small{font-size:14px;font-weight:500;color:#B7BEC7}' +
+'.dial-bar{height:7px;border-radius:99px;background:#EEF1F4;margin:11px auto 10px;max-width:220px;overflow:hidden}' +
 '.dial-fill{height:100%;border-radius:99px;background:' + tc.bar + ';width:' + pct + '%}' +
-'.tier{display:inline-block;padding:4px 11px;border-radius:99px;font-size:11px;font-weight:700;' +
+'.tier{display:inline-block;padding:5px 13px;border-radius:99px;font-size:11.5px;font-weight:700;' +
   'background:' + tc.bg + ';color:' + tc.fg + '}' +
 
-/* action strip */
-'.act{border-left:4px solid ' + uc + ';background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:14px;' +
-  'box-shadow:0 1px 3px rgba(16,24,40,.07)}' +
-'.act-l{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:' + uc + '}' +
-'.act-b{font-size:16px;font-weight:600;margin-top:5px;line-height:1.45}' +
-'.act-m{font-size:12.5px;color:#6B7280;margin-top:7px}' +
-'.act-m b{color:#111827;font-weight:600}' +
+/* one-liner */
+'.sum{font-size:15px;line-height:1.6;text-align:center;color:#374151}' +
 
-'h2{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF;' +
-  'margin-bottom:11px}' +
-'.sum{font-size:14.5px;line-height:1.65}' +
+/* the call — loudest thing on the page */
+'.call{background:#fff;border-radius:16px;padding:20px;margin-bottom:12px;' +
+  'box-shadow:0 2px 10px rgba(16,24,40,.10);border:2px solid ' + tc.bar + '}' +
+'.call-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;' +
+  'color:' + tc.bar + ';margin-bottom:9px}' +
+'.call-name{font-size:20px;font-weight:800;letter-spacing:-.01em}' +
+'.call-title{font-size:13.5px;color:#6B7280;margin-top:1px}' +
+'.call-acts{margin-top:14px;display:flex;flex-direction:column;gap:8px}' +
+'.act{display:flex;align-items:center;gap:9px;padding:13px 15px;border-radius:11px;' +
+  'font-size:14.5px;font-weight:600;text-decoration:none}' +
+'.act-i{font-size:15px;opacity:.85}' +
+'.act-call{background:' + tc.bar + ';color:#fff}' +
+'.act-mail{background:#F4F6F8;color:#111827}' +
+'.act-none{background:#FEF3C7;color:#92400E;font-size:13px;font-weight:600}' +
 
-/* two-up */
-'.two{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}' +
-'.pill{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;' +
-  'padding:3px 9px;border-radius:99px;display:inline-block;margin-bottom:9px}' +
-'.p-opp{background:#EAF5EE;color:#1F6B3D}.p-risk{background:#FEE2E2;color:#991B1B}' +
-'.two p{font-size:13.5px;line-height:1.6}' +
+/* the pitch */
+'.say-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;' +
+  'color:' + uc + ';margin-bottom:8px}' +
+'.say{font-size:15.5px;font-weight:600;line-height:1.55}' +
+'.say-m{font-size:12.5px;color:#9CA3AF;margin-top:10px}' +
+'.say-m b{color:#374151}' +
 
-/* contacts */
-'.contact{border:1px solid #EEF1F4;border-radius:10px;padding:12px 14px;margin-bottom:9px;background:#FBFCFD}' +
-'.contact:last-child{margin-bottom:0}' +
-'.c-hd{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}' +
-'.c-name{font-weight:700;font-size:14px}' +
-'.c-title{font-weight:500;color:#6B7280;font-size:13px}' +
-'.c-conf{flex:0 0 auto;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;' +
-  'padding:2px 8px;border-radius:99px;background:#F3F4F6;color:#6B7280;white-space:nowrap}' +
-'.c-rel{font-size:12.5px;color:#6B7280;margin-top:3px}' +
-'.c-lines{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px}' +
-'.c-link{font-size:13.5px;font-weight:600;color:#3D9A5C;text-decoration:none}' +
-'.c-missing{font-size:12.5px;font-weight:600;color:#B45309}' +
+'.warn{background:#FEF2F2;border-radius:12px;padding:13px 16px;margin-bottom:12px}' +
+'.warn-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;' +
+  'color:#B91C1C;margin-bottom:5px}' +
+'.warn p{font-size:13px;color:#7F1D1D;line-height:1.5}' +
 
-/* kv */
-'.kv{display:flex;gap:14px;padding:7px 0;border-bottom:1px solid #F4F6F8;font-size:13px}' +
-'.kv:last-child{border-bottom:none}' +
-'.kv-k{flex:0 0 168px;color:#9CA3AF;text-transform:capitalize;font-size:12px;padding-top:1px}' +
-'.kv-v{flex:1;min-width:0}' +
-'.muted{font-size:12.5px;color:#9CA3AF}' +
-
-'.flags li{font-size:13px;margin-left:17px;padding:3px 0;color:#991B1B}' +
-'.assume{font-size:12px;color:#9CA3AF;line-height:1.6}' +
-'.foot{text-align:center;font-size:11px;color:#B7BEC7;margin-top:20px}' +
-
-'@media(max-width:640px){.two{grid-template-columns:1fr}.kv{flex-direction:column;gap:2px}' +
-  '.kv-k{flex:none}body{padding:16px 12px 40px}.co{font-size:22px}}' +
-'@media print{body{background:#fff;padding:0}.card,.act{box-shadow:none;border:1px solid #E5E7EB;' +
-  'break-inside:avoid;page-break-inside:avoid}.brand-s{display:none}}' +
+'.others{font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;padding:0 8px}' +
+'.others span{font-weight:600;color:#6B7280}' +
+'.foot{text-align:center;font-size:11px;color:#C3C9D0;margin-top:16px}' +
+'@media print{body{background:#fff}.card,.call{box-shadow:none;border:1px solid #E5E7EB}}' +
 '</style></head><body><div class="sheet">' +
 
-'<div class="brand">' +
-  '<div class="badge">B</div><div class="brand-t">BackBone &middot; Lead Brief</div>' +
-  '<div class="brand-s">Prepared for ' + esc(am || "the account team") + ' &middot; ' +
-    esc(new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })) + '</div>' +
+'<div class="top">' +
+  '<div class="badge">B</div><div class="top-t">LEAD BRIEF</div>' +
+  '<div class="top-am">' + esc(am || "") + '</div>' +
 '</div>' +
 
 // hero
-'<div class="card"><div class="hero">' +
-  '<div class="hero-l">' +
-    '<div class="co">' + esc(company) + '</div>' +
-    '<div class="meta">' +
-      (industry ? esc(industry) : "Industry not set") +
-      (website ? ' &middot; <a href="' + esc(website) + '">' + esc(website.replace(/^https?:\/\//, "")) + '</a>' : "") +
-    '</div>' +
+'<div class="card hero">' +
+  '<div class="stars">' +
+    "\u2605".repeat(stars) + '<span class="off">' + "\u2605".repeat(5 - stars) + '</span>' +
+  '</div>' +
+  '<div class="co">' + esc(company) + '</div>' +
+  '<div class="ind">' +
+    (industry ? esc(industry) : "Industry not set") +
+    (website ? ' \u00b7 <a href="' + esc(website) + '">website</a>' : "") +
   '</div>' +
   '<div class="dial">' +
-    '<div class="dial-n">' + (scoreNum == null ? "&mdash;" : scoreNum) + '<small>/50</small></div>' +
+    '<div class="dial-n">' + (scoreNum == null ? "\u2014" : scoreNum) + '<small>/50</small></div>' +
     '<div class="dial-bar"><div class="dial-fill"></div></div>' +
     '<span class="tier">' + esc(tier) + '</span>' +
   '</div>' +
-'</div></div>' +
+'</div>' +
 
-// action
-'<div class="act">' +
-  '<div class="act-l">Do this next</div>' +
-  '<div class="act-b">' + dash(action) + '</div>' +
-  '<div class="act-m">' +
-    (clean(next.who_to_contact) ? esc(next.who_to_contact) + ' &nbsp;&middot;&nbsp; ' : '') +
+// one-liner
+(clean(glance.summary) ? '<div class="card"><div class="sum">' + esc(glance.summary) + '</div></div>' : '') +
+
+// THE CALL
+'<div class="call">' +
+  '<div class="call-l">Who to call</div>' +
+  callHtml +
+'</div>' +
+
+// what to say
+'<div class="card">' +
+  '<div class="say-l">What to say</div>' +
+  '<div class="say">' + dash(action) + '</div>' +
+  '<div class="say-m">' +
     'Urgency: <b>' + dash(urgency) + '</b>' +
-    (clean(routing.follow_up_speed) ? ' &nbsp;&middot;&nbsp; Follow-up: <b>' + esc(routing.follow_up_speed) + '</b>' : '') +
+    (clean(glance.top_opportunity) ? '<br/>Angle: <b>' + esc(glance.top_opportunity) + '</b>' : '') +
   '</div>' +
 '</div>' +
 
-// contacts
-'<div class="card"><h2>Who to call</h2>' + contactHtml + '</div>' +
+// one risk, only if it exists
+((clean(glance.top_risk) || flags.length)
+  ? '<div class="warn"><div class="warn-l">Watch out</div><p>' +
+      (clean(glance.top_risk) ? esc(glance.top_risk) : esc(flags[0])) +
+    '</p></div>'
+  : '') +
 
-// summary
-(clean(glance.summary) ? '<div class="card"><h2>At a glance</h2><div class="sum">' +
-  esc(glance.summary) + '</div></div>' : '') +
+othersHtml +
 
-// opp / risk
-((clean(glance.top_opportunity) || clean(glance.top_risk))
-  ? '<div class="two">' +
-    '<div class="card"><span class="pill p-opp">Top opportunity</span><p>' + dash(glance.top_opportunity) + '</p></div>' +
-    '<div class="card"><span class="pill p-risk">Top risk</span><p>' + dash(glance.top_risk) + '</p></div>' +
-  '</div>' : '') +
-
-// detail
-'<div class="card"><h2>Company overview</h2>' + kvBlock(co) + '</div>' +
-'<div class="card"><h2>Apparel opportunity</h2>' + kvBlock(opp) + '</div>' +
-'<div class="card"><h2>Growth signals</h2>' + kvBlock(growth) + '</div>' +
-
-(flags.length ? '<div class="card"><h2>Red flags</h2><ul class="flags">' +
-  flags.map(function(f) { return '<li>' + esc(f) + '</li>'; }).join("") + '</ul></div>' : '') +
-
-(assumptions.length ? '<div class="card"><h2>Assumptions flagged</h2>' +
-  '<div class="assume">' + assumptions.map(esc).join(" &middot; ") + '</div></div>' : '') +
-
-'<div class="foot">Generated by BackBone &middot; P&amp;M Apparel &middot; Print this page to save as PDF</div>' +
+'<div class="foot">BackBone \u00b7 P&amp;M Apparel</div>' +
 '</div></body></html>';
 }
+
 
 // ---- handler ---------------------------------------------------------------
 
@@ -344,7 +336,49 @@ export default async function handler(req, res) {
 
     const blob = await put("briefs/" + slug + "-" + lead.lead_id + ".html", html, opts);
 
-    return res.status(200).json({ url: blob.url, lead_id: lead.lead_id, build: BUILD });
+    // ---- Short link -------------------------------------------------------------
+    // The raw Blob URL is long AND downloads instead of rendering (Vercel stamps
+    // Content-Disposition: attachment on every blob). /api/b?c=<code> solves both:
+    // short enough for a plain-text email, and it re-serves the HTML with headers
+    // that make the browser render it. See api/b.js.
+    //
+    // If this write fails we still return the raw blob URL — a link that downloads is
+    // worse than one that renders, but far better than no brief at all.
+    let shortUrl = null;
+    try {
+      if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+        // 8 chars of base36 ~ 2.8e12 combinations. Unguessable, and short.
+        const code = Array.from({ length: 8 }, function() {
+          return "abcdefghijkmnpqrstuvwxyz23456789"[Math.floor(Math.random() * 32)];
+        }).join("");
+
+        // Upstash writes must use /pipeline + SET. The /set/key form double-JSON-
+        // stringifies the value and fails silently.
+        const kv = await fetch(process.env.KV_REST_API_URL + "/pipeline", {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + process.env.KV_REST_API_TOKEN,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify([["SET", "backbone_brief:" + code, blob.url]])
+        });
+        if (kv.ok) {
+          const proto = (req.headers["x-forwarded-proto"] || "https");
+          const host = req.headers["x-forwarded-host"] || req.headers.host;
+          shortUrl = proto + "://" + host + "/api/b?c=" + code;
+        }
+      }
+    } catch (e) {
+      console.warn("short link failed, falling back to blob url:", e.message);
+    }
+
+    return res.status(200).json({
+      url: shortUrl || blob.url,
+      blobUrl: blob.url,
+      shortened: !!shortUrl,
+      lead_id: lead.lead_id,
+      build: BUILD
+    });
   } catch (e) {
     console.error("brief error:", e);
     // Pass the SDK's own error straight through. Do not reinterpret it.
