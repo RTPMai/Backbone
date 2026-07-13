@@ -22,7 +22,7 @@ import { requireAuth } from "../lib/auth.js";
 // Bump this whenever brief.js changes. It's echoed in every error so we can tell at a
 // glance whether the deployed file is the one we think it is — several rounds of this
 // debug were spent diagnosing a build that had never actually shipped.
-const BUILD = "brief-v5";
+const BUILD = "brief-v6";
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -292,20 +292,17 @@ export default async function handler(req, res) {
     build: BUILD
   };
 
-  // "Access denied ... valid token for this resource" almost always means the token
-  // belongs to a DIFFERENT store than the one being written to. A Vercel RW token is
-  // shaped vercel_blob_rw_<STOREID>_<secret>, so the store it belongs to is readable
-  // straight off the token. Compare it to BLOB_STORE_ID and report both — a mismatch
-  // is the whole answer, and no amount of redeploying will fix it.
+  // Previous guess at the token format didn't match, so stop assuming and just report
+  // what's actually there. Never print the secret — only the prefix, length, and the
+  // underscore-delimited segment count, which is enough to identify the format and to
+  // spot the common failure (a whole `.env.local` LINE pasted in, quotes and all,
+  // instead of just the value).
   const rw = process.env.BLOB_READ_WRITE_TOKEN || "";
-  const envStore = (process.env.BLOB_STORE_ID || "").replace(/^store_/, "");
-  const m = rw.match(/^vercel_blob_rw_([^_]+)_/);
-  const tokenStore = m ? m[1] : null;
-  if (tokenStore) {
-    diag.tokenStore = tokenStore;
-    diag.envStore = envStore || null;
-    if (envStore && tokenStore !== envStore) diag.MISMATCH = true;
-  }
+  diag.tokenLen = rw.length;
+  diag.tokenHead = rw.slice(0, 22);          // e.g. "vercel_blob_rw_ABC123..."
+  diag.tokenSegs = rw.split("_").length;
+  diag.tokenDirty = /["'\s=]/.test(rw) || /BLOB_READ_WRITE_TOKEN/i.test(rw);
+  diag.storeIdVal = (process.env.BLOB_STORE_ID || "").slice(0, 24);
 
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
@@ -329,11 +326,23 @@ export default async function handler(req, res) {
     // addRandomSuffix makes the URL unguessable. It also means a regenerated brief
     // gets a NEW url rather than overwriting the old one, so a link already sitting
     // in someone's inbox never silently changes underneath them.
-    const blob = await put("briefs/" + slug + "-" + lead.lead_id + ".html", html, {
+    // Defensive: strip quotes/whitespace off the token. Pasting a whole `.env.local`
+    // line (BLOB_READ_WRITE_TOKEN="vercel_blob_rw_...") instead of just the value is
+    // an extremely common slip, and it produces exactly this "access denied" error
+    // because the quotes travel with the credential.
+    let token = (process.env.BLOB_READ_WRITE_TOKEN || "").trim();
+    token = token.replace(/^BLOB_READ_WRITE_TOKEN\s*=\s*/i, "").replace(/^["']|["']$/g, "").trim();
+
+    const opts = {
       access: "public",
       contentType: "text/html; charset=utf-8",
       addRandomSuffix: true
-    });
+    };
+    // Pass the token explicitly — an explicit token beats every other resolution tier,
+    // so this removes any ambiguity about which credential the SDK picked up.
+    if (token) opts.token = token;
+
+    const blob = await put("briefs/" + slug + "-" + lead.lead_id + ".html", html, opts);
 
     return res.status(200).json({ url: blob.url, lead_id: lead.lead_id, build: BUILD });
   } catch (e) {
