@@ -594,6 +594,21 @@ textarea.field{min-height:60px;resize:vertical}
   </div>
 </div>
 
+<div class="modal-overlay" id="handoffOverlay">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-hd">
+      <h3 id="handoffTitle">Email leads to AM</h3>
+      <button class="modal-close" id="handoffClose">&times;</button>
+    </div>
+    <div class="modal-bd" id="handoffBody"></div>
+    <div class="modal-ft">
+      <button class="btn btn-green" id="handoffOpenAll">Open all drafts</button>
+      <button class="btn btn-gray" id="handoffCopyAll">Copy all to clipboard</button>
+      <span id="handoffHint" class="help" style="margin-left:auto;font-size:12px"></span>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="leadDetailOverlay">
   <div class="modal" style="max-width:640px">
     <div class="modal-hd">
@@ -5713,6 +5728,75 @@ function openMailto(href) {
   setTimeout(function() { document.body.removeChild(a); }, 0);
 }
 
+// Holds the drafts currently shown in the handoff modal.
+let handoffDrafts = [];
+
+function draftsToText(drafts) {
+  return drafts.map(function(d) {
+    return "To: " + (d.to || "(assign an AM)") + "\nSubject: " + d.subject + "\n\n" + d.fullBody;
+  }).join("\n\n==========\n\n");
+}
+
+function closeHandoffModal() {
+  const ov = document.getElementById("handoffOverlay");
+  if (ov) ov.classList.remove("open");
+}
+
+function renderHandoffModal() {
+  const body = document.getElementById("handoffBody");
+  const hint = document.getElementById("handoffHint");
+  if (!body) return;
+
+  const totalLeads = handoffDrafts.reduce(function(n, d) { return n + d.leads.length; }, 0);
+  document.getElementById("handoffTitle").textContent =
+    "Email " + totalLeads + " lead" + (totalLeads > 1 ? "s" : "") + " to " +
+    handoffDrafts.length + " AM" + (handoffDrafts.length > 1 ? "s" : "");
+
+  body.innerHTML = handoffDrafts.map(function(d, i) {
+    const unassigned = !d.to;
+    const leadList = d.leads.map(function(l) {
+      const c = leadBestContact(l);
+      return '<div style="font-size:12px;color:#6B7280;padding:2px 0">• ' + l.company_name +
+        (c.email ? '' : ' <span style="color:#B45309;font-weight:600">(no email)</span>') + '</div>';
+    }).join("");
+    return '<div style="border:1px solid #E5E7EB;border-radius:10px;padding:12px 14px;margin-bottom:10px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">' +
+        '<div>' +
+          '<div style="font-weight:700;font-size:14px">' + d.am + '</div>' +
+          '<div style="font-size:12px;color:' + (unassigned ? '#B45309' : '#6B7280') + '">' +
+            (unassigned ? 'No AM — assign before sending' : d.to) +
+            ' · ' + d.leads.length + ' lead' + (d.leads.length > 1 ? 's' : '') +
+          '</div>' +
+        '</div>' +
+        '<button class="btn ' + (unassigned ? 'btn-gray' : 'btn-green') + ' btn-sm handoff-open" ' +
+          'data-idx="' + i + '">Open draft</button>' +
+      '</div>' +
+      '<div style="margin-top:8px">' + leadList + '</div>' +
+      (d.truncated
+        ? '<div class="help" style="margin-top:8px;font-size:11px;color:#B45309">Too long for one email link — draft has a summary list; full rundowns go to your clipboard.</div>'
+        : '') +
+      '</div>';
+  }).join("");
+
+  if (hint) hint.textContent = "Outlook can take a few seconds to open.";
+
+  body.querySelectorAll(".handoff-open").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      const d = handoffDrafts[parseInt(btn.dataset.idx, 10)];
+      if (d.truncated && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(draftsToText([d])).catch(function() {});
+      }
+      openMailto(d.href);
+      // Outlook cold-starts slowly; give feedback so nobody clicks five times.
+      const orig = btn.textContent;
+      btn.textContent = "Opening…";
+      btn.disabled = true;
+      setTimeout(function() { btn.textContent = "Opened ✓"; }, 1500);
+      setTimeout(function() { btn.textContent = orig; btn.disabled = false; }, 6000);
+    });
+  });
+}
+
 function emailSelectedLeadsToAM() {
   const chosen = state_leads.filter(function(l) { return selectedLeadIds.has(l.lead_id); });
   if (chosen.length === 0) { alert("Select one or more leads first (checkbox on the left)."); return; }
@@ -5731,56 +5815,29 @@ function emailSelectedLeadsToAM() {
     (groups[key] = groups[key] || []).push(l);
   });
 
-  const amNames = Object.keys(groups);
-  const drafts = amNames.map(function(am) { return Object.assign({ am: am }, buildLeadMailto(am, groups[am])); });
+  handoffDrafts = Object.keys(groups).map(function(am) {
+    return Object.assign({ am: am, leads: groups[am] }, buildLeadMailto(am, groups[am]));
+  });
+  // Real AMs first, unassigned last.
+  handoffDrafts.sort(function(a, b) { return (a.to ? 0 : 1) - (b.to ? 0 : 1); });
 
-  // Always stash the drafts so the "Copy draft" fallback works even if no mail client opened.
-  window.__lastLeadDraft = drafts[0];
-  window.__lastLeadDrafts = drafts;
+  window.__lastLeadDrafts = handoffDrafts;
 
-  // If any draft had to be compacted to fit the mailto limit, put the FULL text on the
-  // clipboard so the AM still gets everything — they just paste it into the open draft.
-  const anyTruncated = drafts.some(function(d) { return d.truncated; });
-  if (anyTruncated && navigator.clipboard && navigator.clipboard.writeText) {
-    const full = drafts.map(function(d) {
-      return "To: " + (d.to || "(assign an AM)") + "\nSubject: " + d.subject + "\n\n" + d.fullBody;
-    }).join("\n\n==========\n\n");
-    navigator.clipboard.writeText(full).catch(function() {});
+  // Single AM + fits in one link: no need for a modal, just open it.
+  if (handoffDrafts.length === 1 && handoffDrafts[0].to && !handoffDrafts[0].truncated) {
+    openMailto(handoffDrafts[0].href);
+    return;
   }
 
-  // Multiple AM groups can't all be opened reliably (browsers honor only the last
-  // navigation). Open the first now, then offer the rest one at a time.
-  let idx = 0;
-  function openNext() {
-    if (idx >= drafts.length) return;
-    const d = drafts[idx];
-    openMailto(d.href);
-    idx++;
-    if (idx < drafts.length) {
-      setTimeout(function() {
-        if (confirm("Opened a draft for " + drafts[idx - 1].am + ".\n\nOpen the next one (" +
-          drafts[idx].am + ", " + groups[drafts[idx].am].length + " lead(s))?")) openNext();
-      }, 600);
-    }
-  }
-  openNext();
-
-  if (anyTruncated) {
-    setTimeout(function() {
-      alert("That's a lot of detail for one email link, so the draft has a short summary list.\n\n" +
-            "The full rundowns are on your clipboard — just paste into the open draft.\n\n" +
-            "(If no mail app opened, hit 'Copy draft' and paste into a new email.)");
-    }, 800);
-  }
+  renderHandoffModal();
+  document.getElementById("handoffOverlay").classList.add("open");
 }
 
-// Manual fallback the user can trigger if no mail client opened: copies the full draft(s).
+// Manual fallback: copies the full draft(s) as text.
 function copyLastLeadDraft() {
   const drafts = window.__lastLeadDrafts;
   if (!drafts || !drafts.length) { alert("No draft to copy yet — click 'Email selected to AM' first."); return; }
-  const text = drafts.map(function(d) {
-    return "To: " + (d.to || "(assign an AM)") + "\nSubject: " + d.subject + "\n\n" + d.fullBody;
-  }).join("\n\n==========\n\n");
+  const text = draftsToText(drafts);
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(function() {
       alert("Draft copied to clipboard — paste it into a new email.");
@@ -6782,6 +6839,30 @@ document.getElementById("rerunQualBtn").addEventListener("click", handleRunQuali
 document.getElementById("pasteQualBtn").addEventListener("click", handlePasteQualification);
 document.getElementById("leadStatusSelect").addEventListener("change", handleLeadStatusChange);
 document.getElementById("promoteLeadBtn").addEventListener("click", handlePromoteToRoster);
+
+document.getElementById("handoffClose").addEventListener("click", closeHandoffModal);
+document.getElementById("handoffOverlay").addEventListener("click", function(e) {
+  if (e.target.id === "handoffOverlay") closeHandoffModal();
+});
+document.getElementById("handoffOpenAll").addEventListener("click", function() {
+  // Browsers only honor the last navigation if fired together, so stagger them.
+  handoffDrafts.forEach(function(d, i) {
+    setTimeout(function() { openMailto(d.href); }, i * 1200);
+  });
+  const hint = document.getElementById("handoffHint");
+  if (hint) hint.textContent = "Opening " + handoffDrafts.length + " drafts — give Outlook a moment…";
+});
+document.getElementById("handoffCopyAll").addEventListener("click", function() {
+  const text = draftsToText(handoffDrafts);
+  const hint = document.getElementById("handoffHint");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      if (hint) hint.textContent = "Copied all drafts to clipboard.";
+    }).catch(function() { prompt("Copy these drafts:", text); });
+  } else {
+    prompt("Copy these drafts:", text);
+  }
+});
 
 document.getElementById("inboxDetailClose").addEventListener("click", function() {
   document.getElementById("inboxDetailOverlay").classList.remove("open");
