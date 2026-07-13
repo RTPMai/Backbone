@@ -5932,6 +5932,15 @@ async function generateBrief(lead, am) {
                   " oidc:" + (d.oidc ? "yes" : "NO") +
                   " storeId:" + (d.storeId ? "yes" : "NO") +
                   " rwToken:" + (d.rwToken ? "yes" : "NO") + "]";
+        // The decisive case: the token belongs to one store, BLOB_STORE_ID names
+        // another. Redeploying will never fix that — the token has to be replaced.
+        if (d.MISMATCH) {
+          reason += " \u2014 STORE MISMATCH: token is for store '" + d.tokenStore +
+                    "' but BLOB_STORE_ID is '" + d.envStore +
+                    "'. The token is from a different (probably deleted) store.";
+        } else if (d.tokenStore) {
+          reason += " token\u2192store:" + d.tokenStore;
+        }
       } else {
         // No diag at all means the response came from an OLD brief.js — the current
         // one always attaches it. That's the answer, not the error text itself.
