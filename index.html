@@ -5756,6 +5756,72 @@ function cleanPhone(v) {
   return t;
 }
 
+// Return every contact on a lead as an INTACT PERSON, ranked by confidence.
+//
+// This exists because leadBestContact() merges fields ACROSS people — it takes the
+// first name it finds, then the first email from any contact, then the first phone
+// from any other. That produces a contact who doesn't exist (Marcus's name next to
+// Priya's email), which is fine for a one-line table cell but actively dangerous in a
+// handoff email: an AM emails the wrong person believing it's the right one.
+//
+// Ranked by the schema's confidence field, with reachability as the tiebreak — a
+// "confirmed" contact you can't reach loses to a less certain one you can.
+const CONF_RANK = {
+  "confirmed": 0,
+  "third-party unverified": 1,
+  "single-source unconfirmed": 2,
+  "not found": 3
+};
+
+function leadContacts(lead) {
+  const q = lead.qualification;
+  const list = (q && Array.isArray(q.key_contacts)) ? q.key_contacts : [];
+
+  const people = list.map(function(c) {
+    let email = cleanEmail(c.email) || cleanEmail(c.contact_info);
+    let phone = cleanPhone(c.phone);
+    if (!phone && c.contact_info) {
+      const m = String(c.contact_info).match(/(\+?\d[\d\-().\s]{7,}\d)/);
+      if (m) phone = cleanPhone(m[1]);
+    }
+    return {
+      name: cleanContactValue(c.name),
+      title: cleanContactValue(c.title),
+      relevance: cleanContactValue(c.relevance),
+      confidence: cleanContactValue(c.confidence),
+      email: email,
+      phone: phone
+    };
+  });
+
+  // The lead's own intake fields are a real person too — include them if the
+  // qualification didn't already surface that email.
+  const own = {
+    name: cleanContactValue(lead.contact_name),
+    title: "",
+    relevance: "",
+    confidence: "confirmed", // hand-entered by an AM, so treat as confirmed
+    email: cleanEmail(lead.contact_email),
+    phone: cleanPhone(lead.contact_phone)
+  };
+  if (own.name || own.email || own.phone) {
+    const dupe = people.some(function(p) {
+      return (own.email && p.email && p.email.toLowerCase() === own.email.toLowerCase()) ||
+             (own.name && p.name && p.name.toLowerCase() === own.name.toLowerCase());
+    });
+    if (!dupe) people.unshift(own);
+  }
+
+  return people.sort(function(x, y) {
+    const rx = CONF_RANK[String(x.confidence).toLowerCase()];
+    const ry = CONF_RANK[String(y.confidence).toLowerCase()];
+    const d = (rx == null ? 2 : rx) - (ry == null ? 2 : ry);
+    if (d !== 0) return d;
+    const reach = function(p) { return (p.email ? 2 : 0) + (p.phone ? 1 : 0); };
+    return reach(y) - reach(x);
+  });
+}
+
 function leadBestContact(lead) {
   const q = lead.qualification;
   const out = {
@@ -6001,7 +6067,6 @@ function buildLeadMailto(am, leads) {
       const qs = (l.qualification && l.qualification.qualification_scoring) || {};
       const score = typeof qs.total_score === "number" ? qs.total_score : null;
       const tier = qs.qualification_tier || "Unscored";
-      const c = leadBestContact(l);
       const url = briefUrls[l.lead_id];
       const ag = (l.qualification && l.qualification.at_a_glance) || {};
       const ns = (l.qualification && l.qualification.next_steps) || {};
@@ -6042,12 +6107,38 @@ function buildLeadMailto(am, leads) {
         parts.push("");
       }
 
-      parts.push("WHO TO CALL");
-      parts.push("  " + (c.name || "Contact TBD"));
-      if (c.email) parts.push("  " + c.email);
-      else parts.push("  \u26A0 No email found \u2014 needs manual lookup");
-      if (c.phone) parts.push("  " + c.phone);
-      parts.push("");
+      // WHO TO CONTACT. Every person is intact — name, title, email and phone all
+      // belong to the SAME human. (leadBestContact merges fields across people and
+      // would happily print one person's name beside another's email.)
+      //
+      // AMs reach out by email first, so email leads each block and phone follows.
+      // Top 3 by confidence get full details; the rest are named so nothing is hidden,
+      // but without detail — the mailto: body has a hard ~1900 char cap and the full
+      // brief link above carries everyone anyway.
+      const people = leadContacts(l);
+      if (people.length) {
+        parts.push("WHO TO CONTACT");
+        people.slice(0, 3).forEach(function(p, n) {
+          parts.push("  " + (n + 1) + ". " + (p.name || "Name not public") +
+            (p.title ? " \u2014 " + p.title : ""));
+          parts.push("     Email: " + (p.email || "\u26A0 not found \u2014 needs manual lookup"));
+          if (p.phone) parts.push("     Phone: " + p.phone);
+          if (p.relevance) parts.push("     " + p.relevance);
+          if (n < Math.min(people.length, 3) - 1) parts.push("");
+        });
+        const rest = people.slice(3);
+        if (rest.length) {
+          parts.push("");
+          parts.push("  Also: " + rest.map(function(p) {
+            return (p.name || "?") + (p.title ? " (" + p.title + ")" : "");
+          }).join(", ") + " \u2014 details in the full brief.");
+        }
+        parts.push("");
+      } else {
+        parts.push("WHO TO CONTACT");
+        parts.push("  \u26A0 No contacts captured yet \u2014 needs manual lookup");
+        parts.push("");
+      }
 
       if (act) {
         parts.push("WHAT TO SAY");
