@@ -22,7 +22,7 @@ import { requireAuth } from "../lib/auth.js";
 // Bump this whenever brief.js changes. It's echoed in every error so we can tell at a
 // glance whether the deployed file is the one we think it is — several rounds of this
 // debug were spent diagnosing a build that had never actually shipped.
-const BUILD = "brief-v4";
+const BUILD = "brief-v5";
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -291,6 +291,21 @@ export default async function handler(req, res) {
     rwToken: !!process.env.BLOB_READ_WRITE_TOKEN,
     build: BUILD
   };
+
+  // "Access denied ... valid token for this resource" almost always means the token
+  // belongs to a DIFFERENT store than the one being written to. A Vercel RW token is
+  // shaped vercel_blob_rw_<STOREID>_<secret>, so the store it belongs to is readable
+  // straight off the token. Compare it to BLOB_STORE_ID and report both — a mismatch
+  // is the whole answer, and no amount of redeploying will fix it.
+  const rw = process.env.BLOB_READ_WRITE_TOKEN || "";
+  const envStore = (process.env.BLOB_STORE_ID || "").replace(/^store_/, "");
+  const m = rw.match(/^vercel_blob_rw_([^_]+)_/);
+  const tokenStore = m ? m[1] : null;
+  if (tokenStore) {
+    diag.tokenStore = tokenStore;
+    diag.envStore = envStore || null;
+    if (envStore && tokenStore !== envStore) diag.MISMATCH = true;
+  }
 
   try {
     const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
