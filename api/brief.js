@@ -22,7 +22,7 @@ import { requireAuth } from "../lib/auth.js";
 // Bump this whenever brief.js changes. It's echoed in every error so we can tell at a
 // glance whether the deployed file is the one we think it is — several rounds of this
 // debug were spent diagnosing a build that had never actually shipped.
-const BUILD = "brief-v9";
+const BUILD = "brief-v10";
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -114,18 +114,56 @@ function renderBrief(lead, am) {
     "single-source unconfirmed": 2,
     "not found": 3
   };
+
+  // Titles that decide or influence apparel/merch purchasing.
+  const BUYING_ROLES = [
+    { re: /\b(chief marketing|cmo)\b/i,                          score: 10 },
+    { re: /\bmarketing\b/i,                                      score: 9 },
+    { re: /\b(brand|creative)\b/i,                               score: 9 },
+    { re: /\b(purchas|procure|buyer|sourcing)\b/i,               score: 9 },
+    { re: /\b(human resources|\bhr\b|people|talent|culture)\b/i, score: 8 },
+    { re: /\b(merch|apparel|uniform|swag|promo)\b/i,             score: 8 },
+    { re: /\b(event|trade ?show|community|engagement)\b/i,       score: 7 },
+    { re: /\b(communications|comms|pr)\b/i,                      score: 6 },
+    { re: /\b(operations|ops|facilit|safety)\b/i,                score: 5 },
+    { re: /\b(owner|founder|president|principal)\b/i,            score: 5 },
+    { re: /\b(ceo|coo|chief)\b/i,                                score: 4 },
+    { re: /\b(office manager|admin|executive assistant|\bea\b)\b/i, score: 4 },
+    { re: /\b(sales|account)\b/i,                                score: 2 }
+  ];
+  function buyingScore(c) {
+    const hay = ((clean(c.title) || "") + " " + (clean(c.relevance) || "")).trim();
+    if (!hay) return 0;
+    let best = 0;
+    for (const r of BUYING_ROLES) {
+      if (r.re.test(hay) && r.score > best) best = r.score;
+    }
+    if (/\b(budget|spend|sign.?off|approves|decision|orders|purchas)\b/i.test(clean(c.relevance) || "")) {
+      best = Math.max(best, 8);
+    }
+    return best;
+  }
   function confRank(c) {
     const k = String(c.confidence || "").trim().toLowerCase();
-    return CONF_RANK[k] != null ? CONF_RANK[k] : 2; // unknown label sorts mid-pack
+    return CONF_RANK[k] != null ? CONF_RANK[k] : 2;
   }
 
+  // Ranking must match the email's (see leadContacts in index.html) or the brief and
+  // the email would name different "primary" contacts for the same lead.
+  //   1. has an email  2. likely buyer  3. confidence  4. has a phone
   const ranked = contacts.map(function(c) {
     const b = contactBits(c);
-    return { c: c, b: b, reachable: !!(b.email || b.phone) };
+    return { c: c, b: b };
+  }).filter(function(o) {
+    return clean(o.c.name) || o.b.email || o.b.phone;
   }).sort(function(x, y) {
+    const ex = x.b.email ? 1 : 0, ey = y.b.email ? 1 : 0;
+    if (ex !== ey) return ey - ex;
+    const bx = buyingScore(x.c), by = buyingScore(y.c);
+    if (bx !== by) return by - bx;
     const d = confRank(x.c) - confRank(y.c);
     if (d !== 0) return d;
-    return (y.reachable ? 1 : 0) - (x.reachable ? 1 : 0);
+    return (y.b.phone ? 1 : 0) - (x.b.phone ? 1 : 0);
   });
 
   const primary = ranked[0] || null;
