@@ -164,6 +164,65 @@ textarea.field{min-height:60px;resize:vertical}
 .lead-status-Contacted{background:#EDE9FE;color:#6D28D9}
 .lead-status-AMNotified{background:#FEF3C7;color:#B45309}
 .lead-status-Researching{background:#E0F2FE;color:#0369A1}
+
+/* --- Lead funnel ------------------------------------------------------------ */
+.funnel{display:flex;align-items:stretch;gap:6px;flex-wrap:nowrap;margin-bottom:14px}
+.funnel-stage{position:relative;flex:1 1 0;min-width:0;border:none;cursor:pointer;padding:10px 8px 11px;
+  border-radius:12px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.05);
+  transition:transform .14s ease,box-shadow .14s ease,background .14s ease;
+  text-align:left;font-family:inherit;overflow:hidden}
+.funnel-stage:hover{transform:translateY(-2px);box-shadow:0 6px 14px rgba(16,24,40,.10)}
+.funnel-stage.is-active{box-shadow:0 6px 16px rgba(16,24,40,.14);transform:translateY(-2px)}
+.funnel-stage.is-active::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--fnl,#9CA3AF)}
+.funnel-stage.is-empty{opacity:.5}
+.funnel-stage .fnl-top{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
+.funnel-stage .fnl-name{font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+  color:var(--fnl,#6B7280);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.funnel-stage .fnl-pct{font-size:10px;font-weight:600;color:#9CA3AF;flex:0 0 auto}
+.funnel-stage .fnl-count{font-size:22px;font-weight:700;color:#111827;line-height:1.15;margin-top:1px}
+.funnel-stage .fnl-bar{height:5px;border-radius:99px;background:#EEF1F4;margin-top:7px;overflow:hidden}
+.funnel-stage .fnl-fill{height:100%;border-radius:99px;background:var(--fnl,#9CA3AF);
+  transition:width .45s cubic-bezier(.22,1,.36,1)}
+.funnel-stage .fnl-sub{font-size:10.5px;color:#9CA3AF;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.funnel-chev{flex:0 0 auto;align-self:center;color:#D6DBE1;font-size:11px;user-select:none;line-height:1}
+.funnel-all{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.funnel-all .fnl-hint{font-size:11.5px;color:#9CA3AF}
+@media(max-width:1100px){
+  .funnel{flex-wrap:wrap}
+  .funnel-stage{flex:1 1 120px}
+  .funnel-chev{display:none}
+}
+
+/* --- AM leaderboard --------------------------------------------------------- */
+.lb-row{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:10px;
+  transition:background .12s ease}
+.lb-row:hover{background:#F9FAFB}
+.lb-row + .lb-row{border-top:1px solid #F4F6F8}
+.lb-rank{flex:0 0 26px;text-align:center;font-size:13px;font-weight:700;color:#C3C9D0}
+.lb-row.lb-1 .lb-rank,.lb-row.lb-2 .lb-rank,.lb-row.lb-3 .lb-rank{font-size:15px;color:inherit}
+.lb-av{flex:0 0 30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;color:#fff;letter-spacing:.02em}
+.lb-main{flex:1 1 auto;min-width:0}
+.lb-name{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb-sub{font-size:11px;color:#9CA3AF;margin-top:1px}
+.lb-bar{height:4px;border-radius:99px;background:#EEF1F4;margin-top:5px;overflow:hidden;max-width:260px}
+.lb-fill{height:100%;border-radius:99px;transition:width .5s cubic-bezier(.22,1,.36,1)}
+.lb-stat{flex:0 0 auto;text-align:right;min-width:56px}
+.lb-val{font-size:17px;font-weight:700;line-height:1.1}
+.lb-lbl{font-size:9.5px;color:#B7BEC7;text-transform:uppercase;letter-spacing:.05em;margin-top:1px}
+.lb-badges{flex:0 0 auto;display:flex;gap:4px}
+.lb-badge{font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap;
+  text-transform:uppercase;letter-spacing:.03em}
+.lb-hot{background:#FEE2E2;color:#B91C1C}
+.lb-streak{background:#FEF3C7;color:#92400E}
+.lb-clean{background:#EAF5EE;color:#1F6B3D}
+.lb-cold{background:#F3F4F6;color:#9CA3AF}
+.lb-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.lb-metric{display:flex;gap:3px;background:#F4F6F8;padding:3px;border-radius:99px}
+.lb-metric button{border:none;background:none;font-family:inherit;font-size:11.5px;font-weight:600;
+  color:#9CA3AF;padding:4px 12px;border-radius:99px;cursor:pointer;transition:all .12s ease}
+.lb-metric button.on{background:#fff;color:#111827;box-shadow:0 1px 2px rgba(16,24,40,.08)}
+@media(max-width:760px){.lb-badges{display:none}.lb-bar{max-width:120px}}
 .lead-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 .lead-form-grid .wide{grid-column:1/-1}
 .qual-section{margin-bottom:16px}
@@ -386,11 +445,24 @@ textarea.field{min-height:60px;resize:vertical}
       </div>
     </div>
 
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-hd"><h3>AM Leaderboard</h3></div>
+      <div class="card-bd">
+        <div id="leaderboardWrap"></div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-hd"><h3>Pipeline</h3></div>
       <div class="card-bd">
+        <div class="funnel-all">
+          <div class="fnl-hint">Click a stage to filter the pipeline. Click it again to show everything.</div>
+          <button class="btn btn-gray btn-sm" id="funnelClearBtn" style="display:none">Show all stages</button>
+        </div>
+        <div class="funnel" id="leadsFunnel"></div>
         <div class="toolbar">
           <input class="search" id="leadsSearchBox" placeholder="Search company name"/>
+          <span id="leadsFilterNote" class="help" style="margin:0 0 0 10px"></span>
         </div>
         <div id="leadsTableWrap"></div>
       </div>
@@ -5576,6 +5648,28 @@ function statusClass(status) {
   return "lead-status-" + String(status || "").replace(/[^A-Za-z0-9]/g, "");
 }
 
+// Funnel: the ordered flow stages, plus Dead parked at the end as an exit bucket.
+// Colors mirror the existing lead-status pills so the two views read as one system.
+const FUNNEL_STAGES = [
+  { name: "New",         color: "#6B7280" },
+  { name: "Researching", color: "#0369A1" },
+  { name: "Qualified",   color: "#2563EB" },
+  { name: "AM Notified", color: "#B45309" },
+  { name: "Contacted",   color: "#6D28D9" },
+  { name: "Won",         color: "#3D9A5C" },
+  { name: "Dead",        color: "#DC2626" }
+];
+
+// null = no stage filter (show everything).
+let leadsStageFilter = null;
+
+function setLeadsStageFilter(stage) {
+  leadsStageFilter = (leadsStageFilter === stage) ? null : stage;
+  // Filtered-out rows shouldn't stay silently checked and get bulk-edited.
+  selectedLeadIds.clear();
+  renderLeadsPage();
+}
+
 const LEADS_COLUMNS = [
   { key: "company_name", label: "Company", numeric: false },
   { key: "email", label: "Contact", numeric: true },
@@ -5588,7 +5682,9 @@ const LEADS_COLUMNS = [
   { key: "created", label: "Added", numeric: true }
 ];
 
-function getLeadsRows() {
+// ignoreStage=true is used by the funnel itself, so its counts reflect the search box
+// but never collapse to only the stage you're currently standing in.
+function getLeadsRows(ignoreStage) {
   let rows = state_leads.map(function(l) {
     const q = l.qualification;
     const score = q ? q.qualification_scoring.total_score : null;
@@ -5615,6 +5711,9 @@ function getLeadsRows() {
       return r.company_name.toLowerCase().indexOf(q2) !== -1 ||
         em.toLowerCase().indexOf(q2) !== -1;
     });
+  }
+  if (!ignoreStage && leadsStageFilter) {
+    rows = rows.filter(function(r) { return r.status === leadsStageFilter; });
   }
   const colMap = {
     company_name: "company_name", email: "email_sort", source_type: "source_type", status: "status",
@@ -5783,9 +5882,9 @@ function leadCompactLine(lead) {
 
 // Wrapper so a thrown error surfaces to the user instead of silently killing the click
 // (an uncaught exception in a click handler looks exactly like "the button does nothing").
-function emailSelectedLeadsToAMSafe() {
+async function emailSelectedLeadsToAMSafe() {
   try {
-    emailSelectedLeadsToAM();
+    await emailSelectedLeadsToAM();
   } catch (err) {
     console.error("Email-to-AM failed:", err);
     alert("Couldn't build the email draft.\n\nError: " + (err && err.message ? err.message : err) +
@@ -5797,34 +5896,108 @@ function emailSelectedLeadsToAMSafe() {
 // That failure is invisible — the click just does nothing — so we hard-cap the URL length.
 const MAILTO_MAX = 1900;
 
+// Cache of generated brief URLs, keyed by lead_id. Survives for the session so
+// re-opening a draft doesn't regenerate (and re-upload) an identical brief.
+const briefUrls = {};
+
+// Ask the server to render this lead's brief and stash it in Blob. Returns the URL,
+// or null if Blob isn't configured / the call failed — the email still goes out,
+// just with the old plain-text rundown instead of a link.
+async function generateBrief(lead, am) {
+  if (briefUrls[lead.lead_id]) return briefUrls[lead.lead_id];
+  try {
+    const r = await fetch("/api/brief", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lead: lead, am: am })
+    });
+    if (!r.ok) {
+      const e = await r.json().catch(function() { return {}; });
+      console.warn("Brief generation failed:", e.error || r.status);
+      return null;
+    }
+    const d = await r.json();
+    briefUrls[lead.lead_id] = d.url;
+    return d.url;
+  } catch (e) {
+    console.warn("Brief generation failed:", e);
+    return null;
+  }
+}
+
+// Star rating out of 5 from the /50 score — a fast visual the AM reads before any words.
+function scoreStars(score) {
+  if (typeof score !== "number") return "";
+  const filled = Math.max(1, Math.round(score / 10));
+  return "\u2605".repeat(filled) + "\u2606".repeat(5 - filled);
+}
+
 function buildLeadMailto(am, leads) {
   const realAM = ACCOUNT_MANAGERS.indexOf(am) !== -1;
   const to = realAM ? amEmail(am) : "";
-  const subject = "Lead handoff: " + leads.length + " lead" + (leads.length > 1 ? "s" : "") +
-    (realAM ? " for " + am : " — needs AM assignment");
+
+  // Lead with the strongest score — it sets the tone of the subject line.
+  const scores = leads.map(function(l) {
+    const qs = (l.qualification && l.qualification.qualification_scoring) || {};
+    return typeof qs.total_score === "number" ? qs.total_score : 0;
+  });
+  const best = Math.max.apply(null, scores.concat([0]));
+  const topIdx = scores.indexOf(best);
+  const topLead = leads[topIdx] || leads[0];
+  const topTier = ((topLead.qualification || {}).qualification_scoring || {}).qualification_tier || "";
+
+  // Subject earns the open: name the prize, not the process.
+  let subject;
+  if (!realAM) {
+    subject = leads.length + " unrouted lead" + (leads.length > 1 ? "s" : "") + " \u2014 needs AM assignment";
+  } else if (leads.length === 1) {
+    subject = (best ? best + "/50 " : "") + (topTier || "New lead") + ": " + topLead.company_name;
+  } else {
+    subject = leads.length + " new leads for " + am.split(" ")[0] +
+      (best ? " \u2014 top scores " + best + "/50 (" + topLead.company_name + ")" : "");
+  }
 
   const greeting = realAM ? "Hi " + am.split(" ")[0] + "," : "Team,";
   const intro = realAM
-    ? "Passing you the following lead" + (leads.length > 1 ? "s" : "") + " from BackBone:"
-    : "These leads route to a 'varies' lane or have no industry set — please assign an AM:";
+    ? (leads.length > 1
+        ? "You've got " + leads.length + " new leads on the board. Full briefs are linked \u2014 each one has the score, who to call, and the exact next step."
+        : "New lead on the board. Full brief is linked below \u2014 score, who to call, and the exact next step.")
+    : "These leads route to a 'varies' lane or have no industry set \u2014 please assign an AM:";
 
   function assemble(detailed) {
     const parts = [greeting, "", intro, ""];
-    leads.forEach(function(l, i) {
-      if (detailed) {
-        parts.push("── " + (i + 1) + " ─────────────────────────");
-        parts.push(leadRundownBlock(l));
+
+    leads.forEach(function(l) {
+      const qs = (l.qualification && l.qualification.qualification_scoring) || {};
+      const score = typeof qs.total_score === "number" ? qs.total_score : null;
+      const tier = qs.qualification_tier || "Unscored";
+      const c = leadBestContact(l);
+      const url = briefUrls[l.lead_id];
+
+      parts.push((score != null ? scoreStars(score) + "  " : "") + l.company_name.toUpperCase());
+      parts.push("   " + (score != null ? score + "/50 \u00b7 " : "") + tier);
+      parts.push("   Contact: " + (c.name || "TBD") + (c.email ? " \u00b7 " + c.email : " \u00b7 EMAIL NOT FOUND"));
+
+      const ns = (l.qualification && l.qualification.next_steps) || {};
+      const es = (l.qualification && l.qualification.executive_summary) || {};
+      const act = ns.recommended_action || es.next_action;
+      if (act) parts.push("   Next step: " + act);
+
+      if (url) {
+        parts.push("   Full brief \u2192 " + url);
+      } else if (detailed) {
+        // Blob unavailable — fall back to the old inline rundown so nothing is lost.
         parts.push("");
-      } else {
-        parts.push(leadCompactLine(l));
+        parts.push(leadRundownBlock(l));
       }
-    });
-    if (!detailed) {
       parts.push("");
-      parts.push("(Full rundowns copied to your clipboard — paste below.)");
+    });
+
+    if (!detailed && !leads.every(function(l) { return briefUrls[l.lead_id]; })) {
+      parts.push("(Full rundowns copied to your clipboard \u2014 paste below.)");
+      parts.push("");
     }
-    parts.push("");
-    parts.push("— Sent from BackBone");
+    parts.push("\u2014 Sent from BackBone");
     return parts.join("\n");
   }
 
@@ -5899,8 +6072,15 @@ function renderHandoffModal() {
     const unassigned = !d.to;
     const leadList = d.leads.map(function(l) {
       const c = leadBestContact(l);
+      const url = briefUrls[l.lead_id];
+      const briefTag = url
+        ? ' <a href="' + url + '" target="_blank" rel="noopener" style="color:#3D9A5C;font-weight:600;text-decoration:none">brief \u2197</a>'
+        : (l.qualification
+            ? ' <span style="color:#B45309;font-weight:600">(brief unavailable)</span>'
+            : ' <span style="color:#9CA3AF">(not qualified — no brief)</span>');
       return '<div style="font-size:12px;color:#6B7280;padding:2px 0">• ' + l.company_name +
-        (c.email ? '' : ' <span style="color:#B45309;font-weight:600">(no email)</span>') + '</div>';
+        (c.email ? '' : ' <span style="color:#B45309;font-weight:600">(no email)</span>') +
+        briefTag + '</div>';
     }).join("");
     return '<div style="border:1px solid #E5E7EB;border-radius:10px;padding:12px 14px;margin-bottom:10px">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">' +
@@ -5942,7 +6122,7 @@ function renderHandoffModal() {
   });
 }
 
-function emailSelectedLeadsToAM() {
+async function emailSelectedLeadsToAM() {
   const chosen = state_leads.filter(function(l) { return selectedLeadIds.has(l.lead_id); });
   if (chosen.length === 0) { alert("Select one or more leads first (checkbox on the left)."); return; }
 
@@ -5959,6 +6139,21 @@ function emailSelectedLeadsToAM() {
     const key = am || "Unassigned (varies / no industry)";
     (groups[key] = groups[key] || []).push(l);
   });
+
+  // Render + upload every brief first, so the drafts can carry real links.
+  // Only leads with a qualification get one — an unqualified lead has nothing to brief.
+  const btn = document.getElementById("emailSelectedBtn");
+  const origLabel = btn ? btn.innerHTML : "";
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="qual-spinner"></span> Building briefs…'; }
+  try {
+    await Promise.all(Object.keys(groups).map(function(am) {
+      return Promise.all(groups[am]
+        .filter(function(l) { return l.qualification; })
+        .map(function(l) { return generateBrief(l, am); }));
+    }));
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
+  }
 
   handoffDrafts = Object.keys(groups).map(function(am) {
     return Object.assign({ am: am, leads: groups[am] }, buildLeadMailto(am, groups[am]));
@@ -6037,6 +6232,235 @@ function toggleLeadSelected(leadId, checked) {
   if (delBtn) delBtn.disabled = n === 0;
 }
 
+// --- AM Leaderboard ----------------------------------------------------------
+// Every number here is derived from data that already exists on the lead record.
+// Leads only carry created_at — there are no per-status timestamps — so genuine
+// stage-velocity ("how fast did Megan move this from Qualified to Won") is NOT
+// computable yet. That column is deliberately absent rather than faked. Adding a
+// status_history array on status change would unlock it.
+
+let lbMetric = "won"; // "won" | "pipeline" | "volume"
+
+// Same routing rule the email handoff uses, so leaderboard credit and inbox
+// destination can never disagree.
+function leadOwner(l) {
+  const co = (l.qualification && l.qualification.company_overview) || {};
+  const ind = co.industry_classification || l.industry || "";
+  const lane = ind ? getAssignedAM(ind) : null;
+  return (lane && !lane.varies) ? lane.am : null;
+}
+
+// Deterministic color per AM so the same person is the same color every render.
+function amColor(name) {
+  const palette = ["#3D9A5C", "#2563EB", "#6D28D9", "#B45309", "#0E7490", "#BE185D", "#4B5563"];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return palette[h % palette.length];
+}
+
+function amInitials(name) {
+  return name.split(/\s+/).map(function(p) { return p[0] || ""; }).join("").slice(0, 2).toUpperCase();
+}
+
+function renderLeaderboard() {
+  const el = document.getElementById("leaderboardWrap");
+  if (!el) return;
+
+  // Seed every real AM so someone with zero leads still shows up (and can see it).
+  const stats = {};
+  ACCOUNT_MANAGERS.forEach(function(am) {
+    stats[am] = { am: am, total: 0, won: 0, dead: 0, closed: 0, live: 0, pipeline: 0, scored: 0, hot: 0 };
+  });
+
+  state_leads.forEach(function(l) {
+    const am = leadOwner(l);
+    if (!am || !stats[am]) return; // unrouted leads belong to nobody yet
+    const s = stats[am];
+    const qs = (l.qualification && l.qualification.qualification_scoring) || {};
+    const score = typeof qs.total_score === "number" ? qs.total_score : null;
+
+    s.total++;
+    if (l.status === "Won") s.won++;
+    else if (l.status === "Dead") s.dead++;
+    else s.live++;
+
+    if (score != null) {
+      s.scored += score;
+      // "Pipeline" = summed score of leads still in play. Won/Dead are settled,
+      // so they don't inflate what's actually still winnable.
+      if (l.status !== "Won" && l.status !== "Dead") s.pipeline += score;
+      if (score >= 40 && l.status !== "Dead") s.hot++;
+    }
+  });
+
+  const rows = ACCOUNT_MANAGERS.map(function(am) {
+    const s = stats[am];
+    s.closed = s.won + s.dead;
+    // Win rate only counts *settled* leads. Judging someone on leads still sitting
+    // in Contacted would punish a full pipeline, which is exactly backwards.
+    s.winRate = s.closed ? Math.round((s.won / s.closed) * 100) : null;
+    s.avgScore = s.total && s.scored ? Math.round(s.scored / s.total) : null;
+    return s;
+  });
+
+  const METRICS = {
+    won:      { key: "won",      label: "Wins",     sub: "closed won" },
+    pipeline: { key: "pipeline", label: "Pipeline", sub: "live score" },
+    volume:   { key: "total",    label: "Leads",    sub: "assigned" }
+  };
+  const m = METRICS[lbMetric];
+
+  rows.sort(function(a, b) {
+    const d = b[m.key] - a[m.key];
+    if (d !== 0) return d;
+    return b.total - a.total; // tiebreak on volume
+  });
+
+  const max = rows.reduce(function(x, r) { return Math.max(x, r[m.key]); }, 0) || 1;
+  const anyLeads = rows.some(function(r) { return r.total > 0; });
+
+  const medals = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
+
+  let html = '<div class="lb-toolbar">' +
+    '<div class="lb-metric">' +
+      Object.keys(METRICS).map(function(k) {
+        return '<button data-lb="' + k + '"' + (lbMetric === k ? ' class="on"' : '') + '>' +
+          METRICS[k].label + '</button>';
+      }).join("") +
+    '</div>' +
+    '<div class="fnl-hint" style="font-size:11px;color:#9CA3AF">Ranked by ' + m.label.toLowerCase() +
+      ' \u00b7 unrouted leads aren\'t credited to anyone</div>' +
+  '</div>';
+
+  if (!anyLeads) {
+    html += '<div class="empty-state">No routed leads yet \u2014 qualify a lead and set its industry to put it on the board.</div>';
+    el.innerHTML = html;
+    return;
+  }
+
+  html += rows.map(function(r, i) {
+    const val = r[m.key];
+    const color = amColor(r.am);
+    const width = Math.round((val / max) * 100);
+
+    // Badges: earned, not decorative. Each one means a specific thing.
+    const badges = [];
+    if (r.hot > 0) badges.push('<span class="lb-badge lb-hot">' + r.hot + ' hot</span>');
+    if (r.won >= 3) badges.push('<span class="lb-badge lb-streak">' + r.won + ' wins</span>');
+    if (r.winRate != null && r.winRate >= 60 && r.closed >= 3) {
+      badges.push('<span class="lb-badge lb-clean">' + r.winRate + '% close</span>');
+    }
+    if (r.total === 0) badges.push('<span class="lb-badge lb-cold">no leads</span>');
+
+    const rank = (i < 3 && val > 0) ? medals[i] : (i + 1);
+
+    const subParts = [];
+    subParts.push(r.live + " live");
+    if (r.won) subParts.push(r.won + " won");
+    if (r.winRate != null) subParts.push(r.winRate + "% close rate");
+    if (r.avgScore != null) subParts.push("avg " + r.avgScore + "/50");
+
+    return '<div class="lb-row' + (i < 3 && val > 0 ? ' lb-' + (i + 1) : '') + '">' +
+      '<div class="lb-rank">' + rank + '</div>' +
+      '<div class="lb-av" style="background:' + color + '">' + amInitials(r.am) + '</div>' +
+      '<div class="lb-main">' +
+        '<div class="lb-name">' + r.am + '</div>' +
+        '<div class="lb-sub">' + subParts.join(" \u00b7 ") + '</div>' +
+        '<div class="lb-bar"><div class="lb-fill" style="width:' + width + '%;background:' + color + '"></div></div>' +
+      '</div>' +
+      '<div class="lb-badges">' + badges.join("") + '</div>' +
+      '<div class="lb-stat">' +
+        '<div class="lb-val" style="color:' + (val > 0 ? "#111827" : "#D1D5DB") + '">' + val + '</div>' +
+        '<div class="lb-lbl">' + m.sub + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join("");
+
+  el.innerHTML = html;
+
+  el.querySelectorAll("[data-lb]").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      lbMetric = btn.dataset.lb;
+      renderLeaderboard();
+    });
+  });
+}
+
+// Visual funnel across the top of the Pipeline card. Each stage is a clickable
+// segment: count, share of the pipeline, a proportional bar, and the biggest
+// qualified name sitting in that stage. Stages taper left-to-right so the shape
+// itself tells you where things are piling up.
+function renderLeadsFunnel() {
+  const el = document.getElementById("leadsFunnel");
+  if (!el) return;
+
+  // Funnel counts respect the search box but ignore the stage filter.
+  const pool = getLeadsRows(true);
+
+  const buckets = {};
+  FUNNEL_STAGES.forEach(function(s) { buckets[s.name] = []; });
+  pool.forEach(function(r) {
+    if (buckets[r.status]) buckets[r.status].push(r);
+    else (buckets["New"] = buckets["New"] || []).push(r); // unknown/legacy status lands at the top
+  });
+
+  // Bar width is relative to the biggest stage, so the tallest stage always fills.
+  const maxCount = FUNNEL_STAGES.reduce(function(m, s) {
+    return Math.max(m, buckets[s.name].length);
+  }, 0) || 1;
+  const poolTotal = pool.length || 1;
+
+  el.innerHTML = FUNNEL_STAGES.map(function(s, i) {
+    const list = buckets[s.name];
+    const n = list.length;
+    const pct = Math.round((n / poolTotal) * 100);
+    const fill = Math.round((n / maxCount) * 100);
+    const active = leadsStageFilter === s.name;
+
+    // Subline: strongest lead sitting here, by qualification score.
+    let sub = "&mdash;";
+    if (n) {
+      const scored = list.filter(function(r) { return r._display.score != null; })
+        .sort(function(a, b) { return b._display.score - a._display.score; });
+      const top = scored[0] || list[0];
+      sub = top.company_name + (top._display.score != null ? " \u00b7 " + top._display.score : "");
+      if (n > 1) sub += " +" + (n - 1);
+    }
+
+    const chev = (i < FUNNEL_STAGES.length - 1)
+      ? '<div class="funnel-chev">\u276F</div>' : "";
+
+    return '<button type="button" class="funnel-stage' +
+        (active ? " is-active" : "") + (n === 0 ? " is-empty" : "") +
+        '" data-stage="' + s.name + '" style="--fnl:' + s.color + '"' +
+        ' title="' + (active ? "Showing only " : "Filter to ") + s.name + '">' +
+        '<div class="fnl-top">' +
+          '<span class="fnl-name">' + s.name + '</span>' +
+          '<span class="fnl-pct">' + pct + '%</span>' +
+        '</div>' +
+        '<div class="fnl-count">' + n + '</div>' +
+        '<div class="fnl-bar"><div class="fnl-fill" style="width:' + fill + '%"></div></div>' +
+        '<div class="fnl-sub" title="' + String(sub).replace(/"/g, "&quot;") + '">' + sub + '</div>' +
+      '</button>' + chev;
+  }).join("");
+
+  el.querySelectorAll(".funnel-stage").forEach(function(btn) {
+    btn.addEventListener("click", function() { setLeadsStageFilter(btn.dataset.stage); });
+  });
+
+  const clearBtn = document.getElementById("funnelClearBtn");
+  if (clearBtn) {
+    clearBtn.style.display = leadsStageFilter ? "" : "none";
+    clearBtn.onclick = function() { setLeadsStageFilter(leadsStageFilter); };
+  }
+  const note = document.getElementById("leadsFilterNote");
+  if (note) {
+    note.innerHTML = leadsStageFilter
+      ? 'Showing <b>' + leadsStageFilter + '</b> only'
+      : "";
+  }
+}
+
 function renderLeadsPage() {
   const total = state_leads.length;
   const qualified = state_leads.filter(function(l) { return l.qualification; }).length;
@@ -6055,11 +6479,20 @@ function renderLeadsPage() {
       '<div class="kpi"><div class="kpi-lbl">Won</div><div class="kpi-val">' + won + '</div></div>';
   }
 
+  renderLeaderboard();
+  renderLeadsFunnel();
+
   const wrap = document.getElementById("leadsTableWrap");
   if (!wrap) return;
   const rows = getLeadsRows();
   if (rows.length === 0) {
-    wrap.innerHTML = '<div class="empty-state">No leads yet. Add one above.</div>';
+    wrap.innerHTML = '<div class="empty-state">' +
+      (state_leads.length === 0
+        ? "No leads yet. Add one above."
+        : (leadsStageFilter
+            ? "No leads in <b>" + leadsStageFilter + "</b> matching this search."
+            : "No leads match this search.")) +
+      '</div>';
     return;
   }
 
