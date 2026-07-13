@@ -5928,9 +5928,14 @@ async function generateBrief(lead, am) {
       // access error means the store is the wrong type.
       if (e.diag) {
         const d = e.diag;
-        reason += "  [oidc:" + (d.oidc ? "yes" : "NO") +
+        reason += "  [" + (d.build || "build:?") +
+                  " oidc:" + (d.oidc ? "yes" : "NO") +
                   " storeId:" + (d.storeId ? "yes" : "NO") +
                   " rwToken:" + (d.rwToken ? "yes" : "NO") + "]";
+      } else {
+        // No diag at all means the response came from an OLD brief.js — the current
+        // one always attaches it. That's the answer, not the error text itself.
+        reason += "  [STALE brief.js on server — redeploy]";
       }
       briefErrors[lead.lead_id] = reason;
       console.warn("Brief generation failed for " + lead.company_name + ":", reason);
