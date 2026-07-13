@@ -6,8 +6,15 @@
 // The brief is print-clean: Ctrl+P / "Share > Print" in any browser produces a
 // proper PDF, so AMs who want a file still get one.
 //
-// Requires: BLOB_READ_WRITE_TOKEN (Vercel > Storage > Blob > connect to project)
-//           npm i @vercel/blob
+// Setup:
+//   1. npm i @vercel/blob  (add to package.json dependencies)
+//   2. Vercel > Storage > Create Database > Blob
+//      -> set access to PUBLIC (the dialog defaults to Private; private blob URLs
+//         are NOT openable by link, which defeats the whole point of emailing one)
+//   3. Store > Projects tab > Connect to Project -> pick this project
+//      This injects VERCEL_OIDC_TOKEN + BLOB_STORE_ID, which the SDK uses to auth.
+//      BLOB_READ_WRITE_TOKEN is NOT needed when connected this way.
+//   4. REDEPLOY. Env vars only apply to deployments built after they were added.
 
 import { put } from "@vercel/blob";
 import { requireAuth } from "../lib/auth.js";
@@ -268,9 +275,19 @@ export default async function handler(req, res) {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed" });
   }
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  // Vercel Blob authenticates one of two ways, and the SDK picks automatically:
+  //   1. OIDC (preferred) — needs VERCEL_OIDC_TOKEN + BLOB_STORE_ID. Both are injected
+  //      when you "Connect to Project" from the store. Short-lived, auto-rotating.
+  //   2. BLOB_READ_WRITE_TOKEN — a long-lived static token, added at store-creation
+  //      time if you tick the environments there.
+  // Either is fine. Only bail if NEITHER is present, or the SDK throws a confusing
+  // credential error at runtime with no hint about which setup step was missed.
+  const hasOidc = !!(process.env.VERCEL_OIDC_TOKEN && process.env.BLOB_STORE_ID);
+  const hasToken = !!process.env.BLOB_READ_WRITE_TOKEN;
+  if (!hasOidc && !hasToken) {
     return res.status(500).json({
-      error: "Blob storage not configured. Add BLOB_READ_WRITE_TOKEN in Vercel > Storage > Blob, then redeploy."
+      error: "Blob not connected. In Vercel > Storage > your Blob store > Projects tab, " +
+             "click 'Connect to Project' and pick this project. Then redeploy."
     });
   }
 
@@ -288,16 +305,31 @@ export default async function handler(req, res) {
     const slug = String(lead.company_name || "lead")
       .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "lead";
 
+    // The STORE decides public vs private; `access` must match how the store was
+    // created or the upload is rejected. This store is Public, so the URL below is
+    // openable by anyone who has it — which is the point, since it goes in an email
+    // to an AM who won't be logged into BackBone on their phone.
+    //
+    // addRandomSuffix makes the URL unguessable. It also means a regenerated brief
+    // gets a NEW url rather than overwriting the old one, so a link already sitting
+    // in someone's inbox never silently changes underneath them.
     const blob = await put("briefs/" + slug + "-" + lead.lead_id + ".html", html, {
       access: "public",
       contentType: "text/html; charset=utf-8",
-      addRandomSuffix: true,
-      cacheControlMaxAge: 31536000
+      addRandomSuffix: true
     });
 
     return res.status(200).json({ url: blob.url, lead_id: lead.lead_id });
   } catch (e) {
     console.error("brief error:", e);
-    return res.status(500).json({ error: e.message || "Failed to generate brief" });
+    // Surface the two failures that actually happen in practice with a fix attached,
+    // rather than a generic 500 that sends you digging through function logs.
+    let msg = e.message || "Failed to generate brief";
+    if (/access/i.test(msg) && /private|public/i.test(msg)) {
+      msg = "Blob store is Private — this needs a Public store. Delete it and recreate with access set to Public.";
+    } else if (/token|unauthorized|forbidden|401|403/i.test(msg)) {
+      msg = "Blob token rejected. Check BLOB_READ_WRITE_TOKEN is set on this project, then REDEPLOY.";
+    }
+    return res.status(500).json({ error: msg });
   }
 }
