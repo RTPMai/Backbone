@@ -5582,26 +5582,31 @@ function leadBestContact(lead) {
 function leadRundownBlock(lead) {
   const q = lead.qualification;
   const c = leadBestContact(lead);
-  const industry = q ? normalizeIndustry(q.company_overview.industry_classification || "") : (lead.industry || "");
+  const co = (q && q.company_overview) || {};
+  const qs = (q && q.qualification_scoring) || {};
+  const ag = (q && q.at_a_glance) || {};
+  const ns = (q && q.next_steps) || {};
+  const rt = (q && q.routing) || {};
+  const industry = normalizeIndustry(co.industry_classification || lead.industry || "");
   const lines = [];
-  lines.push("Company: " + lead.company_name);
+  lines.push("Company: " + (lead.company_name || "—"));
   if (lead.website_url) lines.push("Website: " + lead.website_url);
   if (industry) lines.push("Industry: " + industry);
-  if (q && q.qualification_scoring) {
-    lines.push("Score / Tier: " + (q.qualification_scoring.total_score || "—") + "/50 — " + (q.qualification_scoring.qualification_tier || "—"));
+  if (qs.total_score || qs.qualification_tier) {
+    lines.push("Score / Tier: " + (qs.total_score || "—") + "/50 — " + (qs.qualification_tier || "—"));
   }
-  if (q && q.routing && q.routing.follow_up_speed) lines.push("Follow-up: " + q.routing.follow_up_speed);
+  if (rt.follow_up_speed) lines.push("Follow-up: " + rt.follow_up_speed);
   lines.push("");
   lines.push("Contact: " + (c.name || "—") + (c.title ? " (" + c.title + ")" : ""));
   lines.push("  Email: " + (c.email || "NOT FOUND — needs manual lookup"));
   lines.push("  Phone: " + (c.phone || "—"));
-  if (q && q.at_a_glance && q.at_a_glance.summary) {
+  if (ag.summary) {
     lines.push("");
-    lines.push("Rundown: " + q.at_a_glance.summary);
-    if (q.at_a_glance.top_opportunity) lines.push("Top opportunity: " + q.at_a_glance.top_opportunity);
+    lines.push("Rundown: " + ag.summary);
+    if (ag.top_opportunity) lines.push("Top opportunity: " + ag.top_opportunity);
   }
-  if (q && q.next_steps && q.next_steps.recommended_action) {
-    lines.push("Recommended next step: " + q.next_steps.recommended_action);
+  if (ns.recommended_action) {
+    lines.push("Recommended next step: " + ns.recommended_action);
   }
   return lines.join("\n");
 }
@@ -5610,11 +5615,24 @@ function leadRundownBlock(lead) {
 function leadCompactLine(lead) {
   const q = lead.qualification;
   const c = leadBestContact(lead);
-  const score = (q && q.qualification_scoring && q.qualification_scoring.total_score) || "—";
-  const tier = (q && q.qualification_scoring && q.qualification_scoring.qualification_tier) || "—";
-  return "• " + lead.company_name + " — " + score + "/50 " + tier +
+  const qs = (q && q.qualification_scoring) || {};
+  const score = qs.total_score || "—";
+  const tier = qs.qualification_tier || "—";
+  return "• " + (lead.company_name || "—") + " — " + score + "/50 " + tier +
     " | " + (c.name || "contact TBD") +
     " | " + (c.email || "EMAIL NOT FOUND");
+}
+
+// Wrapper so a thrown error surfaces to the user instead of silently killing the click
+// (an uncaught exception in a click handler looks exactly like "the button does nothing").
+function emailSelectedLeadsToAMSafe() {
+  try {
+    emailSelectedLeadsToAM();
+  } catch (err) {
+    console.error("Email-to-AM failed:", err);
+    alert("Couldn't build the email draft.\n\nError: " + (err && err.message ? err.message : err) +
+          "\n\nTry 'Copy draft', or send me this message and I'll fix it.");
+  }
 }
 
 // Most mail clients (notably Outlook) silently refuse to open a mailto: past ~2000 chars.
@@ -5703,7 +5721,10 @@ function emailSelectedLeadsToAM() {
   const groups = {};
   chosen.forEach(function(l) {
     const q = l.qualification;
-    const ind = q ? (q.company_overview.industry_classification || "") : (l.industry || "");
+    // Guard: a lead can have a qualification object with no company_overview (failed/partial
+    // parse). Reaching straight into q.company_overview.x throws and kills the whole handler.
+    const co = (q && q.company_overview) || {};
+    const ind = co.industry_classification || l.industry || "";
     const lane = ind ? getAssignedAM(ind) : null;
     let am = lane && !lane.varies ? lane.am : "";
     const key = am || "Unassigned (varies / no industry)";
@@ -5859,7 +5880,7 @@ function renderLeadsPage() {
   if (emailBtn) {
     emailBtn.disabled = selectedLeadIds.size === 0;
     document.getElementById("selectedCount").textContent = selectedLeadIds.size;
-    emailBtn.addEventListener("click", emailSelectedLeadsToAM);
+    emailBtn.addEventListener("click", emailSelectedLeadsToAMSafe);
   }
   const copyBtn = document.getElementById("copyDraftBtn");
   if (copyBtn) copyBtn.addEventListener("click", copyLastLeadDraft);
