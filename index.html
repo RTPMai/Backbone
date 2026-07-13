@@ -5903,8 +5903,13 @@ const briefUrls = {};
 // Ask the server to render this lead's brief and stash it in Blob. Returns the URL,
 // or null if Blob isn't configured / the call failed — the email still goes out,
 // just with the old plain-text rundown instead of a link.
+// Why a brief failed, keyed by lead_id. A silent "unavailable" is useless —
+// the AM handoff modal shows the actual reason so it's fixable without a console.
+const briefErrors = {};
+
 async function generateBrief(lead, am) {
   if (briefUrls[lead.lead_id]) return briefUrls[lead.lead_id];
+  delete briefErrors[lead.lead_id];
   try {
     const r = await fetch("/api/brief", {
       method: "POST",
@@ -5913,14 +5918,22 @@ async function generateBrief(lead, am) {
     });
     if (!r.ok) {
       const e = await r.json().catch(function() { return {}; });
-      console.warn("Brief generation failed:", e.error || r.status);
+      // A 404 means api/brief.js isn't deployed at all — a very different fix
+      // from "Blob isn't configured", so don't collapse them into one message.
+      const reason = r.status === 404
+        ? "/api/brief not found — is api/brief.js deployed?"
+        : (e.error || ("HTTP " + r.status));
+      briefErrors[lead.lead_id] = reason;
+      console.warn("Brief generation failed for " + lead.company_name + ":", reason);
       return null;
     }
     const d = await r.json();
     briefUrls[lead.lead_id] = d.url;
     return d.url;
   } catch (e) {
-    console.warn("Brief generation failed:", e);
+    const reason = (e && e.message) ? e.message : "Network error";
+    briefErrors[lead.lead_id] = reason;
+    console.warn("Brief generation failed for " + lead.company_name + ":", e);
     return null;
   }
 }
@@ -5985,10 +5998,15 @@ function buildLeadMailto(am, leads) {
 
       if (url) {
         parts.push("   Full brief \u2192 " + url);
-      } else if (detailed) {
-        // Blob unavailable — fall back to the old inline rundown so nothing is lost.
-        parts.push("");
-        parts.push(leadRundownBlock(l));
+      } else if (detailed && l.qualification) {
+        // No brief link (Blob down / not configured). The lines above already carry
+        // score, tier, contact and next step — dumping the whole rundown here mostly
+        // duplicates them AND blows the mailto length cap, which then trips the
+        // "too long" truncation path. Add only the at-a-glance summary, which is the
+        // one thing not already covered.
+        const ag = (l.qualification.at_a_glance) || {};
+        if (ag.summary) parts.push("   " + ag.summary);
+        if (ag.top_opportunity) parts.push("   Opportunity: " + ag.top_opportunity);
       }
       parts.push("");
     });
@@ -6073,26 +6091,46 @@ function renderHandoffModal() {
     const leadList = d.leads.map(function(l) {
       const c = leadBestContact(l);
       const url = briefUrls[l.lead_id];
+      const err = briefErrors[l.lead_id];
       const briefTag = url
         ? ' <a href="' + url + '" target="_blank" rel="noopener" style="color:#3D9A5C;font-weight:600;text-decoration:none">brief \u2197</a>'
         : (l.qualification
-            ? ' <span style="color:#B45309;font-weight:600">(brief unavailable)</span>'
+            ? ' <span style="color:#B45309;font-weight:600" title="' +
+                String(err || "Unknown error").replace(/"/g, "&quot;") +
+                '">(brief failed)</span>'
             : ' <span style="color:#9CA3AF">(not qualified — no brief)</span>');
       return '<div style="font-size:12px;color:#6B7280;padding:2px 0">• ' + l.company_name +
         (c.email ? '' : ' <span style="color:#B45309;font-weight:600">(no email)</span>') +
-        briefTag + '</div>';
+        briefTag +
+        (err ? '<div style="font-size:11px;color:#B45309;margin:2px 0 4px 12px">\u21B3 ' + err + '</div>' : '') +
+        '</div>';
     }).join("");
-    return '<div style="border:1px solid #E5E7EB;border-radius:10px;padding:12px 14px;margin-bottom:10px">' +
+    return '<div style="border:1px solid ' + (unassigned ? '#FDE68A' : '#E5E7EB') + ';border-radius:10px;padding:12px 14px;margin-bottom:10px;' +
+        (unassigned ? 'background:#FFFBEB' : '') + '">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">' +
         '<div>' +
           '<div style="font-weight:700;font-size:14px">' + d.am + '</div>' +
           '<div style="font-size:12px;color:' + (unassigned ? '#B45309' : '#6B7280') + '">' +
-            (unassigned ? 'No AM — assign before sending' : d.to) +
+            (unassigned ? 'No AM — pick one to send' : d.to) +
             ' · ' + d.leads.length + ' lead' + (d.leads.length > 1 ? 's' : '') +
           '</div>' +
         '</div>' +
-        '<button class="btn ' + (unassigned ? 'btn-gray' : 'btn-green') + ' btn-sm handoff-open" ' +
-          'data-idx="' + i + '">Open draft</button>' +
+        // Unassigned groups get an AM picker right here. Without it the only way out
+        // was: close modal → open lead → set industry → reselect → re-click. The pick
+        // is send-time only — it does NOT write an industry back onto the lead, since
+        // "who gets this email" and "what industry is this company" are different facts.
+        (unassigned
+          ? '<div style="display:flex;gap:6px;align-items:center">' +
+              '<select class="field handoff-am" data-idx="' + i + '" style="width:auto;font-size:12px;padding:5px 8px">' +
+                '<option value="">Choose AM…</option>' +
+                ACCOUNT_MANAGERS.map(function(a) {
+                  return '<option value="' + a + '"' + (d.pickedAM === a ? ' selected' : '') + '>' + a + '</option>';
+                }).join("") +
+              '</select>' +
+              '<button class="btn ' + (d.pickedAM ? 'btn-green' : 'btn-gray') + ' btn-sm handoff-open" ' +
+                'data-idx="' + i + '"' + (d.pickedAM ? '' : ' disabled') + '>Open draft</button>' +
+            '</div>'
+          : '<button class="btn btn-green btn-sm handoff-open" data-idx="' + i + '">Open draft</button>') +
       '</div>' +
       '<div style="margin-top:8px">' + leadList + '</div>' +
       (d.truncated
@@ -6102,6 +6140,26 @@ function renderHandoffModal() {
   }).join("");
 
   if (hint) hint.textContent = "Outlook can take a few seconds to open.";
+
+  body.querySelectorAll(".handoff-am").forEach(function(sel) {
+    sel.addEventListener("change", function() {
+      const idx = parseInt(sel.dataset.idx, 10);
+      const d = handoffDrafts[idx];
+      const am = sel.value;
+      if (!am) { d.pickedAM = null; renderHandoffModal(); return; }
+      d.pickedAM = am;
+      // Rebuild the mailto with a real recipient. Keep the original group label so
+      // the card still reads as "these were the unrouted ones".
+      const rebuilt = buildLeadMailto(am, d.leads);
+      d.to = rebuilt.to;
+      d.subject = rebuilt.subject;
+      d.body = rebuilt.body;
+      d.fullBody = rebuilt.fullBody;
+      d.href = rebuilt.href;
+      d.truncated = rebuilt.truncated;
+      renderHandoffModal();
+    });
+  });
 
   body.querySelectorAll(".handoff-open").forEach(function(btn) {
     btn.addEventListener("click", function() {
