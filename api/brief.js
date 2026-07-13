@@ -22,7 +22,7 @@ import { requireAuth } from "../lib/auth.js";
 // Bump this whenever brief.js changes. It's echoed in every error so we can tell at a
 // glance whether the deployed file is the one we think it is — several rounds of this
 // debug were spent diagnosing a build that had never actually shipped.
-const BUILD = "brief-v7";
+const BUILD = "brief-v8";
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -99,22 +99,57 @@ function renderBrief(lead, am) {
   const website = clean(lead.website) || clean(co.website);
   const industry = clean(co.industry_classification) || clean(lead.industry);
 
-  // THE CALL. This is the whole point of the page, so it gets the most weight.
-  // Only the primary contact — a list of five names is a research doc, not a handoff.
-  // Extra contacts get named at the bottom, without detail.
-  let primary = null;
-  for (let i = 0; i < contacts.length; i++) {
-    const b = contactBits(contacts[i]);
-    if (b.email || b.phone) { primary = { c: contacts[i], b: b }; break; }
+  // ---- Contacts --------------------------------------------------------------
+  // Ranked, but NOBODY is hidden. An earlier cut showed only the top contact and
+  // demoted the rest to names with no email/phone — which meant an AM who needed the
+  // marketing contact couldn't reach them without going back to BackBone. Every
+  // contact below is fully tappable; ranking only decides who gets the loud treatment.
+  //
+  // Ranking is by the schema's own confidence field, so the person we're most sure
+  // about goes first. Reachability breaks ties — a "confirmed" contact with no email
+  // or phone is less useful than a slightly-less-certain one you can actually call.
+  const CONF_RANK = {
+    "confirmed": 0,
+    "third-party unverified": 1,
+    "single-source unconfirmed": 2,
+    "not found": 3
+  };
+  function confRank(c) {
+    const k = String(c.confidence || "").trim().toLowerCase();
+    return CONF_RANK[k] != null ? CONF_RANK[k] : 2; // unknown label sorts mid-pack
   }
-  if (!primary && contacts.length) primary = { c: contacts[0], b: contactBits(contacts[0]) };
+
+  const ranked = contacts.map(function(c) {
+    const b = contactBits(c);
+    return { c: c, b: b, reachable: !!(b.email || b.phone) };
+  }).sort(function(x, y) {
+    const d = confRank(x.c) - confRank(y.c);
+    if (d !== 0) return d;
+    return (y.reachable ? 1 : 0) - (x.reachable ? 1 : 0);
+  });
+
+  const primary = ranked[0] || null;
+  const others = ranked.slice(1);
+
+  function confPill(c) {
+    const v = clean(c.confidence);
+    if (!v) return "";
+    const r = confRank(c);
+    const bg = r === 0 ? "#EAF5EE" : (r === 3 ? "#FEE2E2" : "#F3F4F6");
+    const fg = r === 0 ? "#1F6B3D" : (r === 3 ? "#991B1B" : "#6B7280");
+    return '<span class="conf" style="background:' + bg + ';color:' + fg + '">' + esc(v) + '</span>';
+  }
 
   let callHtml;
   if (primary) {
     const c = primary.c, b = primary.b;
     callHtml =
-      '<div class="call-name">' + dash(c.name || "Name not public") + '</div>' +
+      '<div class="call-hd">' +
+        '<div class="call-name">' + dash(c.name || "Name not public") + '</div>' +
+        confPill(c) +
+      '</div>' +
       (clean(c.title) ? '<div class="call-title">' + esc(c.title) + '</div>' : '') +
+      (clean(c.relevance) ? '<div class="call-rel">' + esc(c.relevance) + '</div>' : '') +
       '<div class="call-acts">' +
         (b.phone
           ? '<a class="act act-call" href="tel:' + esc(b.phone.replace(/[^\d+]/g, "")) + '">' +
@@ -129,13 +164,30 @@ function renderBrief(lead, am) {
     callHtml = '<div class="act act-none">No contact captured yet \u2014 needs manual lookup</div>';
   }
 
-  // Everyone else, names only.
-  const others = contacts.filter(function(c) { return !primary || c !== primary.c; });
+  // Everyone else — compact, but with working tel:/mailto: links. Not decoration.
   const othersHtml = others.length
-    ? '<div class="others"><span>Also at ' + esc(company) + ':</span> ' +
-        others.map(function(c) {
-          return esc(c.name || "?") + (clean(c.title) ? " (" + esc(c.title) + ")" : "");
-        }).join(", ") +
+    ? '<div class="card">' +
+        '<div class="alsoc-l">Also at ' + esc(company) + '</div>' +
+        others.map(function(o) {
+          const c = o.c, b = o.b;
+          return '<div class="oc">' +
+            '<div class="oc-hd">' +
+              '<div class="oc-name">' + dash(c.name || "Name not public") +
+                (clean(c.title) ? '<span class="oc-title"> \u00b7 ' + esc(c.title) + '</span>' : '') +
+              '</div>' +
+              confPill(c) +
+            '</div>' +
+            (clean(c.relevance) ? '<div class="oc-rel">' + esc(c.relevance) + '</div>' : '') +
+            '<div class="oc-acts">' +
+              (b.phone
+                ? '<a class="oc-link" href="tel:' + esc(b.phone.replace(/[^\d+]/g, "")) + '">\u2706 ' + esc(b.phone) + '</a>'
+                : '') +
+              (b.email
+                ? '<a class="oc-link" href="mailto:' + esc(b.email) + '">\u2709 ' + esc(b.email) + '</a>'
+                : '<span class="oc-none">No email found</span>') +
+            '</div>' +
+          '</div>';
+        }).join("") +
       '</div>'
     : '';
 
@@ -181,8 +233,27 @@ function renderBrief(lead, am) {
   'box-shadow:0 2px 10px rgba(16,24,40,.10);border:2px solid ' + tc.bar + '}' +
 '.call-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;' +
   'color:' + tc.bar + ';margin-bottom:9px}' +
+'.call-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}' +
 '.call-name{font-size:20px;font-weight:800;letter-spacing:-.01em}' +
 '.call-title{font-size:13.5px;color:#6B7280;margin-top:1px}' +
+'.call-rel{font-size:12.5px;color:#9CA3AF;margin-top:5px;line-height:1.45}' +
+'.conf{flex:0 0 auto;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;' +
+  'padding:3px 7px;border-radius:99px;white-space:nowrap;margin-top:2px}' +
+
+/* secondary contacts — compact, but every link works */
+'.alsoc-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;' +
+  'color:#9CA3AF;margin-bottom:11px}' +
+'.oc{padding:11px 0;border-top:1px solid #F4F6F8}' +
+'.oc:first-of-type{padding-top:0;border-top:none}' +
+'.oc:last-child{padding-bottom:0}' +
+'.oc-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}' +
+'.oc-name{font-size:14.5px;font-weight:700;line-height:1.35}' +
+'.oc-title{font-weight:500;color:#9CA3AF;font-size:13px}' +
+'.oc-rel{font-size:12px;color:#9CA3AF;margin-top:3px;line-height:1.45}' +
+'.oc-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}' +
+'.oc-link{display:inline-flex;align-items:center;gap:5px;padding:8px 12px;border-radius:9px;' +
+  'background:#F4F6F8;color:#111827;font-size:13px;font-weight:600;text-decoration:none}' +
+'.oc-none{font-size:12px;font-weight:600;color:#B45309;padding:8px 0}' +
 '.call-acts{margin-top:14px;display:flex;flex-direction:column;gap:8px}' +
 '.act{display:flex;align-items:center;gap:9px;padding:13px 15px;border-radius:11px;' +
   'font-size:14.5px;font-weight:600;text-decoration:none}' +
@@ -203,8 +274,6 @@ function renderBrief(lead, am) {
   'color:#B91C1C;margin-bottom:5px}' +
 '.warn p{font-size:13px;color:#7F1D1D;line-height:1.5}' +
 
-'.others{font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;padding:0 8px}' +
-'.others span{font-weight:600;color:#6B7280}' +
 '.foot{text-align:center;font-size:11px;color:#C3C9D0;margin-top:16px}' +
 '@media print{body{background:#fff}.card,.call{box-shadow:none;border:1px solid #E5E7EB}}' +
 '</style></head><body><div class="sheet">' +
@@ -236,9 +305,12 @@ function renderBrief(lead, am) {
 
 // THE CALL
 '<div class="call">' +
-  '<div class="call-l">Who to call</div>' +
+  '<div class="call-l">Who to call first</div>' +
   callHtml +
 '</div>' +
+
+// Everyone else — sits right under the primary so all the contacts are together.
+othersHtml +
 
 // what to say
 '<div class="card">' +
@@ -256,8 +328,6 @@ function renderBrief(lead, am) {
       (clean(glance.top_risk) ? esc(glance.top_risk) : esc(flags[0])) +
     '</p></div>'
   : '') +
-
-othersHtml +
 
 '<div class="foot">BackBone \u00b7 P&amp;M Apparel</div>' +
 '</div></body></html>';
