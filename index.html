@@ -5982,52 +5982,91 @@ function buildLeadMailto(am, leads) {
   const greeting = realAM ? "Hi " + am.split(" ")[0] + "," : "Team,";
   const intro = realAM
     ? (leads.length > 1
-        ? "You've got " + leads.length + " new leads on the board. Full briefs are linked \u2014 each one has the score, who to call, and the exact next step."
-        : "New lead on the board. Full brief is linked below \u2014 score, who to call, and the exact next step.")
+        ? "You have " + leads.length + " new leads."
+        : "You have a new lead.")
     : "These leads route to a 'varies' lane or have no industry set \u2014 please assign an AM:";
 
   function assemble(detailed) {
-    const parts = [greeting, "", intro, ""];
+    const parts = [];
 
-    leads.forEach(function(l) {
+    // Structure: name the AM, say what they've got, put the LINK FIRST (before any
+    // detail — an AM who only reads one line should still be able to act), then the
+    // rundown underneath for anyone who wants it without leaving their inbox.
+    parts.push(greeting);
+    parts.push("");
+    parts.push(intro);
+    parts.push("");
+
+    leads.forEach(function(l, i) {
       const qs = (l.qualification && l.qualification.qualification_scoring) || {};
       const score = typeof qs.total_score === "number" ? qs.total_score : null;
       const tier = qs.qualification_tier || "Unscored";
       const c = leadBestContact(l);
       const url = briefUrls[l.lead_id];
-
-      parts.push((score != null ? scoreStars(score) + "  " : "") + l.company_name.toUpperCase());
-      parts.push("   " + (score != null ? score + "/50 \u00b7 " : "") + tier);
-      parts.push("   Contact: " + (c.name || "TBD") + (c.email ? " \u00b7 " + c.email : " \u00b7 EMAIL NOT FOUND"));
-
+      const ag = (l.qualification && l.qualification.at_a_glance) || {};
       const ns = (l.qualification && l.qualification.next_steps) || {};
       const es = (l.qualification && l.qualification.executive_summary) || {};
       const act = ns.recommended_action || es.next_action;
-      if (act) parts.push("   Next step: " + act);
 
-      if (url) {
-        // Own line, labelled. mailto: bodies are PLAIN TEXT — there is no way to
-        // embed a hyperlink behind "Full Brief Here". Every mail client auto-links a
-        // raw URL, so the best we can do is keep it short (via /api/b) and label it.
-        parts.push("   \u2500\u2500 FULL BRIEF \u2500\u2500");
-        parts.push("   " + url);
-      } else if (detailed && l.qualification) {
-        // No brief link (Blob down / not configured). The lines above already carry
-        // score, tier, contact and next step — dumping the whole rundown here mostly
-        // duplicates them AND blows the mailto length cap, which then trips the
-        // "too long" truncation path. Add only the at-a-glance summary, which is the
-        // one thing not already covered.
-        const ag = (l.qualification.at_a_glance) || {};
-        if (ag.summary) parts.push("   " + ag.summary);
-        if (ag.top_opportunity) parts.push("   Opportunity: " + ag.top_opportunity);
+      // Separator only between leads, not before the first.
+      if (i > 0) {
+        parts.push("");
+        parts.push("\u2500".repeat(34));
+        parts.push("");
       }
+
+      // Headline: stars + name, then the score line.
+      parts.push((score != null ? scoreStars(score) + "  " : "") + l.company_name.toUpperCase());
+      if (score != null) parts.push(score + "/50 \u00b7 " + tier);
       parts.push("");
+
+      // THE LINK — first thing after the headline.
+      // NOTE: mailto: bodies are plain text. There is no way to put the link *behind*
+      // the words "Full Brief Here" — no anchor tags exist here. Mail clients auto-link
+      // a bare URL, so the label goes above it and the URL sits on its own line.
+      if (url) {
+        parts.push("FULL BRIEF HERE:");
+        parts.push(url);
+        parts.push("");
+      }
+
+      // Compact mode (only used when the full body would blow the mailto URL cap,
+      // e.g. many leads at once). Headline + link only. Nothing is truly lost: the
+      // link carries everything the detail sections would have said.
+      if (!detailed) return;
+
+      // Quick rundown — enough to act without opening anything.
+      if (ag.summary) {
+        parts.push("THE RUNDOWN");
+        parts.push(ag.summary);
+        parts.push("");
+      }
+
+      parts.push("WHO TO CALL");
+      parts.push("  " + (c.name || "Contact TBD"));
+      if (c.email) parts.push("  " + c.email);
+      else parts.push("  \u26A0 No email found \u2014 needs manual lookup");
+      if (c.phone) parts.push("  " + c.phone);
+      parts.push("");
+
+      if (act) {
+        parts.push("WHAT TO SAY");
+        parts.push("  " + act);
+        parts.push("");
+      }
+
+      if (ag.top_opportunity) {
+        parts.push("ANGLE");
+        parts.push("  " + ag.top_opportunity);
+        parts.push("");
+      }
     });
 
-    if (!detailed && !leads.every(function(l) { return briefUrls[l.lead_id]; })) {
-      parts.push("(Full rundowns copied to your clipboard \u2014 paste below.)");
+    if (!leads.every(function(l) { return briefUrls[l.lead_id]; })) {
+      parts.push("(Some briefs couldn't be generated \u2014 details above are all there is.)");
       parts.push("");
     }
+
     parts.push("\u2014 Sent from BackBone");
     return parts.join("\n");
   }
