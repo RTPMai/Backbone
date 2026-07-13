@@ -161,6 +161,9 @@ textarea.field{min-height:60px;resize:vertical}
 .lead-status-Won{background:#EAF5EE;color:#3D9A5C}
 .lead-status-Dead{background:#FEE2E2;color:#9CA3AF}
 .lead-status-Qualified{background:#DBEAFE;color:#2563EB}
+.lead-status-Contacted{background:#EDE9FE;color:#6D28D9}
+.lead-status-AMNotified{background:#FEF3C7;color:#B45309}
+.lead-status-Researching{background:#E0F2FE;color:#0369A1}
 .lead-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 .lead-form-grid .wide{grid-column:1/-1}
 .qual-section{margin-bottom:16px}
@@ -217,6 +220,13 @@ textarea.field{min-height:60px;resize:vertical}
 }
 .lead-no-contact-banner strong { color: #B42318; font-size: 13px; }
 .lead-no-contact-banner span { color: #7A2018; font-size: 12px; line-height: 1.45; }
+.bulk-status-group {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 10px 4px 12px; background: #fff;
+  border: 1px solid #E5E7EB; border-radius: 999px;
+}
+.bulk-status-group .field-lbl { font-size: 11px; color: #6B7280; white-space: nowrap; }
+.bulk-status-group select.field { padding: 5px 8px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -655,10 +665,7 @@ textarea.field{min-height:60px;resize:vertical}
     <div class="modal-ft" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
       <div style="display:flex;gap:10px;align-items:center">
         <label class="field-lbl" style="margin:0">Status</label>
-        <select class="field" id="leadStatusSelect" style="width:auto">
-          <option>New</option><option>Researching</option><option>Qualified</option>
-          <option>Contacted</option><option>Won</option><option>Dead</option>
-        </select>
+        <select class="field" id="leadStatusSelect" style="width:auto"></select>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="btn btn-danger btn-sm" id="deleteLeadBtn">Delete lead</button>
@@ -5543,6 +5550,14 @@ function qualTierClass(tier) {
 
 let leadsSort = { col: "created", dir: "desc" };
 
+// Single source of truth for lead pipeline statuses.
+const LEAD_STATUSES = ["New", "Researching", "Qualified", "AM Notified", "Contacted", "Won", "Dead"];
+
+// "AM Notified" -> "AMNotified" so it's usable as a CSS class.
+function statusClass(status) {
+  return "lead-status-" + String(status || "").replace(/[^A-Za-z0-9]/g, "");
+}
+
 const LEADS_COLUMNS = [
   { key: "company_name", label: "Company", numeric: false },
   { key: "email", label: "Contact", numeric: true },
@@ -5903,6 +5918,8 @@ function renderHandoffModal() {
       btn.disabled = true;
       setTimeout(function() { btn.textContent = "Opened ✓"; }, 1500);
       setTimeout(function() { btn.textContent = orig; btn.disabled = false; }, 6000);
+      // Only this AM's leads went out — offer to flag just those.
+      offerAMNotified(d.leads);
     });
   });
 }
@@ -5936,11 +5953,37 @@ function emailSelectedLeadsToAM() {
   // Single AM + fits in one link: no need for a modal, just open it.
   if (handoffDrafts.length === 1 && handoffDrafts[0].to && !handoffDrafts[0].truncated) {
     openMailto(handoffDrafts[0].href);
+    offerAMNotified(chosen);
     return;
   }
 
   renderHandoffModal();
   document.getElementById("handoffOverlay").classList.add("open");
+}
+
+// A draft opening isn't proof it was sent, so ask rather than flipping status silently.
+async function offerAMNotified(leads) {
+  const pending = leads.filter(function(l) { return l.status !== "AM Notified"; });
+  if (pending.length === 0) return;
+  // Let the mail client finish opening before we throw up a dialog.
+  setTimeout(async function() {
+    const ok = confirm("Draft opened for " + pending.length + " lead(s).\n\n" +
+      'Mark them as "AM Notified"?');
+    if (!ok) return;
+    pending.forEach(function(l) { l.status = "AM Notified"; });
+    await saveLeads();
+    if (activeLeadId && pending.some(function(l) { return l.lead_id === activeLeadId; })) {
+      const el = document.getElementById("leadStatusSelect");
+      if (el) el.value = "AM Notified";
+    }
+    // If the multi-AM handoff modal is still open, keep the selection intact so the
+    // remaining AMs' drafts can still be opened — only clear once we're done.
+    const modalOpen = document.getElementById("handoffOverlay");
+    if (!modalOpen || !modalOpen.classList.contains("open")) {
+      selectedLeadIds.clear();
+    }
+    renderLeadsPage();
+  }, 600);
 }
 
 // Manual fallback: copies the full draft(s) as text.
@@ -5959,10 +6002,17 @@ function copyLastLeadDraft() {
 
 function toggleLeadSelected(leadId, checked) {
   if (checked) selectedLeadIds.add(leadId); else selectedLeadIds.delete(leadId);
+  const n = selectedLeadIds.size;
   const btn = document.getElementById("emailSelectedBtn");
   const cnt = document.getElementById("selectedCount");
-  if (cnt) cnt.textContent = selectedLeadIds.size;
-  if (btn) btn.disabled = selectedLeadIds.size === 0;
+  if (cnt) cnt.textContent = n;
+  if (btn) btn.disabled = n === 0;
+  const bulkCnt = document.getElementById("bulkStatusCount");
+  if (bulkCnt) bulkCnt.textContent = n;
+  const bulkSel = document.getElementById("bulkStatusSelect");
+  if (bulkSel) bulkSel.disabled = n === 0;
+  const bulkBtn = document.getElementById("bulkStatusApplyBtn");
+  if (bulkBtn) bulkBtn.disabled = n === 0;
 }
 
 function renderLeadsPage() {
@@ -5991,8 +6041,18 @@ function renderLeadsPage() {
     return;
   }
 
-  // Selection toolbar (email chosen leads to their AM).
+  // Selection toolbar: bulk status change + email chosen leads to their AM.
+  const disabled = selectedLeadIds.size === 0 ? " disabled" : "";
   let html = '<div class="toolbar" style="justify-content:flex-end;gap:10px;margin-bottom:10px">' +
+    '<div class="bulk-status-group">' +
+      '<label class="field-lbl" style="margin:0">Set status</label>' +
+      '<select class="field" id="bulkStatusSelect" style="width:auto"' + disabled + '>' +
+        '<option value="">Choose\u2026</option>' +
+        LEAD_STATUSES.map(function(st) { return '<option value="' + st + '">' + st + '</option>'; }).join("") +
+      '</select>' +
+      '<button id="bulkStatusApplyBtn" class="btn btn-gray btn-sm"' + disabled + '>' +
+        'Apply to <span id="bulkStatusCount">0</span></button>' +
+    '</div>' +
     '<button id="emailSelectedBtn" class="btn btn-green" disabled>' +
       'Email selected to AM (<span id="selectedCount">0</span>)</button>' +
     '<button id="copyDraftBtn" class="btn btn-gray" title="Use this if no mail client opened">' +
@@ -6011,7 +6071,7 @@ function renderLeadsPage() {
       '<td class="company-cell">' + l.company_name + '</td>' +
       '<td>' + leadContactTag(d.contact) + '</td>' +
       '<td>' + (l.source_type || "—") + '</td>' +
-      '<td><span class="lead-status-pill lead-status-' + l.status + '">' + l.status + '</span></td>' +
+      '<td><span class="lead-status-pill ' + statusClass(l.status) + '">' + l.status + '</span></td>' +
       '<td>' + (d.score === null ? "—" : d.score) + '</td>' +
       '<td>' + tierHtml + '</td>' +
       '<td>' + (d.am || "—") + '</td>' +
@@ -6053,6 +6113,47 @@ function renderLeadsPage() {
   }
   const copyBtn = document.getElementById("copyDraftBtn");
   if (copyBtn) copyBtn.addEventListener("click", copyLastLeadDraft);
+
+  const bulkBtn = document.getElementById("bulkStatusApplyBtn");
+  if (bulkBtn) bulkBtn.addEventListener("click", handleBulkStatusChange);
+  const bulkCount = document.getElementById("bulkStatusCount");
+  if (bulkCount) bulkCount.textContent = selectedLeadIds.size;
+}
+
+// Apply one status to every checked lead in a single save.
+async function handleBulkStatusChange() {
+  const sel = document.getElementById("bulkStatusSelect");
+  const status = sel ? sel.value : "";
+  if (!status) { alert("Pick a status first."); return; }
+  if (selectedLeadIds.size === 0) return;
+
+  const targets = state_leads.filter(function(l) { return selectedLeadIds.has(l.lead_id); });
+  if (targets.length === 0) return;
+
+  // Won is what Promote to Roster sets — don't let a bulk edit fake a promotion.
+  if (status === "Won") {
+    const unpromoted = targets.filter(function(l) { return !l.promoted_customer_id; });
+    if (unpromoted.length) {
+      const ok = confirm('Marking ' + unpromoted.length + ' lead(s) "Won" here does NOT add them to the Roster.\n\n' +
+        'To create the client record, open each lead and use "Promote to Roster" instead.\n\n' +
+        'Set status to Won anyway?');
+      if (!ok) return;
+    }
+  }
+
+  const ok = confirm('Set ' + targets.length + ' lead(s) to "' + status + '"?');
+  if (!ok) return;
+
+  targets.forEach(function(l) { l.status = status; });
+  await saveLeads();
+
+  // Keep an open detail modal in sync if it's one of the edited leads.
+  if (activeLeadId && selectedLeadIds.has(activeLeadId)) {
+    const el = document.getElementById("leadStatusSelect");
+    if (el) el.value = status;
+  }
+  selectedLeadIds.clear();
+  renderLeadsPage();
 }
 
 function scanCardStatus(msg, cls) {
@@ -6987,6 +7088,13 @@ document.getElementById("leadDetailOverlay").addEventListener("click", function(
 document.getElementById("deleteLeadBtn").addEventListener("click", handleDeleteLead);
 document.getElementById("rerunQualBtn").addEventListener("click", handleRunQualification);
 document.getElementById("pasteQualBtn").addEventListener("click", handlePasteQualification);
+(function populateLeadStatusSelect() {
+  const el = document.getElementById("leadStatusSelect");
+  if (!el) return;
+  el.innerHTML = LEAD_STATUSES.map(function(st) {
+    return '<option value="' + st + '">' + st + '</option>';
+  }).join("");
+})();
 document.getElementById("leadStatusSelect").addEventListener("change", handleLeadStatusChange);
 document.getElementById("promoteLeadBtn").addEventListener("click", handlePromoteToRoster);
 
