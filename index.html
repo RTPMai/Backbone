@@ -202,6 +202,17 @@ textarea.field{min-height:60px;resize:vertical}
 .admin-lock input{width:240px;padding:10px 12px;border:1px solid #E5E7EB;border-radius:8px;font-size:14px;font-family:inherit;margin:12px 8px 0 0}
 .logout-link{font-size:12px;color:#6B7280;cursor:pointer;text-decoration:underline}
 .logout-link:hover{color:#111827}
+.lead-email-cell { max-width: 210px; }
+.lead-email-link {
+  color: #3D9A5C; font-weight: 600; text-decoration: none;
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lead-email-link:hover { text-decoration: underline; }
+.lead-email-missing {
+  display: inline-block; font-size: 11px; font-weight: 600;
+  color: #B45309; background: #FEF3C7;
+  padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+}
 </style>
 </head>
 <body>
@@ -304,6 +315,14 @@ textarea.field{min-height:60px;resize:vertical}
           <div>
             <label class="field-lbl">Contact name</label>
             <input class="field" id="leadContactName"/>
+          </div>
+          <div>
+            <label class="field-lbl">Contact email</label>
+            <input class="field" id="leadContactEmail" placeholder="name@company.com"/>
+          </div>
+          <div>
+            <label class="field-lbl">Contact phone</label>
+            <input class="field" id="leadContactPhone"/>
           </div>
           <div>
             <label class="field-lbl">Source type</label>
@@ -5522,6 +5541,7 @@ let leadsSort = { col: "created", dir: "desc" };
 
 const LEADS_COLUMNS = [
   { key: "company_name", label: "Company", numeric: false },
+  { key: "email", label: "Email", numeric: false },
   { key: "source_type", label: "Source", numeric: false },
   { key: "status", label: "Status", numeric: false },
   { key: "score", label: "Score", numeric: true },
@@ -5540,21 +5560,26 @@ function getLeadsRows() {
     const lane = industry ? getAssignedAM(industry) : null;
     const amText = !lane ? "" : (lane.varies ? "Varies" : lane.am);
     const followUp = q ? q.routing.follow_up_speed : "";
+    const contact = leadBestContact(l);
     return Object.assign({}, l, {
       score_sort: score,
       tier_sort: tier,
       am_sort: amText,
       followup_sort: followUp,
+      email_sort: contact.email || "",
       created_sort: new Date(l.created_at).getTime(),
-      _display: { score: score, tier: tier, am: amText, followUp: followUp }
+      _display: { score: score, tier: tier, am: amText, followUp: followUp, contact: contact }
     });
   });
   if (leadsSearchQuery.trim()) {
     const q2 = leadsSearchQuery.trim().toLowerCase();
-    rows = rows.filter(function(r) { return r.company_name.toLowerCase().indexOf(q2) !== -1; });
+    rows = rows.filter(function(r) {
+      return r.company_name.toLowerCase().indexOf(q2) !== -1 ||
+        (r.email_sort || "").toLowerCase().indexOf(q2) !== -1;
+    });
   }
   const colMap = {
-    company_name: "company_name", source_type: "source_type", status: "status",
+    company_name: "company_name", email: "email_sort", source_type: "source_type", status: "status",
     score: "score_sort", tier: "tier_sort", am: "am_sort", followup: "followup_sort", created: "created_sort"
   };
   const key = colMap[leadsSort.col] || "created_sort";
@@ -5569,7 +5594,12 @@ const selectedLeadIds = new Set();
 // Handles both the new explicit email/phone fields and the older single contact_info string.
 function leadBestContact(lead) {
   const q = lead.qualification;
-  const out = { name: lead.contact_name || "", title: "", email: "", phone: "" };
+  const out = {
+    name: lead.contact_name || "",
+    title: "",
+    email: lead.contact_email || "",
+    phone: lead.contact_phone || ""
+  };
   if (q && Array.isArray(q.key_contacts)) {
     for (const c of q.key_contacts) {
       if (!out.name && c.name) out.name = c.name;
@@ -5592,6 +5622,28 @@ function leadBestContact(lead) {
     }
   }
   return out;
+}
+
+// Compact email cell for the leads table: a click-to-mail link, or an amber "missing" flag.
+function leadEmailCellHtml(contact) {
+  const c = contact || {};
+  if (c.email) {
+    return '<a href="mailto:' + escapeHtml(c.email) + '" class="lead-email-link" title="' +
+      escapeHtml(c.email) + '" onclick="event.stopPropagation()">' + escapeHtml(c.email) + '</a>';
+  }
+  const hasPhone = !!c.phone;
+  return '<span class="lead-email-missing" title="' +
+    (hasPhone ? 'No email on file — phone: ' + escapeHtml(c.phone) : 'No email or phone on file') +
+    '">' + (hasPhone ? '\u260E phone only' : '\u26A0 no email') + '</span>';
+}
+
+// After a qualification lands, lift the first real email/phone it found onto the lead itself
+// so the Leads table + AM emails can use it without anyone opening the record.
+function backfillLeadContactFromQual(lead) {
+  const c = leadBestContact(lead);
+  if (!lead.contact_name && c.name) lead.contact_name = c.name;
+  if (!lead.contact_email && c.email) lead.contact_email = c.email;
+  if (!lead.contact_phone && c.phone) lead.contact_phone = c.phone;
 }
 
 function leadRundownBlock(lead) {
@@ -5899,6 +5951,7 @@ function renderLeadsPage() {
     html += '<tr class="row" data-lead-id="' + l.lead_id + '">' +
       '<td style="text-align:center"><input type="checkbox" class="lead-select" data-lead-id="' + l.lead_id + '"' + checked + '/></td>' +
       '<td class="company-cell">' + l.company_name + '</td>' +
+      '<td class="lead-email-cell">' + leadEmailCellHtml(d.contact) + '</td>' +
       '<td>' + (l.source_type || "—") + '</td>' +
       '<td><span class="lead-status-pill lead-status-' + l.status + '">' + l.status + '</span></td>' +
       '<td>' + (d.score === null ? "—" : d.score) + '</td>' +
@@ -5916,6 +5969,7 @@ function renderLeadsPage() {
   wrap.querySelectorAll("tr.row").forEach(function(tr) {
     tr.addEventListener("click", function(e) {
       if (e.target.classList.contains("lead-select") || e.target.type === "checkbox") return;
+      if (e.target.closest("a")) return;
       openLeadDetail(tr.dataset.leadId);
     });
   });
@@ -5992,11 +6046,11 @@ async function handleScanCard(ev) {
     if (setIf("leadCompanyName", data.company_name)) filled.push("company");
     if (setIf("leadContactName", data.contact_name)) filled.push("contact");
     if (setIf("leadWebsite", data.website_url)) filled.push("website");
-    // Fold phone/email/title into inquiry notes so nothing is lost.
+    if (setIf("leadContactEmail", data.email)) filled.push("email");
+    if (setIf("leadContactPhone", data.phone)) filled.push("phone");
+    // Title (and anything the fields above already had) still gets noted so nothing is lost.
     const extras = [];
     if (data.contact_title) extras.push("Title: " + data.contact_title);
-    if (data.email) extras.push("Email: " + data.email);
-    if (data.phone) extras.push("Phone: " + data.phone);
     if (extras.length) {
       const notes = document.getElementById("leadInquiryNotes");
       const stamp = "Scanned from business card — " + extras.join(" · ");
@@ -6030,6 +6084,8 @@ async function handleAddLead() {
     company_name: name,
     website_url: document.getElementById("leadWebsite").value.trim(),
     contact_name: document.getElementById("leadContactName").value.trim(),
+    contact_email: document.getElementById("leadContactEmail").value.trim(),
+    contact_phone: document.getElementById("leadContactPhone").value.trim(),
     source_type: document.getElementById("leadSourceType").value,
     industry: document.getElementById("leadIndustry").value,
     inquiry_notes: document.getElementById("leadInquiryNotes").value.trim(),
@@ -6041,7 +6097,7 @@ async function handleAddLead() {
   };
   state_leads.push(lead);
   await saveLeads();
-  ["leadCompanyName","leadWebsite","leadContactName","leadInquiryNotes","leadCrmNotes"].forEach(function(id) {
+  ["leadCompanyName","leadWebsite","leadContactName","leadContactEmail","leadContactPhone","leadInquiryNotes","leadCrmNotes"].forEach(function(id) {
     document.getElementById(id).value = "";
   });
   document.getElementById("leadSourceType").value = "";
@@ -6094,6 +6150,8 @@ function buildIntakeEditForm(lead) {
     '<div class="lead-form-grid">' +
       '<div><label class="field-lbl">Website URL</label><input class="field" id="editLeadWebsite" value="' + escapeHtml(lead.website_url) + '"/></div>' +
       '<div><label class="field-lbl">Contact name</label><input class="field" id="editLeadContact" value="' + escapeHtml(lead.contact_name) + '"/></div>' +
+      '<div><label class="field-lbl">Contact email</label><input class="field" id="editLeadEmail" value="' + escapeHtml(lead.contact_email || "") + '" placeholder="name@company.com"/></div>' +
+      '<div><label class="field-lbl">Contact phone</label><input class="field" id="editLeadPhone" value="' + escapeHtml(lead.contact_phone || "") + '"/></div>' +
       '<div><label class="field-lbl">Source type</label><select class="field" id="editLeadSource">' +
         sourceOptions.map(function(o) { return '<option value="' + o[0] + '"' + (o[0] === (lead.source_type || "") ? ' selected' : '') + '>' + o[1] + '</option>'; }).join("") +
       '</select></div>' +
@@ -6115,6 +6173,8 @@ async function handleSaveLeadIntake() {
   if (!lead) return;
   lead.website_url = document.getElementById("editLeadWebsite").value.trim();
   lead.contact_name = document.getElementById("editLeadContact").value.trim();
+  lead.contact_email = document.getElementById("editLeadEmail").value.trim();
+  lead.contact_phone = document.getElementById("editLeadPhone").value.trim();
   lead.source_type = document.getElementById("editLeadSource").value;
   lead.industry = document.getElementById("editLeadIndustry").value;
   lead.inquiry_notes = document.getElementById("editLeadInquiryNotes").value.trim();
@@ -6291,6 +6351,7 @@ async function handleRunQualification() {
       return;
     }
     lead.qualification = result;
+    backfillLeadContactFromQual(lead);
     if (lead.status === "New") lead.status = "Qualified";
     document.getElementById("leadStatusSelect").value = lead.status;
     await saveLeads();
@@ -6326,6 +6387,7 @@ async function handlePasteQualification() {
   }
   parsed.qualified_at = new Date().toISOString();
   lead.qualification = parsed;
+  backfillLeadContactFromQual(lead);
   if (lead.status === "New") lead.status = "Qualified";
   document.getElementById("leadStatusSelect").value = lead.status;
   await saveLeads();
@@ -6363,10 +6425,13 @@ async function handlePromoteToRoster() {
     is_prospect: true
   });
 
+  const promoContact = leadBestContact(lead);
   state.enrichment[customerId] = {
     industry: industry || "",
     website_url: lead.website_url || "",
     contact_first_name: lead.contact_name || "",
+    contact_email: promoContact.email || "",
+    contact_phone: promoContact.phone || "",
     notes: "Promoted from Leads pipeline on " + new Date().toLocaleDateString() +
       (q ? ". Qualification tier: " + q.qualification_scoring.qualification_tier +
         " (" + q.qualification_scoring.total_score + "/50). " + q.executive_summary.next_action : "")
@@ -6724,6 +6789,8 @@ async function convertInquiryToLead(s) {
     company_name: co.name || "(from inquiry)",
     website_url: c.url || "",
     contact_name: c.name || "",
+    contact_email: c.email || "",
+    contact_phone: c.phone || "",
     source_type: srcMap[s.entry ? s.entry.existing_client : "no"] || "Website form",
     industry: co.industry || "",
     inquiry_notes: noteParts.join("\n"),
