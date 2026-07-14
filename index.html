@@ -4262,7 +4262,7 @@ let activeLeadId = null;
 
 async function loadData() {
   try {
-    const r = await fetch("/api/data");
+    const r = await fetch("/api/data", { credentials: "same-origin" });
     const d = await r.json();
     if (d.synced && d.synced.length > 0) {
       state = d;
@@ -4279,6 +4279,7 @@ async function loadData() {
 
 async function saveSynced(synced) {
   const r = await fetch("/api/save", {
+    credentials: "same-origin",
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ synced: synced })
@@ -4288,6 +4289,7 @@ async function saveSynced(synced) {
 
 async function saveEnrichment(enrichment) {
   const r = await fetch("/api/save", {
+    credentials: "same-origin",
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enrichment: enrichment })
@@ -6187,13 +6189,38 @@ async function handleReset() {
 
 function uid() { return "lead_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
+let leadsLoadError = null;
+
 async function loadLeads() {
+  leadsLoadError = null;
   try {
-    const r = await fetch("/api/leads-data");
+    const r = await fetch("/api/leads-data", { credentials: "same-origin" });
+
+    // CRITICAL: do NOT fall through to an empty array on a failed request. The old code
+    // did `state_leads = d.leads || []` inside a try/catch, so a 401 or a 500 silently
+    // produced ZERO leads and rendered an empty page — indistinguishable from "you have
+    // no leads". Twenty real leads vanished with no error. An empty list must only ever
+    // mean the server actually said the list is empty.
+    if (!r.ok) {
+      const j = await r.json().catch(function() { return {}; });
+      leadsLoadError = (r.status === 401 || r.status === 403)
+        ? "Not authorised to load leads — your session may have expired. Try signing out and back in."
+        : ("Couldn't load leads: " + (j.error || ("HTTP " + r.status)));
+      renderLeadsPage();
+      return; // leave state_leads untouched rather than wiping it
+    }
+
     const d = await r.json();
-    state_leads = d.leads || [];
+    if (!Array.isArray(d.leads)) {
+      leadsLoadError = "The server responded but sent no leads array — not overwriting what's on screen.";
+      renderLeadsPage();
+      return;
+    }
+    state_leads = d.leads;
   } catch (e) {
-    state_leads = [];
+    leadsLoadError = "Couldn't reach the server: " + (e.message || "network error");
+    renderLeadsPage();
+    return;
   }
   populateLeadIndustryDropdown();
   renderLeadsPage();
@@ -6201,6 +6228,7 @@ async function loadLeads() {
 
 async function saveLeads() {
   const r = await fetch("/api/leads-save", {
+    credentials: "same-origin",
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ leads: state_leads })
@@ -6630,6 +6658,7 @@ async function generateBrief(lead, am) {
   delete briefErrors[lead.lead_id];
   try {
     const r = await fetch("/api/brief", {
+      credentials: "same-origin",
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lead: lead, am: am })
@@ -7359,6 +7388,15 @@ function renderLeadsPage() {
 
   const wrap = document.getElementById("leadsTableWrap");
   if (!wrap) return;
+  // A load failure must never masquerade as "no leads".
+  if (leadsLoadError) {
+    wrap.innerHTML = '<div class="empty-state" style="color:#B45309">' +
+      '<b>Leads didn\'t load.</b><br/>' + leadsLoadError +
+      '<br/><span style="font-size:11px;color:#9CA3AF">Your leads are still stored — this is a loading problem, not data loss.</span>' +
+      '</div>';
+    return;
+  }
+
   const rows = getLeadsRows();
   if (rows.length === 0) {
     wrap.innerHTML = '<div class="empty-state">' +
@@ -7579,6 +7617,7 @@ async function handleScanCard(ev) {
     const b64 = await fileToBase64(file);
     const media_type = file.type && file.type.indexOf("image/") === 0 ? file.type : "image/jpeg";
     const r = await fetch("/api/scan-card", {
+      credentials: "same-origin",
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ image: b64, media_type: media_type })
@@ -7907,6 +7946,7 @@ async function handleRunQualification() {
   btn.innerHTML = '<span class="qual-spinner"></span> Researching...';
   try {
     const r = await fetch("/api/qualify", {
+      credentials: "same-origin",
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -8221,7 +8261,7 @@ const GATE_LABELS = {
 
 async function loadInbox() {
   try {
-    const r = await fetch("/api/intake");
+    const r = await fetch("/api/intake", { credentials: "same-origin" });
     const d = await r.json();
     state_intake = d.submissions || [];
   } catch (e) {
@@ -8232,6 +8272,7 @@ async function loadInbox() {
 
 async function saveInbox() {
   const r = await fetch("/api/intake?mode=update", {
+    credentials: "same-origin",
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ submissions: state_intake })
@@ -8748,6 +8789,7 @@ async function doLogin() {
   err.style.display = "none";
   try {
     const r = await fetch("/api/auth", {
+      credentials: "same-origin",
       method:"POST", credentials:"same-origin",
       headers:{ "Content-Type":"application/json" },
       // Username optional — blank falls back to the shared-password path, so this
@@ -8897,6 +8939,7 @@ async function userAction(payload) {
   err.style.display = "none";
   try {
     const r = await fetch("/api/auth", {
+      credentials: "same-origin",
       method: "POST", credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
@@ -9034,6 +9077,7 @@ function wireUserRoleButtons() {
       try {
         const roles = collectRoles();
         const r = await fetch("/api/auth", {
+          credentials: "same-origin",
           method:"POST", credentials:"same-origin",
           headers:{ "Content-Type":"application/json" },
           body: JSON.stringify({ action:"roles_save", roles: roles })
@@ -9078,6 +9122,7 @@ async function doAdminUnlock() {
   err.style.display = "none";
   try {
     const r = await fetch("/api/auth", {
+      credentials: "same-origin",
       method:"POST", credentials:"same-origin",
       headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({ action:"admin", password: pw })
