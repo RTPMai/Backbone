@@ -8794,17 +8794,55 @@ const ALL_CARDS = ["concentration", "revtrend", "dormant", "cadence", "tiermove"
                    "leaderboard", "amload", "alerts"];
 
 async function loadUsersAndRoles() {
+  const uw = document.getElementById("usersWrap");
+  const rw = document.getElementById("rolesWrap");
+
+  // Fail LOUDLY. The previous version did `if (!r.ok) return;` — so if the endpoint
+  // wasn't there (old api/auth.js still deployed, which returns "Unknown action" for
+  // action=users), the panel just sat there empty, the dropdowns never populated, and
+  // the Add button did nothing with no clue why.
+  function fail(msg) {
+    const html = '<div class="empty-state" style="color:#B45309">' + msg + '</div>';
+    if (uw) uw.innerHTML = html;
+    if (rw) rw.innerHTML = "";
+  }
+
   try {
     const r = await fetch("/api/auth?action=users", { credentials: "same-origin" });
-    if (!r.ok) return;
+
+    if (r.status === 400 || r.status === 404) {
+      fail("User management isn't live yet.<br/>The updated <code>api/auth.js</code> hasn't been deployed \u2014 " +
+           "this endpoint doesn't exist on the server, so users can't be created or saved.");
+      return;
+    }
+    if (r.status === 401 || r.status === 403) {
+      fail("You're not signed in as an admin, so users can't be listed.");
+      return;
+    }
+    if (!r.ok) {
+      const j = await r.json().catch(function() { return {}; });
+      fail("Couldn't load users: " + (j.error || ("HTTP " + r.status)));
+      return;
+    }
+
     const j = await r.json();
+    // A response that parses but carries no roles means we're talking to the OLD auth.js,
+    // which happily returns 200 for unknown GET actions.
+    if (!j.roles) {
+      fail("The server responded, but didn't send any roles \u2014 that means the old " +
+           "<code>api/auth.js</code> is still deployed. Deploy the updated one.");
+      return;
+    }
+
     adminUsers = j.users || [];
     adminRoles = j.roles || {};
     adminAMs = j.ams || [];
     renderUsers();
     renderRoles();
     wireUserRoleButtons();
-  } catch (e) { console.warn("users load failed", e); }
+  } catch (e) {
+    fail("Couldn't reach the server: " + (e.message || "network error"));
+  }
 }
 
 function renderUsers() {
@@ -8949,12 +8987,25 @@ function wireUserRoleButtons() {
   if (add && !add.dataset.wired) {
     add.dataset.wired = "1";
     add.addEventListener("click", async function() {
+      const err = document.getElementById("nuErr");
+      err.style.display = "none";
+
+      const role = document.getElementById("nuRole").value;
+      // If the roles list never loaded, the dropdown is empty and we'd POST role:"" —
+      // which the server rejects with a confusing "Unknown role:" message. Say the real
+      // thing instead.
+      if (!role) {
+        err.textContent = "No roles available — the roles list didn't load. Is the updated api/auth.js deployed?";
+        err.style.display = "block";
+        return;
+      }
+
       const ok = await userAction({
         action: "user_create",
         username: document.getElementById("nuUser").value,
         name: document.getElementById("nuName").value,
         password: document.getElementById("nuPass").value,
-        role: document.getElementById("nuRole").value,
+        role: role,
         am_name: document.getElementById("nuAM").value
       });
       if (ok) {
