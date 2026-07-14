@@ -1,4 +1,9 @@
-const { requireAuth } = require("../lib/auth.js");
+// api/leads-save.js — write the leads list.
+//
+// Same two fixes as leads-data.js: import from lib/session.js, and use ESM `import`
+// rather than `require` so it doesn't collide with `export default`.
+
+import { requireAuth } from "../lib/session.js";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -19,13 +24,20 @@ export default async function handler(req, res) {
 
   try {
     const payload = { leads: leads, savedAt: new Date().toISOString() };
-    await fetch(`${url}/pipeline`, {
+    const r = await fetch(`${url}/pipeline`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify([["SET", "backbone_leads", JSON.stringify(payload)]]),
     });
+    // The old version never checked this. A failed Upstash write returned {ok:true} and
+    // the browser believed the leads were saved when they weren't.
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      throw new Error("Upstash write failed: " + r.status + " " + t.slice(0, 120));
+    }
     return res.status(200).json({ ok: true, count: leads.length });
   } catch (e) {
+    console.error("leads-save error:", e);
     return res.status(500).json({ error: e.message });
   }
 }
