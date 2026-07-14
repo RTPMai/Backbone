@@ -17,7 +17,7 @@
 //   4. REDEPLOY. Env vars only apply to deployments built after they were added.
 
 import { put } from "@vercel/blob";
-import { requireAuth } from "../lib/auth.js";
+import { requireAuth } from "../lib/session.js";
 import { FEATURES, LANES, MOTIONS } from "../lib/playbook.js";
 
 // Bump this whenever brief.js changes. It's echoed in every error so we can tell at a
