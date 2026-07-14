@@ -7,17 +7,22 @@
 // separate from a Claude.ai Pro subscription). Add it in the Vercel project's
 // Environment Variables, then redeploy so the deployment picks it up.
 
+import { requireAuth } from "../lib/session.js";
+
 export const config = { api: { bodyParser: { sizeLimit: "12mb" } } };
 
 const MODEL = "claude-sonnet-4-6";
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "*");
-  res.setHeader("Access-Control-Max-Age", "86400");
-
+  // Wildcard CORS removed. This endpoint spends real money on every call (Anthropic
+  // vision), and `Access-Control-Allow-Origin: *` let ANY website invoke it from a
+  // visitor's browser. Same-origin only now.
+  res.setHeader("Cache-Control", "no-store");
   if (req.method === "OPTIONS") return res.status(204).end();
+
+  // And it had NO auth guard, so anyone who found the URL could run up the bill.
+  const sess = requireAuth(req, res);
+  if (!sess) return;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (req.method === "GET") {
