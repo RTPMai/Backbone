@@ -1,41 +1,93 @@
-// api/auth.js — login / logout / session / settings
+// api/auth.js — login / logout / session / settings / users / roles
 //
-// POST /api/auth  { action: "login",  password }   → sets viewer session (or admin if it's the admin pw)
-// POST /api/auth  { action: "admin",  password }   → elevates current session to admin
-// POST /api/auth  { action: "logout" }             → clears session
-// GET  /api/auth  (action=session)                 → { authenticated, role, tabs }
-// GET  /api/auth?action=settings                   → { tabs }   (any logged-in user; used to render nav)
-// POST /api/auth  { action: "settings", tabs }     → admin only; saves tab visibility
+// Per-user accounts are added WITHOUT removing the shared-password path. Legacy
+// APP_PASSWORD / ADMIN_PASSWORD logins still work, so nobody is locked out the moment
+// this deploys — you can create the real accounts first, then retire the shared
+// passwords by deleting the env vars.
+//
+// POST { action:"login", username, password }  → per-user login (preferred)
+// POST { action:"login", password }            → legacy shared-password login
+// POST { action:"logout" }
+// GET  ?action=session                         → { authenticated, role, tabs, perms, user }
+// GET  ?action=users        (admin)            → { users, roles, ams }
+// POST { action:"user_create"|"user_update"|"user_delete" }  (admin)
+// POST { action:"roles_save", roles }          (admin)
 
 const {
   safeEqual, setSessionCookie, clearSessionCookie, getSession,
   requireAuth, getAppSettings, saveAppSettings,
 } = require("../lib/auth.js");
 
+const {
+  authenticate, listUsers, createUser, updateUser, deleteUser,
+  getRoles, saveRoles, getRole, getUser,
+} = require("../lib/users.js");
+
+const ACCOUNT_MANAGERS = [
+  "Alexis Davis", "Abby Penton", "Hannah Posey",
+  "Jacob Whitman", "Ryan Toney", "Megan Griffith",
+];
+
+// What the browser is allowed to know about itself. The client uses this to hide tabs
+// and cards — but that is COSMETIC. Every endpoint still enforces its own rules, because
+// anything sent to the browser can be edited in the browser.
+async function permsFor(sess) {
+  const user = sess.username ? await getUser(sess.username) : null;
+  const role = await getRole(user ? user.role : sess.role);
+  return {
+    role: role.name,
+    label: role.label,
+    tabs: role.tabs || [],
+    cards: role.cards || [],
+    data_scope: role.data_scope || "all",
+    can_edit: role.can_edit !== false,
+    can_export: !!role.can_export,
+  };
+}
+
 module.exports = async function handler(req, res) {
-  // Same-origin only — no wildcard CORS, so cookies stay trustworthy.
   res.setHeader("Cache-Control", "no-store");
 
   const appPw = process.env.APP_PASSWORD;
   const adminPw = process.env.ADMIN_PASSWORD;
 
   try {
+    // ---------------- GET ----------------
     if (req.method === "GET") {
       const action = (req.query && req.query.action) || "session";
       const sess = getSession(req);
 
       if (action === "settings") {
         if (!sess) return res.status(401).json({ error: "Not authenticated" });
-        const settings = await getAppSettings();
-        return res.status(200).json(settings);
+        return res.status(200).json(await getAppSettings());
       }
 
-      // default: session check
+      if (action === "users") {
+        const s = requireAuth(req, res, "admin");
+        if (!s) return;
+        return res.status(200).json({
+          users: await listUsers(),
+          roles: await getRoles(),
+          ams: ACCOUNT_MANAGERS,
+        });
+      }
+
       if (!sess) return res.status(200).json({ authenticated: false });
+
       const settings = await getAppSettings();
-      return res.status(200).json({ authenticated: true, role: sess.role, tabs: settings.tabs });
+      const perms = await permsFor(sess);
+      const user = sess.username ? await getUser(sess.username) : null;
+
+      return res.status(200).json({
+        authenticated: true,
+        role: perms.role,
+        tabs: settings.tabs,   // global on/off — an admin can hide a tab from everyone
+        perms: perms,          // per-role visibility
+        user: user ? { username: user.username, name: user.name, am_name: user.am_name } : null,
+      });
     }
 
+    // ---------------- POST ----------------
     if (req.method === "POST") {
       const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
       const action = body.action;
@@ -46,8 +98,21 @@ module.exports = async function handler(req, res) {
       }
 
       if (action === "login") {
+        // Per-user login takes precedence when a username is supplied.
+        if (body.username) {
+          const u = await authenticate(body.username, body.password);
+          // Deliberately vague: never reveal whether the USERNAME was the wrong part.
+          if (!u) return res.status(401).json({ error: "Incorrect username or password" });
+          setSessionCookie(res, {
+            role: u.role,
+            username: u.username,
+            iat: Math.floor(Date.now() / 1000),
+          });
+          return res.status(200).json({ ok: true, role: u.role });
+        }
+
+        // Legacy shared-password path — kept so this deploy doesn't lock anyone out.
         if (!appPw && !adminPw) return res.status(500).json({ error: "Passwords not configured" });
-        // Admin password logs you straight in as admin; app password = viewer.
         if (adminPw && safeEqual(body.password, adminPw)) {
           setSessionCookie(res, { role: "admin", iat: Math.floor(Date.now() / 1000) });
           return res.status(200).json({ ok: true, role: "admin" });
@@ -60,20 +125,53 @@ module.exports = async function handler(req, res) {
       }
 
       if (action === "admin") {
-        // Elevate an existing viewer session to admin (unlocks Settings).
         const sess = getSession(req);
         if (!sess) return res.status(401).json({ error: "Not authenticated" });
         if (!adminPw) return res.status(500).json({ error: "Admin password not configured" });
         if (!safeEqual(body.password, adminPw)) return res.status(401).json({ error: "Incorrect admin password" });
-        setSessionCookie(res, { role: "admin", iat: Math.floor(Date.now() / 1000) });
+        setSessionCookie(res, Object.assign({}, sess, { role: "admin" }));
         return res.status(200).json({ ok: true, role: "admin" });
       }
 
       if (action === "settings") {
         const sess = requireAuth(req, res, "admin");
-        if (!sess) return; // 401/403 already sent
-        const saved = await saveAppSettings({ tabs: body.tabs });
-        return res.status(200).json(saved);
+        if (!sess) return;
+        return res.status(200).json(await saveAppSettings({ tabs: body.tabs }));
+      }
+
+      // ---- user management (admin only) ----
+      if (action === "user_create") {
+        const sess = requireAuth(req, res, "admin");
+        if (!sess) return;
+        const u = await createUser({
+          username: body.username, password: body.password,
+          name: body.name, role: body.role, am_name: body.am_name,
+        });
+        return res.status(200).json({ ok: true, user: u });
+      }
+
+      if (action === "user_update") {
+        const sess = requireAuth(req, res, "admin");
+        if (!sess) return;
+        const u = await updateUser(body.username, {
+          name: body.name, role: body.role,
+          am_name: body.am_name, password: body.password,
+        });
+        return res.status(200).json({ ok: true, user: u });
+      }
+
+      if (action === "user_delete") {
+        const sess = requireAuth(req, res, "admin");
+        if (!sess) return;
+        await deleteUser(body.username);
+        return res.status(200).json({ ok: true });
+      }
+
+      if (action === "roles_save") {
+        const sess = requireAuth(req, res, "admin");
+        if (!sess) return;
+        const saved = await saveRoles(body.roles);
+        return res.status(200).json({ ok: true, roles: saved });
       }
 
       return res.status(400).json({ error: "Unknown action" });
