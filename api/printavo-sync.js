@@ -20,9 +20,10 @@ export const config = { maxDuration: 300 };
 // passes it; ad-hoc browser calls must too.
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-sync-secret");
+  // Wildcard CORS removed. This endpoint can trigger a full reconcile — an expensive,
+  // destructive rebuild of every customer aggregate. `Allow-Origin: *` meant any website
+  // could fire it from a visitor's browser. There is no legitimate cross-origin caller.
+  res.setHeader("Cache-Control", "no-store");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const token   = process.env.PRINTAVO_API_TOKEN;
@@ -34,11 +35,22 @@ export default async function handler(req, res) {
   if (!token || !email)   return res.status(500).json({ error: "Missing Printavo credentials" });
   if (!kvUrl || !kvToken) return res.status(500).json({ error: "Missing Upstash env vars" });
 
-  // Secret guard — only enforced if SYNC_SECRET is set in the environment.
-  if (secret) {
-    const provided = req.headers["x-sync-secret"] || req.query.secret;
-    if (provided !== secret) return res.status(401).json({ error: "Unauthorized" });
+  // Secret guard. A session cookie is no use here — cron can't send one — so this
+  // endpoint authenticates with a shared secret instead.
+  //
+  // It now FAILS CLOSED. The old code only enforced the check "if (secret)", so with
+  // SYNC_SECRET unset the endpoint was completely open: anyone who knew the URL could
+  // trigger a full reconcile, hammer the Printavo rate limit, and rebuild your roster.
+  // An unset secret is a misconfiguration, not permission to skip the check.
+  if (!secret) {
+    return res.status(500).json({
+      error: "SYNC_SECRET is not set. Generate one (openssl rand -base64 32), add it in " +
+             "Vercel > Environment Variables, redeploy, and pass it as ?secret= or the " +
+             "x-sync-secret header. Refusing to run an unauthenticated sync."
+    });
   }
+  const provided = req.headers["x-sync-secret"] || req.query.secret;
+  if (provided !== secret) return res.status(401).json({ error: "Unauthorized" });
 
   const mode         = (req.query.mode || "incremental").toLowerCase();
   const resumeCursor = req.query.cursor || null;
