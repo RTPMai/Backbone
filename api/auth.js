@@ -14,8 +14,7 @@
 // POST { action:"roles_save", roles }          (admin)
 
 const {
-  safeEqual, setSessionCookie, clearSessionCookie, getSession,
-  requireAuth, getAppSettings, saveAppSettings,
+  safeEqual, setSessionCookie, clearSessionCookie, getSession, requireAuth,
 } = require("../lib/auth.js");
 
 const {
@@ -57,11 +56,6 @@ module.exports = async function handler(req, res) {
       const action = (req.query && req.query.action) || "session";
       const sess = getSession(req);
 
-      if (action === "settings") {
-        if (!sess) return res.status(401).json({ error: "Not authenticated" });
-        return res.status(200).json(await getAppSettings());
-      }
-
       if (action === "users") {
         const s = requireAuth(req, res, "admin");
         if (!s) return;
@@ -74,15 +68,16 @@ module.exports = async function handler(req, res) {
 
       if (!sess) return res.status(200).json({ authenticated: false });
 
-      const settings = await getAppSettings();
       const perms = await permsFor(sess);
       const user = sess.username ? await getUser(sess.username) : null;
 
+      // No global `tabs` any more. Visibility is decided solely by the role — two
+      // systems gating the same thing was confusing, and the global toggles were
+      // silently overriding role restrictions on the client.
       return res.status(200).json({
         authenticated: true,
         role: perms.role,
-        tabs: settings.tabs,   // global on/off — an admin can hide a tab from everyone
-        perms: perms,          // per-role visibility
+        perms: perms,
         user: user ? { username: user.username, name: user.name, am_name: user.am_name } : null,
       });
     }
@@ -131,12 +126,6 @@ module.exports = async function handler(req, res) {
         if (!safeEqual(body.password, adminPw)) return res.status(401).json({ error: "Incorrect admin password" });
         setSessionCookie(res, Object.assign({}, sess, { role: "admin" }));
         return res.status(200).json({ ok: true, role: "admin" });
-      }
-
-      if (action === "settings") {
-        const sess = requireAuth(req, res, "admin");
-        if (!sess) return;
-        return res.status(200).json(await saveAppSettings({ tabs: body.tabs }));
       }
 
       // ---- user management (admin only) ----
