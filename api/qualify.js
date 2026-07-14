@@ -6,7 +6,11 @@
 // console — this is a genuine server-side API call, billed to your account, separate
 // from the Printavo/Upstash env vars already set up).
 
-const { requireAuth } = require("../lib/auth.js");
+// lib/session.js, not lib/auth.js — that file was renamed (having both api/auth.js and
+// lib/auth.js got them confused and the library was overwritten). ESM `import`, not
+// `require`: this file uses `export default`, and mixing the two module systems is what
+// made requireAuth undefined and 500'd every call.
+import { requireAuth } from "../lib/session.js";
 
 export const config = { api: { bodyParser: true }, maxDuration: 60 };
 
