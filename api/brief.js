@@ -18,11 +18,12 @@
 
 import { put } from "@vercel/blob";
 import { requireAuth } from "../lib/auth.js";
+import { FEATURES, LANES, MOTIONS } from "../lib/playbook.js";
 
 // Bump this whenever brief.js changes. It's echoed in every error so we can tell at a
 // glance whether the deployed file is the one we think it is — several rounds of this
 // debug were spent diagnosing a build that had never actually shipped.
-const BUILD = "brief-v10";
+const BUILD = "brief-v11";
 
 // ---- helpers ---------------------------------------------------------------
 
@@ -232,6 +233,70 @@ function renderBrief(lead, am) {
       '</div>'
     : '';
 
+  // ---- Playbook -------------------------------------------------------------
+  // Maps THIS lead's industry to P&M's services and the benefit language that lands for
+  // the motion (owner-operator vs team-based). Sourced from the Skill Hub industry doc,
+  // the Customer Tiers services ladder, and the Apple Analogy owner-vs-team framing.
+  const lane = LANES[industry] || null;
+
+  // The qualification can override the default motion — a Corporate/Small Business lead
+  // might be a sole proprietor OR a 300-person firm with a marketing team, and the lane
+  // default can't know which. brand_buyer_profile is where that lives.
+  const bbp = q.brand_buyer_profile || {};
+  const bbpText = JSON.stringify(bbp).toLowerCase();
+  let motionKey = lane ? lane.motion : "b2b";
+  if (/owner.?operat|sole propriet|family.?owned|founder.?led/.test(bbpText)) motionKey = "owner";
+  else if (/marketing team|brand team|procurement|committee|corporate/.test(bbpText) && motionKey === "owner") motionKey = "b2b";
+  const motion = MOTIONS[motionKey] || MOTIONS.b2b;
+
+  // Timely hooks — anniversaries, expansions, events. These come from the qualification's
+  // growth_signals. The CHAT qualification prompt is what actually finds them (it can
+  // browse); this brief just surfaces whatever was captured.
+  const gs = q.growth_signals || {};
+  const events = [];
+  Object.keys(gs).forEach(function(k) {
+    const v = gs[k];
+    if (typeof v === "string" && clean(v) && !/^(none|n\/a|not found)$/i.test(v.trim())) {
+      events.push(v);
+    } else if (Array.isArray(v)) {
+      v.forEach(function(x) { if (clean(x)) events.push(String(x)); });
+    }
+  });
+
+  let playbookHtml = "";
+  if (lane) {
+    const feats = (lane.features || []).map(function(k) { return FEATURES[k]; }).filter(Boolean);
+    const benefitKey = (motionKey === "owner") ? "benefit_owner" : "benefit_b2b";
+
+    playbookHtml =
+      // WHO you're selling to, and what they're really buying
+      '<div class="pb">' +
+        '<div class="pb-hd">' +
+          '<span class="pb-l">How to sell</span>' +
+          '<span class="pb-tag">' + esc(motion.label) + '</span>' +
+        '</div>' +
+        '<div class="pb-read">' + esc(motion.read) + '</div>' +
+        '<div class="pb-do"><b>Lead with:</b> ' + esc(motion.lead_with) + '</div>' +
+        '<div class="pb-dont"><b>Avoid:</b> ' + esc(motion.avoid) + '</div>' +
+        '<div class="pb-do"><b>Close:</b> ' + esc(motion.close) + '</div>' +
+      '</div>' +
+
+      // WHAT to offer: their NEED -> our FEATURE -> the BENEFIT in their language
+      '<div class="card">' +
+        '<div class="say-l">What to offer</div>' +
+        '<div class="pb-need"><b>' + esc(industry) + ' typically needs:</b> ' + esc(lane.needs) + '</div>' +
+        feats.map(function(f) {
+          const ben = f[benefitKey] || f.benefit_b2b || f.benefit_owner;
+          if (!ben) return "";
+          return '<div class="fb">' +
+            '<div class="fb-f">' + esc(f.feature) + '</div>' +
+            '<div class="fb-b">' + esc(ben) + '</div>' +
+          '</div>';
+        }).join("") +
+        '<div class="pb-hook">' + esc(lane.hook) + '</div>' +
+      '</div>';
+  }
+
   return '<!doctype html><html lang="en"><head>' +
 '<meta charset="utf-8"/>' +
 '<meta name="viewport" content="width=device-width,initial-scale=1"/>' +
@@ -258,6 +323,11 @@ function renderBrief(lead, am) {
 '.co{font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1.2}' +
 '.ind{font-size:13px;color:#9CA3AF;margin-top:4px}' +
 '.ind a{color:#3D9A5C;text-decoration:none;font-weight:600}' +
+'.site-btn{display:inline-flex;align-items:center;gap:7px;margin-top:12px;padding:11px 18px;' +
+  'border-radius:11px;background:#fff;border:2px solid ' + tc.bar + ';color:' + tc.bar + ';' +
+  'font-size:14px;font-weight:700;text-decoration:none}' +
+'.site-btn:hover{background:' + tc.bg + '}' +
+'.site-none{margin-top:12px;font-size:12px;color:#C3C9D0;font-weight:600}' +
 '.dial{margin-top:16px}' +
 '.dial-n{font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1;color:' + tc.bar + '}' +
 '.dial-n small{font-size:14px;font-weight:500;color:#B7BEC7}' +
@@ -311,6 +381,30 @@ function renderBrief(lead, am) {
 '.say-m{font-size:12.5px;color:#9CA3AF;margin-top:10px}' +
 '.say-m b{color:#374151}' +
 
+/* playbook */
+'.pb{background:#fff;border-radius:16px;padding:20px;margin-bottom:12px;' +
+  'box-shadow:0 1px 3px rgba(16,24,40,.07);border-left:4px solid ' + tc.bar + '}' +
+'.pb-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}' +
+'.pb-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:' + tc.bar + '}' +
+'.pb-tag{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;' +
+  'padding:3px 9px;border-radius:99px;background:' + tc.bg + ';color:' + tc.fg + '}' +
+'.pb-read{font-size:14px;line-height:1.55;font-weight:600;margin-bottom:11px}' +
+'.pb-do,.pb-dont{font-size:13px;line-height:1.5;padding:5px 0;color:#374151}' +
+'.pb-do b{color:#1F6B3D}.pb-dont b{color:#B91C1C}' +
+'.pb-need{font-size:13px;color:#6B7280;line-height:1.55;padding-bottom:12px;margin-bottom:4px;' +
+  'border-bottom:1px solid #F4F6F8}' +
+'.pb-need b{color:#111827}' +
+'.fb{padding:10px 0;border-bottom:1px solid #F4F6F8}' +
+'.fb:last-of-type{border-bottom:none}' +
+'.fb-f{font-size:13.5px;font-weight:700}' +
+'.fb-b{font-size:12.5px;color:#6B7280;line-height:1.5;margin-top:2px}' +
+'.pb-hook{margin-top:12px;padding:11px 13px;border-radius:10px;background:' + tc.bg + ';' +
+  'font-size:13px;font-weight:600;color:' + tc.fg + ';line-height:1.5}' +
+'.ev{margin-top:12px;padding:11px 13px;border-radius:10px;background:#FEF3C7}' +
+'.ev-l{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#92400E;' +
+  'margin-bottom:4px}' +
+'.ev-i{font-size:13px;color:#78350F;line-height:1.5;font-weight:600}' +
+
 '.warn{background:#FEF2F2;border-radius:12px;padding:13px 16px;margin-bottom:12px}' +
 '.warn-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;' +
   'color:#B91C1C;margin-bottom:5px}' +
@@ -331,10 +425,15 @@ function renderBrief(lead, am) {
     "\u2605".repeat(stars) + '<span class="off">' + "\u2605".repeat(5 - stars) + '</span>' +
   '</div>' +
   '<div class="co">' + esc(company) + '</div>' +
-  '<div class="ind">' +
-    (industry ? esc(industry) : "Industry not set") +
-    (website ? ' \u00b7 <a href="' + esc(website) + '">website</a>' : "") +
-  '</div>' +
+  '<div class="ind">' + (industry ? esc(industry) : "Industry not set") + '</div>' +
+  // The website gets used constantly - it was a 7px text link buried in a grey line.
+  // Now it's a real button, sized like the contact actions.
+  (website
+    ? '<a class="site-btn" href="' + esc(website) + '" target="_blank" rel="noopener">' +
+        '<span class="act-i">\u2197</span> Visit ' +
+        esc(website.replace(/^https?:\/\//, "").replace(/\/$/, "")) +
+      '</a>'
+    : '<div class="site-none">No website on file</div>') +
   '<div class="dial">' +
     '<div class="dial-n">' + (scoreNum == null ? "\u2014" : scoreNum) + '<small>/50</small></div>' +
     '<div class="dial-bar"><div class="dial-fill"></div></div>' +
@@ -354,14 +453,29 @@ function renderBrief(lead, am) {
 // Everyone else — sits right under the primary so all the contacts are together.
 othersHtml +
 
-// what to say
+// HOW TO SELL - the playbook layer. This is the part that used to duplicate itself:
+// "What to say" was recommended_action and "Angle" was top_opportunity, and the AI
+// routinely produced near-identical text for both. They now do different jobs:
+//   HOW TO SELL  = the MOTION (owner-operator vs team-based) - who you're talking to
+//                  and what they're actually buying
+//   WHAT WE OFFER = the FEATURES that answer this lane's NEEDS, with the BENEFIT
+//                  phrased for that motion
+//   THE ANGLE    = the lead-specific opening, from the qualification
+playbookHtml +
+
+// the angle - lead-specific, NOT a restatement of the playbook
 '<div class="card">' +
-  '<div class="say-l">What to say</div>' +
+  '<div class="say-l">The angle</div>' +
   '<div class="say">' + dash(action) + '</div>' +
-  '<div class="say-m">' +
-    'Urgency: <b>' + dash(urgency) + '</b>' +
-    (clean(glance.top_opportunity) ? '<br/>Angle: <b>' + esc(glance.top_opportunity) + '</b>' : '') +
-  '</div>' +
+  (clean(glance.top_opportunity)
+    ? '<div class="say-m">Opportunity: <b>' + esc(glance.top_opportunity) + '</b></div>'
+    : '') +
+  (events.length
+    ? '<div class="ev"><div class="ev-l">Timely hook</div>' +
+        events.map(function(e) { return '<div class="ev-i">' + esc(e) + '</div>'; }).join("") +
+      '</div>'
+    : '') +
+  '<div class="say-m">Urgency: <b>' + dash(urgency) + '</b></div>' +
 '</div>' +
 
 // one risk, only if it exists
