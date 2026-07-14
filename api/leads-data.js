@@ -1,9 +1,11 @@
-// api/leads-data.js
-// Mirrors the pattern of your existing api/data.js, but for the Leads module.
-// Uses its own Upstash key (backbone_leads) so it can't collide with the customer
-// roster's synced/enrichment data.
+// api/leads-data.js — read the leads list.
+//
+// Imports lib/session.js (NOT lib/auth.js — that file was renamed because having both
+// api/auth.js and lib/auth.js caused the two to be confused and the library overwritten).
+// ESM `import`, matching the `export default` below — the old `require(...)` + `export
+// default` mix was a CommonJS/ESM collision that crashed this function on import.
 
-const { requireAuth } = require("../lib/auth.js");
+import { requireAuth } from "../lib/session.js";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
@@ -37,6 +39,7 @@ export default async function handler(req, res) {
     res.setHeader("Content-Type", "application/json");
     return res.status(200).json(data);
   } catch (e) {
+    console.error("leads-data error:", e);
     return res.status(500).json({ error: e.message });
   }
 }
