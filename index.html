@@ -198,9 +198,7 @@ textarea.field{min-height:60px;resize:vertical}
    micro-labels with wide tracking, pill badges, and the same tier colour language. */
 .dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;
   grid-auto-flow:row dense}
-/* A half-width card with nothing beside it looks broken. If it's the only card on its
-   row (i.e. the last visible one, at an odd index), stretch it across both columns. */
-.dash-card.orphan{grid-column:span 2}
+
 .dash-card{grid-column:span 1;position:relative;border-radius:16px;
   box-shadow:0 1px 3px rgba(16,24,40,.07);
   transition:box-shadow .15s ease,opacity .15s ease,transform .15s ease}
@@ -268,6 +266,16 @@ textarea.field{min-height:60px;resize:vertical}
 .rep-delta{font-size:12px;font-weight:800;flex:0 0 auto}
 .rep-up{color:#1F6B3D}.rep-dn{color:#B91C1C}
 .rep-legend{font-size:11px;color:#B7BEC7;margin-top:11px;line-height:1.5}
+
+/* roles editor */
+.role-box{border:1px solid #EEF1F4;border-radius:12px;padding:14px;margin-bottom:10px;background:#FBFCFD}
+.role-hd{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.role-sec{padding:9px 0;border-top:1px solid #F4F6F8}
+.role-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#B7BEC7;margin-bottom:6px}
+.role-opts{display:flex;flex-wrap:wrap;gap:6px 14px}
+.role-chk{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:#374151;cursor:pointer}
+.role-chk input{cursor:pointer}
+body.read-only .btn-green,body.read-only .btn-red{display:none !important}
 
 /* --- AM leaderboard --------------------------------------------------------- */
 .lb-row{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:10px;
@@ -371,7 +379,9 @@ textarea.field{min-height:60px;resize:vertical}
     <div class="gate-logo">B</div>
     <h2>BackBone</h2>
     <p>P&amp;M Apparel — internal access only</p>
+    <input type="text" id="gateUsername" placeholder="Username" autocomplete="username" style="margin-bottom:10px"/>
     <input type="password" id="gatePassword" placeholder="Password" autocomplete="current-password"/>
+    <div class="help" style="margin-top:8px;font-size:11px">Leave username blank to use the shared password.</div>
     <div class="gate-err" id="gateErr"></div>
     <button class="btn btn-green" id="gateSubmit" style="width:100%">Sign in</button>
   </div>
@@ -708,6 +718,40 @@ textarea.field{min-height:60px;resize:vertical}
     </div>
 
     <div id="adminContent" style="display:none">
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-hd"><h3>Users</h3></div>
+      <div class="card-bd">
+        <div class="help">Each person gets their own login. Their role decides what they can see. Linking a user to an Account Manager is what makes "own accounts only" work.</div>
+        <div id="usersWrap" style="margin-top:12px"></div>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #F4F6F8">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+            <div><label class="help" style="margin:0 0 3px">Username</label><input class="field" id="nuUser" placeholder="megan" style="width:130px"/></div>
+            <div><label class="help" style="margin:0 0 3px">Full name</label><input class="field" id="nuName" placeholder="Megan Griffith" style="width:150px"/></div>
+            <div><label class="help" style="margin:0 0 3px">Password</label><input class="field" type="password" id="nuPass" placeholder="min 8 chars" style="width:130px"/></div>
+            <div><label class="help" style="margin:0 0 3px">Role</label><select class="field" id="nuRole" style="width:130px"></select></div>
+            <div><label class="help" style="margin:0 0 3px">Is this AM</label><select class="field" id="nuAM" style="width:150px"></select></div>
+            <button class="btn btn-green btn-sm" id="nuAdd">Add user</button>
+          </div>
+          <div class="gate-err" id="nuErr" style="margin-top:10px;display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-hd"><h3>Roles &amp; permissions</h3></div>
+      <div class="card-bd">
+        <div class="help">Define what each role can see. Changes apply to everyone with that role the next time they load the app. The admin role can't be locked out of Settings.</div>
+        <div id="rolesWrap" style="margin-top:12px"></div>
+        <div style="margin-top:14px;display:flex;gap:8px;align-items:center">
+          <input class="field" id="newRoleName" placeholder="New role name (e.g. sales_lead)" style="width:230px"/>
+          <button class="btn btn-gray btn-sm" id="addRoleBtn">Add role</button>
+          <div class="spacer" style="flex:1"></div>
+          <button class="btn btn-green btn-sm" id="saveRolesBtn">Save roles</button>
+        </div>
+        <div class="gate-err" id="roleErr" style="margin-top:10px;display:none"></div>
+      </div>
+    </div>
+
     <div class="card" style="margin-bottom:16px">
       <div class="card-hd"><h3>Visible tabs</h3></div>
       <div class="card-bd">
@@ -5441,39 +5485,13 @@ function applyDashLayout() {
 
   renderDashTools();
   renderHiddenChips();
-  reflowOrphans();
 }
 
-// A half-width card sitting alone on its row reads as broken. Walk the VISIBLE cards,
-// track column position (full-width cards consume a whole row), and stretch any half-width
-// card that ends up with nothing beside it. Must run after any show/hide/resize/reorder,
-// since all four change which card lands where.
-function reflowOrphans() {
-  const grid = document.getElementById("dashGrid");
-  if (!grid) return;
-  const vis = Array.from(grid.querySelectorAll(".dash-card:not(.is-hidden)"));
-  vis.forEach(function(c) { c.classList.remove("orphan"); });
-
-  let col = 0; // 0 = start of a row, 1 = second column occupied
-  for (let i = 0; i < vis.length; i++) {
-    const c = vis[i];
-    if (c.classList.contains("w-full")) { col = 0; continue; }
-    if (col === 0) {
-      // Find the next half-width card — if there isn't one before a full-width card
-      // or the end of the list, this card is alone on its row.
-      let partner = null;
-      for (let j = i + 1; j < vis.length; j++) {
-        if (vis[j].classList.contains("w-full")) break;
-        partner = vis[j];
-        break;
-      }
-      if (!partner) c.classList.add("orphan");
-      else col = 1;
-    } else {
-      col = 0;
-    }
-  }
-}
+// NOTE: there is deliberately no "orphan" auto-stretch here any more.
+// An earlier version stretched a lone half-width card to fill its row — which meant
+// clicking "make half width" on the last card instantly snapped it back to full,
+// because it was now alone. The user's explicit width choice must win over tidiness.
+// A half-width card with empty space beside it is correct if that's what was asked for.
 
 function currentDashOrder() {
   const grid = document.getElementById("dashGrid");
@@ -5518,7 +5536,6 @@ function renderDashTools() {
         persistDashLayout();
         renderDashTools();
         renderHiddenChips();
-        reflowOrphans();
       });
     });
   });
@@ -5544,7 +5561,6 @@ function renderHiddenChips() {
       persistDashLayout();
       renderDashTools();
       renderHiddenChips();
-      reflowOrphans();
     });
   });
 }
@@ -5587,7 +5603,6 @@ function initDashDrag() {
     grid.querySelectorAll(".drag-over").forEach(function(c) { c.classList.remove("drag-over"); });
     dashDragEl = null;
     persistDashLayout();
-    reflowOrphans();
   });
 
   grid.addEventListener("dragover", function(e) {
@@ -8658,6 +8673,10 @@ document.getElementById("inboxRefreshBtn").addEventListener("click", loadInbox);
 // ── Auth + tab visibility ───────────────────────────────────────────────
 let currentRole = null;
 let appTabs = { inbox:true, leads:true, roster:true, scorecard:true, dashboard:true };
+// What THIS user's role allows. Cosmetic only — the server enforces the same rules
+// independently, because anything sent to a browser can be edited in that browser.
+let currentPerms = { tabs:[], cards:[], data_scope:"all", can_edit:true, can_export:false };
+let currentUser = null;
 const TAB_LABELS = { inbox:"Inbox", leads:"Leads", roster:"Roster", scorecard:"Scorecard", dashboard:"Dashboard" };
 
 function applyTabVisibility() {
@@ -8677,6 +8696,7 @@ function applyTabVisibility() {
 function showApp(role, tabs) {
   currentRole = role;
   if (tabs) appTabs = Object.assign(appTabs, tabs);
+  applyRolePerms();
   document.getElementById("authGate").style.display = "none";
   document.getElementById("appRoot").style.display = "block";
   document.getElementById("logoutLink").style.display = "inline";
@@ -8687,16 +8707,50 @@ function showApp(role, tabs) {
   loadInbox();
 }
 
+// Hide tabs and dashboard cards this role isn't permitted to see. A tab must pass BOTH
+// gates: the global on/off (admin hides it from everyone) AND this role's list.
+function applyRolePerms() {
+  const allowedTabs = currentPerms.tabs || [];
+  if (allowedTabs.length) {
+    document.querySelectorAll(".nav-btn").forEach(function(b) {
+      const t = b.dataset.tab;
+      if (!t) return;
+      if (allowedTabs.indexOf(t) === -1) b.style.display = "none";
+    });
+  }
+
+  const allowedCards = currentPerms.cards || [];
+  if (allowedCards.length) {
+    document.querySelectorAll(".dash-card").forEach(function(c) {
+      if (allowedCards.indexOf(c.dataset.card) === -1) {
+        // remove() not hide() — a hidden card can still be un-hidden from the chips row.
+        c.remove();
+      }
+    });
+  }
+
+  // Read-only roles lose every control that writes.
+  if (currentPerms.can_edit === false) {
+    document.body.classList.add("read-only");
+  }
+}
+
 async function checkSession() {
   try {
     const r = await fetch("/api/auth?action=session", { credentials:"same-origin" });
     const j = await r.json();
-    if (j.authenticated) { showApp(j.role, j.tabs); return true; }
+    if (j.authenticated) {
+      if (j.perms) currentPerms = j.perms;
+      currentUser = j.user || null;
+      showApp(j.role, j.tabs);
+      return true;
+    }
   } catch(e) {}
   return false;
 }
 
 async function doLogin() {
+  const un = (document.getElementById("gateUsername").value || "").trim();
   const pw = document.getElementById("gatePassword").value;
   const err = document.getElementById("gateErr");
   err.style.display = "none";
@@ -8704,9 +8758,12 @@ async function doLogin() {
     const r = await fetch("/api/auth", {
       method:"POST", credentials:"same-origin",
       headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ action:"login", password: pw })
+      // Username optional — blank falls back to the shared-password path, so this
+      // deploy can't lock anyone out before their account exists.
+      body: JSON.stringify(un ? { action:"login", username: un, password: pw }
+                              : { action:"login", password: pw })
     });
-    if (!r.ok) { const j = await r.json().catch(()=>({})); err.textContent = j.error || "Incorrect password"; err.style.display="block"; return; }
+    if (!r.ok) { const j = await r.json().catch(()=>({})); err.textContent = j.error || "Incorrect username or password"; err.style.display="block"; return; }
     // Re-check session to pull role + tab settings in one place.
     await checkSession();
   } catch(e) {
@@ -8724,7 +8781,252 @@ function renderSettingsAccess() {
   const isAdmin = currentRole === "admin";
   document.getElementById("adminLock").style.display = isAdmin ? "none" : "block";
   document.getElementById("adminContent").style.display = isAdmin ? "block" : "none";
-  if (isAdmin) renderTabToggles();
+  if (isAdmin) { renderTabToggles(); loadUsersAndRoles(); }
+}
+
+// ── Users & roles ──────────────────────────────────────────────────────
+let adminUsers = [];
+let adminRoles = {};
+let adminAMs = [];
+
+const ALL_TABS = ["dashboard", "roster", "scorecard", "leads", "inbox", "settings"];
+const ALL_CARDS = ["concentration", "revtrend", "dormant", "cadence", "tiermove",
+                   "leaderboard", "amload", "alerts"];
+
+async function loadUsersAndRoles() {
+  try {
+    const r = await fetch("/api/auth?action=users", { credentials: "same-origin" });
+    if (!r.ok) return;
+    const j = await r.json();
+    adminUsers = j.users || [];
+    adminRoles = j.roles || {};
+    adminAMs = j.ams || [];
+    renderUsers();
+    renderRoles();
+    wireUserRoleButtons();
+  } catch (e) { console.warn("users load failed", e); }
+}
+
+function renderUsers() {
+  const wrap = document.getElementById("usersWrap");
+  if (!wrap) return;
+
+  // Populate the "add user" dropdowns from live roles/AMs, not a hardcoded list.
+  const roleSel = document.getElementById("nuRole");
+  if (roleSel) {
+    roleSel.innerHTML = Object.keys(adminRoles).map(function(k) {
+      return '<option value="' + k + '">' + (adminRoles[k].label || k) + '</option>';
+    }).join("");
+  }
+  const amSel = document.getElementById("nuAM");
+  if (amSel) {
+    amSel.innerHTML = '<option value="">\u2014 not an AM \u2014</option>' +
+      adminAMs.map(function(a) { return '<option value="' + a + '">' + a + '</option>'; }).join("");
+  }
+
+  if (!adminUsers.length) {
+    wrap.innerHTML = '<div class="empty-state">No users yet. Everyone is still using the shared password \u2014 ' +
+      'add accounts below, then delete APP_PASSWORD and ADMIN_PASSWORD from Vercel to retire it.</div>';
+    return;
+  }
+
+  wrap.innerHTML = adminUsers.map(function(u) {
+    const role = adminRoles[u.role] || {};
+    return '<div class="rep-row">' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-weight:700;font-size:13.5px">' + (u.name || u.username) +
+          ' <span style="color:#9CA3AF;font-weight:400">@' + u.username + '</span></div>' +
+        '<div class="rep-sub">' + (role.label || u.role) +
+          (u.am_name ? ' \u00b7 ' + u.am_name : '') +
+          (role.data_scope === "own" ? ' \u00b7 own accounts only' : '') +
+          (u.last_login ? ' \u00b7 last in ' + new Date(u.last_login).toLocaleDateString() : ' \u00b7 never signed in') +
+        '</div>' +
+      '</div>' +
+      '<button class="btn btn-gray btn-sm" data-pw="' + u.username + '">Reset password</button>' +
+      '<button class="btn btn-gray btn-sm" data-del="' + u.username + '">Delete</button>' +
+    '</div>';
+  }).join("");
+
+  wrap.querySelectorAll("[data-del]").forEach(function(b) {
+    b.addEventListener("click", async function() {
+      if (!confirm("Delete user " + b.dataset.del + "? This cannot be undone.")) return;
+      await userAction({ action: "user_delete", username: b.dataset.del });
+    });
+  });
+  wrap.querySelectorAll("[data-pw]").forEach(function(b) {
+    b.addEventListener("click", async function() {
+      const pw = prompt("New password for " + b.dataset.pw + " (min 8 characters):");
+      if (!pw) return;
+      await userAction({ action: "user_update", username: b.dataset.pw, password: pw });
+    });
+  });
+}
+
+async function userAction(payload) {
+  const err = document.getElementById("nuErr");
+  err.style.display = "none";
+  try {
+    const r = await fetch("/api/auth", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json().catch(function() { return {}; });
+    if (!r.ok) { err.textContent = j.error || "Failed"; err.style.display = "block"; return false; }
+    await loadUsersAndRoles();
+    return true;
+  } catch (e) {
+    err.textContent = "Request failed"; err.style.display = "block";
+    return false;
+  }
+}
+
+function renderRoles() {
+  const wrap = document.getElementById("rolesWrap");
+  if (!wrap) return;
+
+  wrap.innerHTML = Object.keys(adminRoles).map(function(key) {
+    const r = adminRoles[key];
+    const isAdminRole = key === "admin";
+    return '<div class="role-box" data-role="' + key + '">' +
+      '<div class="role-hd">' +
+        '<input class="field role-label" value="' + (r.label || key) + '" ' +
+          (isAdminRole ? 'disabled' : '') + ' style="width:190px;font-weight:700"/>' +
+        '<span class="rep-sub" style="margin-left:8px">' + key + '</span>' +
+        (isAdminRole
+          ? '<span class="rep-pill rep-gray" style="margin-left:auto">locked</span>'
+          : '<button class="btn btn-gray btn-sm role-del" style="margin-left:auto">Remove</button>') +
+      '</div>' +
+
+      '<div class="role-sec"><div class="role-l">Tabs</div><div class="role-opts">' +
+        ALL_TABS.map(function(t) {
+          const on = (r.tabs || []).indexOf(t) !== -1;
+          return '<label class="role-chk"><input type="checkbox" data-tab="' + t + '"' +
+            (on ? " checked" : "") + (isAdminRole ? " disabled" : "") + '/> ' + t + '</label>';
+        }).join("") +
+      '</div></div>' +
+
+      '<div class="role-sec"><div class="role-l">Dashboard cards</div><div class="role-opts">' +
+        ALL_CARDS.map(function(c) {
+          const on = (r.cards || []).indexOf(c) !== -1;
+          return '<label class="role-chk"><input type="checkbox" data-cardp="' + c + '"' +
+            (on ? " checked" : "") + (isAdminRole ? " disabled" : "") + '/> ' +
+            (DASH_CARD_NAMES[c] || c) + '</label>';
+        }).join("") +
+      '</div></div>' +
+
+      '<div class="role-sec"><div class="role-l">Data access</div><div class="role-opts">' +
+        '<label class="role-chk"><input type="radio" name="scope-' + key + '" data-scope="all"' +
+          ((r.data_scope !== "own") ? " checked" : "") + (isAdminRole ? " disabled" : "") +
+          '/> All accounts</label>' +
+        '<label class="role-chk"><input type="radio" name="scope-' + key + '" data-scope="own"' +
+          ((r.data_scope === "own") ? " checked" : "") + (isAdminRole ? " disabled" : "") +
+          '/> Only their own</label>' +
+        '<label class="role-chk"><input type="checkbox" data-edit' +
+          ((r.can_edit !== false) ? " checked" : "") + (isAdminRole ? " disabled" : "") +
+          '/> Can edit</label>' +
+      '</div></div>' +
+    '</div>';
+  }).join("");
+
+  wrap.querySelectorAll(".role-del").forEach(function(b) {
+    b.addEventListener("click", function() {
+      const box = b.closest(".role-box");
+      const key = box.dataset.role;
+      const inUse = adminUsers.filter(function(u) { return u.role === key; });
+      if (inUse.length) {
+        alert("Can't remove '" + key + "' \u2014 " + inUse.length +
+          " user(s) still have it. Move them to another role first.");
+        return;
+      }
+      box.remove();
+    });
+  });
+}
+
+function wireUserRoleButtons() {
+  const add = document.getElementById("nuAdd");
+  if (add && !add.dataset.wired) {
+    add.dataset.wired = "1";
+    add.addEventListener("click", async function() {
+      const ok = await userAction({
+        action: "user_create",
+        username: document.getElementById("nuUser").value,
+        name: document.getElementById("nuName").value,
+        password: document.getElementById("nuPass").value,
+        role: document.getElementById("nuRole").value,
+        am_name: document.getElementById("nuAM").value
+      });
+      if (ok) {
+        ["nuUser","nuName","nuPass"].forEach(function(id) { document.getElementById(id).value = ""; });
+      }
+    });
+  }
+
+  const addRole = document.getElementById("addRoleBtn");
+  if (addRole && !addRole.dataset.wired) {
+    addRole.dataset.wired = "1";
+    addRole.addEventListener("click", function() {
+      const raw = (document.getElementById("newRoleName").value || "").trim().toLowerCase();
+      const key = raw.replace(/[^a-z0-9_]/g, "_");
+      const err = document.getElementById("roleErr");
+      err.style.display = "none";
+      if (!key) { err.textContent = "Give the role a name."; err.style.display = "block"; return; }
+      if (adminRoles[key]) { err.textContent = "That role already exists."; err.style.display = "block"; return; }
+      // New roles start with NOTHING selected — deliberately. A role that defaults to
+      // full access would hand out permissions the admin never consciously granted.
+      adminRoles[key] = { name:key, label:raw, tabs:[], cards:[], data_scope:"own", can_edit:false, can_export:false };
+      document.getElementById("newRoleName").value = "";
+      renderRoles();
+      wireUserRoleButtons();
+    });
+  }
+
+  const saveR = document.getElementById("saveRolesBtn");
+  if (saveR && !saveR.dataset.wired) {
+    saveR.dataset.wired = "1";
+    saveR.addEventListener("click", async function() {
+      const err = document.getElementById("roleErr");
+      err.style.display = "none";
+      try {
+        const roles = collectRoles();
+        const r = await fetch("/api/auth", {
+          method:"POST", credentials:"same-origin",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ action:"roles_save", roles: roles })
+        });
+        const j = await r.json().catch(function(){ return {}; });
+        if (!r.ok) { err.textContent = j.error || "Save failed"; err.style.display = "block"; return; }
+        adminRoles = j.roles || roles;
+        renderRoles();
+        wireUserRoleButtons();
+        saveR.textContent = "Saved";
+        setTimeout(function(){ saveR.textContent = "Save roles"; }, 1500);
+      } catch (e) {
+        err.textContent = e.message || "Save failed"; err.style.display = "block";
+      }
+    });
+  }
+}
+
+function collectRoles() {
+  const out = {};
+  document.querySelectorAll(".role-box").forEach(function(box) {
+    const key = box.dataset.role;
+    const scopeEl = box.querySelector('[data-scope]:checked');
+    out[key] = {
+      name: key,
+      label: (box.querySelector(".role-label").value || key).trim(),
+      tabs: Array.from(box.querySelectorAll("[data-tab]:checked")).map(function(i) { return i.dataset.tab; }),
+      cards: Array.from(box.querySelectorAll("[data-cardp]:checked")).map(function(i) { return i.dataset.cardp; }),
+      data_scope: scopeEl ? scopeEl.dataset.scope : "all",
+      can_edit: !!box.querySelector("[data-edit]:checked"),
+      can_export: false
+    };
+  });
+  // The server also forces this, but failing here gives a clearer message than a 500.
+  if (!out.admin) throw new Error("The admin role cannot be removed.");
+  return out;
 }
 
 function renderTabToggles() {
@@ -8771,7 +9073,7 @@ async function doAdminUnlock() {
       headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({ action:"admin", password: pw })
     });
-    if (!r.ok) { const j = await r.json().catch(()=>({})); err.textContent = j.error || "Incorrect password"; err.style.display="block"; return; }
+    if (!r.ok) { const j = await r.json().catch(()=>({})); err.textContent = j.error || "Incorrect username or password"; err.style.display="block"; return; }
     currentRole = "admin";
     renderSettingsAccess();
   } catch(e) {
