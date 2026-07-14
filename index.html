@@ -194,23 +194,30 @@ textarea.field{min-height:60px;resize:vertical}
 }
 
 /* --- Customizable dashboard grid -------------------------------------------- */
+/* Styled to match the emailed Lead Brief: 16px radius, soft shadow, uppercase
+   micro-labels with wide tracking, pill badges, and the same tier colour language. */
 .dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
-.dash-card{grid-column:span 1;position:relative;transition:box-shadow .15s ease,opacity .15s ease}
+.dash-card{grid-column:span 1;position:relative;border-radius:16px;
+  box-shadow:0 1px 3px rgba(16,24,40,.07);
+  transition:box-shadow .15s ease,opacity .15s ease,transform .15s ease}
+.dash-card:hover{box-shadow:0 4px 14px rgba(16,24,40,.10)}
 .dash-card.w-full{grid-column:span 2}
 .dash-card.is-hidden{display:none}
-.dash-card.dragging{opacity:.4}
-.dash-card.drag-over{box-shadow:0 0 0 2px #3D9A5C}
-.dash-card .card-hd{cursor:grab;user-select:none}
+.dash-card.dragging{opacity:.35;transform:scale(.99)}
+.dash-card.drag-over{box-shadow:0 0 0 2px #3D9A5C,0 6px 18px rgba(16,24,40,.12)}
+.dash-card .card-hd{cursor:grab;user-select:none;align-items:center}
+.dash-card .card-hd h3{font-size:13px;font-weight:800;letter-spacing:.02em}
 .dash-card.dragging .card-hd{cursor:grabbing}
 .dash-tools{display:flex;gap:2px;align-items:center;margin-left:auto}
 .dash-tool{border:none;background:none;cursor:pointer;padding:4px 6px;border-radius:6px;
-  color:#C3C9D0;font-size:13px;line-height:1;font-family:inherit;transition:all .12s ease}
+  color:#C3C9D0;font-size:12px;line-height:1;font-family:inherit;transition:all .12s ease}
 .dash-tool:hover{background:#F4F6F8;color:#374151}
-.dash-grip{color:#D6DBE1;font-size:13px;margin-right:7px;letter-spacing:-1px;flex:0 0 auto}
+.dash-grip{color:#D6DBE1;font-size:14px;margin-right:8px;flex:0 0 auto;cursor:grab;line-height:1}
+.dash-grip:hover{color:#9CA3AF}
 .dash-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
 .dash-bar .spacer{flex:1}
 .dash-hidden-list{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-.dash-chip{font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:99px;background:#F4F6F8;
+.dash-chip{font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:99px;background:#F4F6F8;
   color:#9CA3AF;border:1px dashed #D6DBE1;cursor:pointer;font-family:inherit}
 .dash-chip:hover{color:#3D9A5C;border-color:#3D9A5C;background:#EAF5EE}
 @media(max-width:900px){
@@ -218,28 +225,45 @@ textarea.field{min-height:60px;resize:vertical}
   .dash-card,.dash-card.w-full{grid-column:span 1}
 }
 
-/* report internals */
-.rep-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #F4F6F8;font-size:13px}
+/* --- report internals (brief-styled) ---------------------------------------- */
+/* Micro-label: the uppercase wide-tracked header used throughout the brief. */
+.rep-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;
+  color:#9CA3AF;margin-bottom:10px}
+
+/* Headline stat, mirroring the brief's score dial. */
+.rep-hero{display:flex;align-items:baseline;gap:9px;margin-bottom:12px;
+  padding-bottom:12px;border-bottom:1px solid #F4F6F8}
+.rep-hero-n{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.rep-hero-s{font-size:12px;color:#9CA3AF;font-weight:500}
+
+.rep-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F4F6F8;
+  font-size:13px}
 .rep-row:last-child{border-bottom:none}
-.rep-row .rep-name{flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  cursor:pointer}
-.rep-row .rep-name:hover{color:#3D9A5C}
-.rep-sub{font-size:11px;color:#9CA3AF;font-weight:400}
-.rep-val{flex:0 0 auto;font-weight:700;text-align:right}
-.rep-pill{flex:0 0 auto;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:99px;
-  text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
-.rep-red{background:#FEE2E2;color:#B91C1C}.rep-amber{background:#FEF3C7;color:#92400E}
-.rep-green{background:#EAF5EE;color:#1F6B3D}.rep-gray{background:#F3F4F6;color:#6B7280}
-.rep-bars{display:flex;align-items:flex-end;gap:8px;height:150px;padding-top:8px}
-.rep-bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
-.rep-bar{width:100%;max-width:52px;border-radius:6px 6px 0 0;background:#3D9A5C;position:relative;
-  transition:height .5s cubic-bezier(.22,1,.36,1);min-height:2px}
-.rep-bar.dim{background:#D6DBE1}
-.rep-bar-lbl{font-size:11px;color:#9CA3AF;font-weight:600}
+.rep-name{flex:1;min-width:0;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  cursor:pointer;font-size:13.5px}
+.rep-name:hover{color:#3D9A5C}
+.rep-sub{font-size:11.5px;color:#9CA3AF;font-weight:400;margin-top:2px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.rep-val{flex:0 0 auto;font-weight:800;text-align:right;font-size:14px}
+.rep-pill{flex:0 0 auto;font-size:9px;font-weight:800;padding:3px 8px;border-radius:99px;
+  text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.rep-red{background:#FEE2E2;color:#991B1B}
+.rep-amber{background:#FEF3C7;color:#92400E}
+.rep-green{background:#EAF5EE;color:#1F6B3D}
+.rep-gray{background:#F3F4F6;color:#6B7280}
+
+/* bar chart */
+.rep-bars{display:flex;align-items:flex-end;gap:10px;height:158px;padding-top:8px}
+.rep-bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0}
+.rep-bar{width:100%;max-width:56px;border-radius:8px 8px 0 0;
+  background:linear-gradient(180deg,#4FB673,#3D9A5C);
+  transition:height .5s cubic-bezier(.22,1,.36,1);min-height:3px}
+.rep-bar.dim{background:#E5E9ED}
+.rep-bar-lbl{font-size:11px;color:#9CA3AF;font-weight:700}
 .rep-bar-val{font-size:10.5px;color:#6B7280;font-weight:700}
-.rep-delta{font-size:11px;font-weight:700}
+.rep-delta{font-size:12px;font-weight:800;flex:0 0 auto}
 .rep-up{color:#1F6B3D}.rep-dn{color:#B91C1C}
-.rep-legend{font-size:11px;color:#9CA3AF;margin-top:10px}
+.rep-legend{font-size:11px;color:#B7BEC7;margin-top:11px;line-height:1.5}
 
 /* --- AM leaderboard --------------------------------------------------------- */
 .lb-row{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:10px;
@@ -603,63 +627,63 @@ textarea.field{min-height:60px;resize:vertical}
     <div class="kpi-grid" id="dashPortfolioKpiGrid"></div>
 
     <div class="dash-grid" id="dashGrid">
-      <div class="card dash-card w-full" data-card="concentration" draggable="true">
-        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Revenue concentration &amp; industry mix</h3></div>
+      <div class="card dash-card w-full" data-card="concentration">
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Revenue concentration &amp; industry mix</h3></div>
         <div class="card-bd">
           <div id="dashConcentrationWrap" style="margin-bottom:18px"></div>
           <div id="dashIndustryWrap"></div>
         </div>
       </div>
 
-      <div class="card dash-card w-full" data-card="revtrend" draggable="true">
-        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Revenue trend by year</h3></div>
+      <div class="card dash-card w-full" data-card="revtrend">
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Revenue trend by year</h3></div>
         <div class="card-bd">
-          <div class="help">Roster-wide revenue per year, from each client\'s year buckets. Ignores the Year filter above \u2014 this card is the whole timeline.</div>
+          <div class="help">Roster-wide revenue per year, from each client's year buckets. Ignores the Year filter above — this card is the whole timeline.</div>
           <div id="dashRevTrendWrap"></div>
         </div>
       </div>
 
-      <div class="card dash-card" data-card="dormant" draggable="true">
-        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Dormant &amp; at risk</h3></div>
+      <div class="card dash-card" data-card="dormant">
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Dormant &amp; at risk</h3></div>
         <div class="card-bd">
           <div class="help">Clients with real history who have gone quiet, ranked by revenue at stake.</div>
           <div id="dashDormantWrap"></div>
         </div>
       </div>
 
-      <div class="card dash-card" data-card="cadence" draggable="true">
-        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Overdue to reorder</h3></div>
+      <div class="card dash-card" data-card="cadence">
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Overdue to reorder</h3></div>
         <div class="card-bd">
           <div class="help">Compares each client against <em>their own</em> ordering rhythm, not a fixed threshold.</div>
           <div id="dashCadenceWrap"></div>
         </div>
       </div>
 
-      <div class="card dash-card" data-card="tiermove" draggable="true">
-        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Tier movement</h3></div>
+      <div class="card dash-card" data-card="tiermove">
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Tier movement</h3></div>
         <div class="card-bd">
-          <div class="help">Score recomputed on last year\'s numbers vs this year\'s, to see who moved.</div>
+          <div class="help">Score recomputed on last year's numbers vs this year's, to see who moved.</div>
           <div id="dashTierMoveWrap"></div>
         </div>
       </div>
 
-      <div class="card dash-card" data-card="leaderboard" draggable="true">
-        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>AM Leaderboard</h3></div>
+      <div class="card dash-card" data-card="leaderboard">
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>AM Leaderboard</h3></div>
         <div class="card-bd"><div id="leaderboardWrap"></div></div>
       </div>
 
-      <div class="card dash-card w-full" data-card="amload" draggable="true">
-        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Account Manager workload</h3></div>
+      <div class="card dash-card w-full" data-card="amload">
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Account Manager workload</h3></div>
         <div class="card-bd">
           <div class="help">Client count, combined revenue, and tier mix per AM. "Needs review" counts clients with no explicit industry or AM set.</div>
           <div id="dashAmWrap"></div>
         </div>
       </div>
 
-      <div class="card dash-card w-full" data-card="alerts" draggable="true">
-        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Alerts</h3></div>
+      <div class="card dash-card w-full" data-card="alerts">
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Alerts</h3></div>
         <div class="card-bd">
-          <div class="help">Computed from existing roster data \u2014 no separate pull required. Click a company to open its record.</div>
+          <div class="help">Computed from existing roster data — no separate pull required. Click a company to open its record.</div>
           <div id="dashAlertsWrap"></div>
         </div>
       </div>
@@ -5193,8 +5217,9 @@ function renderDormant() {
   const atStake = rows.reduce(function(s, r) { return s + r.rev; }, 0);
 
   el.innerHTML =
-    '<div style="font-size:12px;color:#6B7280;margin-bottom:10px">' +
-      '<b>' + fmtMoney(atStake) + '</b> of lifetime revenue across <b>' + rows.length + '</b> quiet accounts' +
+    '<div class="rep-hero">' +
+      '<span class="rep-hero-n" style="color:#B91C1C">' + fmtMoney(atStake) + '</span>' +
+      '<span class="rep-hero-s">at stake across ' + rows.length + ' quiet accounts</span>' +
     '</div>' +
     rows.slice(0, 12).map(function(r) {
       const sev = r.days >= 540 ? "rep-red" : (r.days >= 365 ? "rep-amber" : "rep-gray");
@@ -5313,10 +5338,10 @@ function renderTierMove() {
   const up = moves.length - down;
 
   el.innerHTML =
-    '<div style="font-size:12px;color:#6B7280;margin-bottom:10px">' +
-      '<span style="color:#B91C1C;font-weight:700">\u2193 ' + down + '</span> down \u00b7 ' +
-      '<span style="color:#1F6B3D;font-weight:700">\u2191 ' + up + '</span> up \u00b7 ' +
-      prevY + ' \u2192 ' + curY +
+    '<div class="rep-hero">' +
+      '<span class="rep-hero-n rep-dn">\u2193' + down + '</span>' +
+      '<span class="rep-hero-n rep-up" style="margin-left:4px">\u2191' + up + '</span>' +
+      '<span class="rep-hero-s">' + prevY + ' \u2192 ' + curY + '</span>' +
     '</div>' +
     moves.slice(0, 12).map(function(m) {
       return '<div class="rep-row">' +
@@ -5493,12 +5518,26 @@ function initDashDrag() {
   if (!grid || grid.dataset.dragInit) return;
   grid.dataset.dragInit = "1";
 
+  // Cards are NOT draggable by default — draggable is switched on only while the
+  // pointer is held on the grip. Leaving draggable="true" on the whole card meant the
+  // browser tried to drag it whenever you clicked anywhere inside (including selecting
+  // text or hitting a button), and the guard that blocked that also blocked real drags.
+  grid.querySelectorAll(".dash-card").forEach(function(card) {
+    card.draggable = false;
+    const grip = card.querySelector(".dash-grip");
+    const hd = card.querySelector(".card-hd");
+    if (!grip || !hd) return;
+    // Arm on mousedown anywhere in the header, disarm as soon as the drag ends.
+    hd.addEventListener("mousedown", function(e) {
+      if (e.target.closest(".dash-tool")) return; // width/hide buttons are not drag handles
+      card.draggable = true;
+    });
+    hd.addEventListener("mouseup", function() { card.draggable = false; });
+  });
+
   grid.addEventListener("dragstart", function(e) {
     const card = e.target.closest(".dash-card");
-    if (!card) return;
-    // Only start a drag from the header. Without this, selecting text inside a card
-    // or dragging a link would pick the whole card up.
-    if (!e.target.closest(".card-hd")) { e.preventDefault(); return; }
+    if (!card || !card.draggable) return;
     dashDragEl = card;
     card.classList.add("dragging");
     e.dataTransfer.effectAllowed = "move";
@@ -5506,7 +5545,7 @@ function initDashDrag() {
   });
 
   grid.addEventListener("dragend", function() {
-    if (dashDragEl) dashDragEl.classList.remove("dragging");
+    if (dashDragEl) { dashDragEl.classList.remove("dragging"); dashDragEl.draggable = false; }
     grid.querySelectorAll(".drag-over").forEach(function(c) { c.classList.remove("drag-over"); });
     dashDragEl = null;
     persistDashLayout();
