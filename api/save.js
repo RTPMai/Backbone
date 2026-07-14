@@ -1,4 +1,8 @@
-const { requireAuth } = require("../lib/auth.js");
+// lib/session.js, not lib/auth.js — that file was renamed (having both api/auth.js and
+// lib/auth.js got them confused and the library was overwritten). ESM `import`, not
+// `require`: this file uses `export default`, and mixing the two module systems is what
+// made requireAuth undefined and 500'd every call.
+import { requireAuth } from "../lib/session.js";
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
