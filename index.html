@@ -740,7 +740,7 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
     <div class="card" style="margin-bottom:16px">
       <div class="card-hd"><h3>Roles &amp; permissions</h3></div>
       <div class="card-bd">
-        <div class="help">Define what each role can see. Changes apply to everyone with that role the next time they load the app. The admin role can't be locked out of Settings.</div>
+        <div class="help">Roles are the <b>only</b> thing that decides what a person sees — which tabs, which dashboard cards, and whether they get all accounts or only their own. Changes apply the next time that person loads the app. The admin role is locked to full access so you can't lock yourself out.</div>
         <div id="rolesWrap" style="margin-top:12px"></div>
         <div style="margin-top:14px;display:flex;gap:8px;align-items:center">
           <input class="field" id="newRoleName" placeholder="New role name (e.g. sales_lead)" style="width:230px"/>
@@ -749,14 +749,6 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
           <button class="btn btn-green btn-sm" id="saveRolesBtn">Save roles</button>
         </div>
         <div class="gate-err" id="roleErr" style="margin-top:10px;display:none"></div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-hd"><h3>Visible tabs</h3></div>
-      <div class="card-bd">
-        <div class="help">Turn tabs off to hide them from everyone (including viewers). Settings always stays available to admins. Changes save immediately and apply to all users.</div>
-        <div id="tabToggles" style="margin-top:12px"></div>
       </div>
     </div>
 
@@ -8672,30 +8664,38 @@ document.getElementById("inboxRefreshBtn").addEventListener("click", loadInbox);
 
 // ── Auth + tab visibility ───────────────────────────────────────────────
 let currentRole = null;
-let appTabs = { inbox:true, leads:true, roster:true, scorecard:true, dashboard:true };
 // What THIS user's role allows. Cosmetic only — the server enforces the same rules
 // independently, because anything sent to a browser can be edited in that browser.
 let currentPerms = { tabs:[], cards:[], data_scope:"all", can_edit:true, can_export:false };
 let currentUser = null;
-const TAB_LABELS = { inbox:"Inbox", leads:"Leads", roster:"Roster", scorecard:"Scorecard", dashboard:"Dashboard" };
 
+// Tab visibility is now decided ENTIRELY by the user's role. The old global on/off
+// toggles are gone — two systems controlling the same thing was confusing, and worse,
+// this function ran AFTER applyRolePerms() and re-showed any tab whose global toggle was
+// on, silently overriding the role's restrictions.
 function applyTabVisibility() {
-  Object.keys(TAB_LABELS).forEach(function(tab){
-    const btn = document.querySelector('[data-page="'+tab+'"]');
-    if (btn) btn.style.display = appTabs[tab] ? "" : "none";
+  const allowed = currentPerms.tabs || [];
+  // Empty list = no role info (e.g. a legacy shared-password session). Show everything
+  // rather than lock a working session out of its own app.
+  if (!allowed.length) return;
+
+  document.querySelectorAll(".nav-btn").forEach(function(btn) {
+    const page = btn.dataset.page;
+    if (!page) return;
+    btn.style.display = (allowed.indexOf(page) !== -1) ? "" : "none";
   });
-  // If the active page got hidden, fall back to the first visible tab.
+
+  // If the page they're standing on isn't permitted, move them somewhere that is.
   const active = document.querySelector(".nav-btn.active");
-  if (active && active.dataset.page !== "settings" && appTabs[active.dataset.page] === false) {
+  if (active && allowed.indexOf(active.dataset.page) === -1) {
     const firstVisible = Array.from(document.querySelectorAll(".nav-btn"))
-      .find(b => b.style.display !== "none");
+      .find(function(b) { return b.style.display !== "none"; });
     if (firstVisible) firstVisible.click();
   }
 }
 
 function showApp(role, tabs) {
   currentRole = role;
-  if (tabs) appTabs = Object.assign(appTabs, tabs);
   applyRolePerms();
   document.getElementById("authGate").style.display = "none";
   document.getElementById("appRoot").style.display = "block";
@@ -8710,15 +8710,7 @@ function showApp(role, tabs) {
 // Hide tabs and dashboard cards this role isn't permitted to see. A tab must pass BOTH
 // gates: the global on/off (admin hides it from everyone) AND this role's list.
 function applyRolePerms() {
-  const allowedTabs = currentPerms.tabs || [];
-  if (allowedTabs.length) {
-    document.querySelectorAll(".nav-btn").forEach(function(b) {
-      const t = b.dataset.tab;
-      if (!t) return;
-      if (allowedTabs.indexOf(t) === -1) b.style.display = "none";
-    });
-  }
-
+  // Tabs are handled by applyTabVisibility(). This function only does cards + edit rights.
   const allowedCards = currentPerms.cards || [];
   if (allowedCards.length) {
     document.querySelectorAll(".dash-card").forEach(function(c) {
@@ -8781,7 +8773,7 @@ function renderSettingsAccess() {
   const isAdmin = currentRole === "admin";
   document.getElementById("adminLock").style.display = isAdmin ? "none" : "block";
   document.getElementById("adminContent").style.display = isAdmin ? "block" : "none";
-  if (isAdmin) { renderTabToggles(); loadUsersAndRoles(); }
+  if (isAdmin) loadUsersAndRoles();
 }
 
 // ── Users & roles ──────────────────────────────────────────────────────
@@ -9078,40 +9070,6 @@ function collectRoles() {
   // The server also forces this, but failing here gives a clearer message than a 500.
   if (!out.admin) throw new Error("The admin role cannot be removed.");
   return out;
-}
-
-function renderTabToggles() {
-  const wrap = document.getElementById("tabToggles");
-  wrap.innerHTML = "";
-  Object.keys(TAB_LABELS).forEach(function(tab){
-    const row = document.createElement("div");
-    row.className = "tab-toggle-row";
-    const label = document.createElement("span");
-    label.textContent = TAB_LABELS[tab];
-    const sw = document.createElement("label");
-    sw.className = "switch";
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.checked = appTabs[tab] !== false;
-    input.addEventListener("change", function(){ saveTabVisibility(tab, input.checked); });
-    const slider = document.createElement("span");
-    slider.className = "slider";
-    sw.appendChild(input); sw.appendChild(slider);
-    row.appendChild(label); row.appendChild(sw);
-    wrap.appendChild(row);
-  });
-}
-
-async function saveTabVisibility(tab, on) {
-  appTabs[tab] = on;
-  applyTabVisibility();
-  try {
-    await fetch("/api/auth", {
-      method:"POST", credentials:"same-origin",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ action:"settings", tabs: appTabs })
-    });
-  } catch(e) {}
 }
 
 async function doAdminUnlock() {
