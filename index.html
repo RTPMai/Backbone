@@ -196,7 +196,11 @@ textarea.field{min-height:60px;resize:vertical}
 /* --- Customizable dashboard grid -------------------------------------------- */
 /* Styled to match the emailed Lead Brief: 16px radius, soft shadow, uppercase
    micro-labels with wide tracking, pill badges, and the same tier colour language. */
-.dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;
+  grid-auto-flow:row dense}
+/* A half-width card with nothing beside it looks broken. If it's the only card on its
+   row (i.e. the last visible one, at an odd index), stretch it across both columns. */
+.dash-card.orphan{grid-column:span 2}
 .dash-card{grid-column:span 1;position:relative;border-radius:16px;
   box-shadow:0 1px 3px rgba(16,24,40,.07);
   transition:box-shadow .15s ease,opacity .15s ease,transform .15s ease}
@@ -205,7 +209,7 @@ textarea.field{min-height:60px;resize:vertical}
 .dash-card.is-hidden{display:none}
 .dash-card.dragging{opacity:.35;transform:scale(.99)}
 .dash-card.drag-over{box-shadow:0 0 0 2px #3D9A5C,0 6px 18px rgba(16,24,40,.12)}
-.dash-card .card-hd{cursor:grab;user-select:none;align-items:center}
+.dash-card .card-hd{user-select:none;align-items:center}
 .dash-card .card-hd h3{font-size:13px;font-weight:800;letter-spacing:.02em}
 .dash-card.dragging .card-hd{cursor:grabbing}
 .dash-tools{display:flex;gap:2px;align-items:center;margin-left:auto}
@@ -5437,6 +5441,38 @@ function applyDashLayout() {
 
   renderDashTools();
   renderHiddenChips();
+  reflowOrphans();
+}
+
+// A half-width card sitting alone on its row reads as broken. Walk the VISIBLE cards,
+// track column position (full-width cards consume a whole row), and stretch any half-width
+// card that ends up with nothing beside it. Must run after any show/hide/resize/reorder,
+// since all four change which card lands where.
+function reflowOrphans() {
+  const grid = document.getElementById("dashGrid");
+  if (!grid) return;
+  const vis = Array.from(grid.querySelectorAll(".dash-card:not(.is-hidden)"));
+  vis.forEach(function(c) { c.classList.remove("orphan"); });
+
+  let col = 0; // 0 = start of a row, 1 = second column occupied
+  for (let i = 0; i < vis.length; i++) {
+    const c = vis[i];
+    if (c.classList.contains("w-full")) { col = 0; continue; }
+    if (col === 0) {
+      // Find the next half-width card — if there isn't one before a full-width card
+      // or the end of the list, this card is alone on its row.
+      let partner = null;
+      for (let j = i + 1; j < vis.length; j++) {
+        if (vis[j].classList.contains("w-full")) break;
+        partner = vis[j];
+        break;
+      }
+      if (!partner) c.classList.add("orphan");
+      else col = 1;
+    } else {
+      col = 0;
+    }
+  }
 }
 
 function currentDashOrder() {
@@ -5482,6 +5518,7 @@ function renderDashTools() {
         persistDashLayout();
         renderDashTools();
         renderHiddenChips();
+        reflowOrphans();
       });
     });
   });
@@ -5507,6 +5544,7 @@ function renderHiddenChips() {
       persistDashLayout();
       renderDashTools();
       renderHiddenChips();
+      reflowOrphans();
     });
   });
 }
@@ -5528,11 +5566,11 @@ function initDashDrag() {
     const hd = card.querySelector(".card-hd");
     if (!grip || !hd) return;
     // Arm on mousedown anywhere in the header, disarm as soon as the drag ends.
-    hd.addEventListener("mousedown", function(e) {
-      if (e.target.closest(".dash-tool")) return; // width/hide buttons are not drag handles
-      card.draggable = true;
-    });
-    hd.addEventListener("mouseup", function() { card.draggable = false; });
+    // ONLY the grip arms a drag. Arming from the whole header meant any touch/click on a
+    // card header to scroll the page started a drag instead — which is why it felt
+    // impossible to grab and scroll.
+    grip.addEventListener("mousedown", function() { card.draggable = true; });
+    document.addEventListener("mouseup", function() { card.draggable = false; });
   });
 
   grid.addEventListener("dragstart", function(e) {
@@ -5549,6 +5587,7 @@ function initDashDrag() {
     grid.querySelectorAll(".drag-over").forEach(function(c) { c.classList.remove("drag-over"); });
     dashDragEl = null;
     persistDashLayout();
+    reflowOrphans();
   });
 
   grid.addEventListener("dragover", function(e) {
