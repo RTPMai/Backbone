@@ -13,14 +13,17 @@
 // POST { action:"user_create"|"user_update"|"user_delete" }  (admin)
 // POST { action:"roles_save", roles }          (admin)
 
-const {
+// NOTE the filenames. lib/session.js, NOT lib/auth.js — this route is api/auth.js, and
+// having a library with the same name led to the API handler being pasted over the
+// library, which destroyed it. Distinct names now.
+import {
   safeEqual, setSessionCookie, clearSessionCookie, getSession, requireAuth,
-} = require("../lib/auth.js");
+} from "../lib/session.js";
 
-const {
+import {
   authenticate, listUsers, createUser, updateUser, deleteUser,
   getRoles, saveRoles, getRole, getUser,
-} = require("../lib/users.js");
+} from "../lib/users.js";
 
 const ACCOUNT_MANAGERS = [
   "Alexis Davis", "Abby Penton", "Hannah Posey",
@@ -44,7 +47,7 @@ async function permsFor(sess) {
   };
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
   const appPw = process.env.APP_PASSWORD;
@@ -170,4 +173,4 @@ module.exports = async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
-};
+}
