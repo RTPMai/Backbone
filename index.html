@@ -193,6 +193,54 @@ textarea.field{min-height:60px;resize:vertical}
   .funnel-chev{display:none}
 }
 
+/* --- Customizable dashboard grid -------------------------------------------- */
+.dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.dash-card{grid-column:span 1;position:relative;transition:box-shadow .15s ease,opacity .15s ease}
+.dash-card.w-full{grid-column:span 2}
+.dash-card.is-hidden{display:none}
+.dash-card.dragging{opacity:.4}
+.dash-card.drag-over{box-shadow:0 0 0 2px #3D9A5C}
+.dash-card .card-hd{cursor:grab;user-select:none}
+.dash-card.dragging .card-hd{cursor:grabbing}
+.dash-tools{display:flex;gap:2px;align-items:center;margin-left:auto}
+.dash-tool{border:none;background:none;cursor:pointer;padding:4px 6px;border-radius:6px;
+  color:#C3C9D0;font-size:13px;line-height:1;font-family:inherit;transition:all .12s ease}
+.dash-tool:hover{background:#F4F6F8;color:#374151}
+.dash-grip{color:#D6DBE1;font-size:13px;margin-right:7px;letter-spacing:-1px;flex:0 0 auto}
+.dash-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.dash-bar .spacer{flex:1}
+.dash-hidden-list{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.dash-chip{font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:99px;background:#F4F6F8;
+  color:#9CA3AF;border:1px dashed #D6DBE1;cursor:pointer;font-family:inherit}
+.dash-chip:hover{color:#3D9A5C;border-color:#3D9A5C;background:#EAF5EE}
+@media(max-width:900px){
+  .dash-grid{grid-template-columns:1fr}
+  .dash-card,.dash-card.w-full{grid-column:span 1}
+}
+
+/* report internals */
+.rep-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #F4F6F8;font-size:13px}
+.rep-row:last-child{border-bottom:none}
+.rep-row .rep-name{flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  cursor:pointer}
+.rep-row .rep-name:hover{color:#3D9A5C}
+.rep-sub{font-size:11px;color:#9CA3AF;font-weight:400}
+.rep-val{flex:0 0 auto;font-weight:700;text-align:right}
+.rep-pill{flex:0 0 auto;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:99px;
+  text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+.rep-red{background:#FEE2E2;color:#B91C1C}.rep-amber{background:#FEF3C7;color:#92400E}
+.rep-green{background:#EAF5EE;color:#1F6B3D}.rep-gray{background:#F3F4F6;color:#6B7280}
+.rep-bars{display:flex;align-items:flex-end;gap:8px;height:150px;padding-top:8px}
+.rep-bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+.rep-bar{width:100%;max-width:52px;border-radius:6px 6px 0 0;background:#3D9A5C;position:relative;
+  transition:height .5s cubic-bezier(.22,1,.36,1);min-height:2px}
+.rep-bar.dim{background:#D6DBE1}
+.rep-bar-lbl{font-size:11px;color:#9CA3AF;font-weight:600}
+.rep-bar-val{font-size:10.5px;color:#6B7280;font-weight:700}
+.rep-delta{font-size:11px;font-weight:700}
+.rep-up{color:#1F6B3D}.rep-dn{color:#B91C1C}
+.rep-legend{font-size:11px;color:#9CA3AF;margin-top:10px}
+
 /* --- AM leaderboard --------------------------------------------------------- */
 .lb-row{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:10px;
   transition:background .12s ease}
@@ -445,13 +493,6 @@ textarea.field{min-height:60px;resize:vertical}
       </div>
     </div>
 
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-hd"><h3>AM Leaderboard</h3></div>
-      <div class="card-bd">
-        <div id="leaderboardWrap"></div>
-      </div>
-    </div>
-
     <div class="card">
       <div class="card-hd"><h3>Pipeline</h3></div>
       <div class="card-bd">
@@ -550,42 +591,77 @@ textarea.field{min-height:60px;resize:vertical}
   </div>
 
   <div id="page-dashboard" class="page active">
-    <div class="toolbar" style="margin-bottom:14px;justify-content:space-between">
-      <div style="display:flex;align-items:center;gap:10px">
-        <label style="font-size:13px;color:#374151;font-weight:600">Year</label>
-        <select class="search" id="dashYearSelect" style="min-width:130px"></select>
-      </div>
-      <div class="help" id="dashYearNote" style="margin:0;flex:1;text-align:right"></div>
+    <div class="dash-bar">
+      <label style="font-size:13px;color:#374151;font-weight:600">Year</label>
+      <select class="search" id="dashYearSelect" style="min-width:130px"></select>
+      <div class="spacer"></div>
+      <div class="dash-hidden-list" id="dashHiddenList"></div>
+      <button class="btn btn-gray btn-sm" id="dashResetLayout">Reset layout</button>
     </div>
+    <div class="help" id="dashYearNote" style="margin:0 0 12px"></div>
+
     <div class="kpi-grid" id="dashPortfolioKpiGrid"></div>
 
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-hd">
-        <h3>Revenue concentration &amp; industry mix</h3>
+    <div class="dash-grid" id="dashGrid">
+      <div class="card dash-card w-full" data-card="concentration" draggable="true">
+        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Revenue concentration &amp; industry mix</h3></div>
+        <div class="card-bd">
+          <div id="dashConcentrationWrap" style="margin-bottom:18px"></div>
+          <div id="dashIndustryWrap"></div>
+        </div>
       </div>
-      <div class="card-bd">
-        <div id="dashConcentrationWrap" style="margin-bottom:18px"></div>
-        <div id="dashIndustryWrap"></div>
-      </div>
-    </div>
 
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-hd">
-        <h3>Account Manager workload</h3>
+      <div class="card dash-card w-full" data-card="revtrend" draggable="true">
+        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Revenue trend by year</h3></div>
+        <div class="card-bd">
+          <div class="help">Roster-wide revenue per year, from each client\'s year buckets. Ignores the Year filter above \u2014 this card is the whole timeline.</div>
+          <div id="dashRevTrendWrap"></div>
+        </div>
       </div>
-      <div class="card-bd">
-        <div class="help">Client count, combined revenue, and tier mix per AM. "Needs review" counts clients with no explicit industry or AM set.</div>
-        <div id="dashAmWrap"></div>
-      </div>
-    </div>
 
-    <div class="card">
-      <div class="card-hd">
-        <h3>Alerts</h3>
+      <div class="card dash-card" data-card="dormant" draggable="true">
+        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Dormant &amp; at risk</h3></div>
+        <div class="card-bd">
+          <div class="help">Clients with real history who have gone quiet, ranked by revenue at stake.</div>
+          <div id="dashDormantWrap"></div>
+        </div>
       </div>
-      <div class="card-bd">
-        <div class="help">Computed from existing roster data — no separate pull required. Click a company to open its record.</div>
-        <div id="dashAlertsWrap"></div>
+
+      <div class="card dash-card" data-card="cadence" draggable="true">
+        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Overdue to reorder</h3></div>
+        <div class="card-bd">
+          <div class="help">Compares each client against <em>their own</em> ordering rhythm, not a fixed threshold.</div>
+          <div id="dashCadenceWrap"></div>
+        </div>
+      </div>
+
+      <div class="card dash-card" data-card="tiermove" draggable="true">
+        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Tier movement</h3></div>
+        <div class="card-bd">
+          <div class="help">Score recomputed on last year\'s numbers vs this year\'s, to see who moved.</div>
+          <div id="dashTierMoveWrap"></div>
+        </div>
+      </div>
+
+      <div class="card dash-card" data-card="leaderboard" draggable="true">
+        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>AM Leaderboard</h3></div>
+        <div class="card-bd"><div id="leaderboardWrap"></div></div>
+      </div>
+
+      <div class="card dash-card w-full" data-card="amload" draggable="true">
+        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Account Manager workload</h3></div>
+        <div class="card-bd">
+          <div class="help">Client count, combined revenue, and tier mix per AM. "Needs review" counts clients with no explicit industry or AM set.</div>
+          <div id="dashAmWrap"></div>
+        </div>
+      </div>
+
+      <div class="card dash-card w-full" data-card="alerts" draggable="true">
+        <div class="card-hd"><span class="dash-grip">\u2237</span><h3>Alerts</h3></div>
+        <div class="card-bd">
+          <div class="help">Computed from existing roster data \u2014 no separate pull required. Click a company to open its record.</div>
+          <div id="dashAlertsWrap"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -5043,8 +5119,432 @@ function populateDashYearSelect() {
   }
 }
 
+// === Reports ================================================================
+
+// Roster-wide revenue per year. Deliberately ignores the Year filter — the whole
+// point of a trend is seeing every year at once.
+function renderRevTrend() {
+  const el = document.getElementById("dashRevTrendWrap");
+  if (!el) return;
+
+  const byYear = {};
+  state.synced.forEach(function(c) {
+    const rby = c.revenue_by_year;
+    if (!rby || typeof rby !== "object") return;
+    Object.keys(rby).forEach(function(y) {
+      const v = Number(rby[y]) || 0;
+      byYear[y] = (byYear[y] || 0) + v;
+    });
+  });
+
+  const years = Object.keys(byYear).filter(function(y) { return /^\d{4}$/.test(y); }).sort();
+  if (!years.length) {
+    el.innerHTML = '<div class="empty-state">No per-year revenue yet. Run a full Printavo reconcile to populate year buckets.</div>';
+    return;
+  }
+
+  const max = Math.max.apply(null, years.map(function(y) { return byYear[y]; })) || 1;
+  const thisYear = String(new Date().getFullYear());
+
+  el.innerHTML =
+    '<div class="rep-bars">' +
+      years.map(function(y) {
+        const v = byYear[y];
+        const h = Math.max(2, Math.round((v / max) * 118));
+        // The current year is partial by definition — dim it so a half-finished year
+        // isn't misread as a collapse in revenue.
+        const partial = y === thisYear;
+        return '<div class="rep-bar-col">' +
+          '<div class="rep-bar-val">' + fmtMoney(v) + '</div>' +
+          '<div class="rep-bar' + (partial ? " dim" : "") + '" style="height:' + h + 'px"></div>' +
+          '<div class="rep-bar-lbl">' + y + '</div>' +
+        '</div>';
+      }).join("") +
+    '</div>' +
+    (years.indexOf(thisYear) !== -1
+      ? '<div class="rep-legend">' + thisYear + ' is dimmed \u2014 it\'s still in progress, so it will look low until year end.</div>'
+      : '');
+}
+
+// Clients with real history who have stopped ordering. Ranked by revenue at stake,
+// because "who went quiet" only matters in proportion to what they were worth.
+function renderDormant() {
+  const el = document.getElementById("dashDormantWrap");
+  if (!el) return;
+
+  const rows = state.synced.map(function(c) {
+    return {
+      id: c.customer_id,
+      name: c.company_name,
+      rev: Number(c.total_revenue) || 0,
+      days: daysSince(c.last_invoice_date),
+      invoices: Number(c.invoice_count) || 0
+    };
+  }).filter(function(r) {
+    // Needs enough history to call it dormancy rather than "new and hasn't ordered yet".
+    return r.days != null && r.days >= 180 && r.rev > 0 && r.invoices >= 2;
+  }).sort(function(a, b) { return b.rev - a.rev; });
+
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty-state">Nobody with real history has gone quiet. Good sign.</div>';
+    return;
+  }
+
+  const atStake = rows.reduce(function(s, r) { return s + r.rev; }, 0);
+
+  el.innerHTML =
+    '<div style="font-size:12px;color:#6B7280;margin-bottom:10px">' +
+      '<b>' + fmtMoney(atStake) + '</b> of lifetime revenue across <b>' + rows.length + '</b> quiet accounts' +
+    '</div>' +
+    rows.slice(0, 12).map(function(r) {
+      const sev = r.days >= 540 ? "rep-red" : (r.days >= 365 ? "rep-amber" : "rep-gray");
+      const lbl = r.days >= 540 ? "cold" : (r.days >= 365 ? "1yr+" : "quiet");
+      return '<div class="rep-row">' +
+        '<div class="rep-name" data-open="' + r.id + '">' + r.name +
+          '<div class="rep-sub">' + Math.round(r.days / 30) + ' months since last order \u00b7 ' +
+            r.invoices + ' lifetime invoices</div>' +
+        '</div>' +
+        '<span class="rep-pill ' + sev + '">' + lbl + '</span>' +
+        '<div class="rep-val">' + fmtMoney(r.rev) + '</div>' +
+      '</div>';
+    }).join("") +
+    (rows.length > 12 ? '<div class="rep-legend">+ ' + (rows.length - 12) + ' more</div>' : '');
+
+  wireRepOpen(el);
+}
+
+// Overdue relative to the client's OWN cadence — a client who orders monthly being
+// 60 days quiet is a problem; a client who orders annually is not.
+function renderCadence() {
+  const el = document.getElementById("dashCadenceWrap");
+  if (!el) return;
+
+  const rows = state.synced.map(function(c) {
+    const gap = Number(c.median_gap_days);
+    const days = daysSince(c.last_invoice_date);
+    return {
+      id: c.customer_id,
+      name: c.company_name,
+      rev: Number(c.total_revenue) || 0,
+      gap: gap,
+      days: days,
+      // How many of their own cycles have elapsed since they last ordered.
+      overdue: (gap > 0 && days != null) ? days / gap : null
+    };
+  }).filter(function(r) {
+    // median_gap_days of exactly 0 is a same-day invoice-clustering artifact, not a
+    // real cadence — treat as unavailable rather than "orders every zero days".
+    return r.gap > 0 && r.overdue != null && r.overdue >= 1.5;
+  }).sort(function(a, b) {
+    // Sort by money at risk, weighted by how far past due — an overdue whale beats an
+    // overdue minnow that's technically later.
+    return (b.rev * b.overdue) - (a.rev * a.overdue);
+  });
+
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty-state">Nobody is meaningfully past their own reorder rhythm.<br/>' +
+      '<span style="font-size:11px">Needs <code>median_gap_days</code> from a Printavo reconcile.</span></div>';
+    return;
+  }
+
+  el.innerHTML = rows.slice(0, 12).map(function(r) {
+    const x = r.overdue;
+    const sev = x >= 3 ? "rep-red" : (x >= 2 ? "rep-amber" : "rep-gray");
+    return '<div class="rep-row">' +
+      '<div class="rep-name" data-open="' + r.id + '">' + r.name +
+        '<div class="rep-sub">orders every ~' + Math.round(r.gap) + 'd \u00b7 ' +
+          r.days + 'd since last</div>' +
+      '</div>' +
+      '<span class="rep-pill ' + sev + '">' + x.toFixed(1) + '\u00d7 late</span>' +
+      '<div class="rep-val">' + fmtMoney(r.rev) + '</div>' +
+    '</div>';
+  }).join("") +
+  (rows.length > 12 ? '<div class="rep-legend">+ ' + (rows.length - 12) + ' more</div>' : '');
+
+  wireRepOpen(el);
+}
+
+// Who moved tier. Recomputes each client's score on LAST year's numbers and on THIS
+// year's, then diffs the tier. This is a like-for-like comparison of the same scoring
+// model against two different years of data — not a stored history (BackBone doesn't
+// keep score snapshots, so real historical drift isn't available).
+function renderTierMove() {
+  const el = document.getElementById("dashTierMoveWrap");
+  if (!el) return;
+
+  const now = new Date().getFullYear();
+  const curY = String(now);
+  const prevY = String(now - 1);
+
+  const moves = [];
+  state.synced.forEach(function(c) {
+    const rby = c.revenue_by_year;
+    if (!rby || typeof rby !== "object") return;
+    if (rby[prevY] == null && rby[curY] == null) return;
+
+    const enr = state.enrichment[c.customer_id] || {};
+    const prev = computeScorecard(yearAdjustedCustomer(c, prevY).customer, enr);
+    const cur = computeScorecard(yearAdjustedCustomer(c, curY).customer, enr);
+    if (!prev || !cur || prev.tier === cur.tier) return;
+
+    const order = ["Valuable Dirt", "Bronze", "Silver", "Gold", "Platinum"];
+    const dir = order.indexOf(cur.tier) - order.indexOf(prev.tier);
+    if (dir === 0) return;
+    moves.push({
+      id: c.customer_id, name: c.company_name,
+      from: prev.tier, to: cur.tier, dir: dir,
+      rev: Number(rby[curY] || 0)
+    });
+  });
+
+  if (!moves.length) {
+    el.innerHTML = '<div class="empty-state">No tier changes between ' + prevY + ' and ' + curY + '.<br/>' +
+      '<span style="font-size:11px">Needs per-year revenue \u2014 run a Printavo reconcile if this looks wrong.</span></div>';
+    return;
+  }
+
+  // Drops first: a Platinum sliding to Gold is the thing you want to catch.
+  moves.sort(function(a, b) {
+    if ((a.dir < 0) !== (b.dir < 0)) return a.dir < 0 ? -1 : 1;
+    return Math.abs(b.dir) - Math.abs(a.dir);
+  });
+
+  const down = moves.filter(function(m) { return m.dir < 0; }).length;
+  const up = moves.length - down;
+
+  el.innerHTML =
+    '<div style="font-size:12px;color:#6B7280;margin-bottom:10px">' +
+      '<span style="color:#B91C1C;font-weight:700">\u2193 ' + down + '</span> down \u00b7 ' +
+      '<span style="color:#1F6B3D;font-weight:700">\u2191 ' + up + '</span> up \u00b7 ' +
+      prevY + ' \u2192 ' + curY +
+    '</div>' +
+    moves.slice(0, 12).map(function(m) {
+      return '<div class="rep-row">' +
+        '<div class="rep-name" data-open="' + m.id + '">' + m.name +
+          '<div class="rep-sub">' + m.from + ' \u2192 ' + m.to + '</div>' +
+        '</div>' +
+        '<span class="rep-delta ' + (m.dir < 0 ? "rep-dn" : "rep-up") + '">' +
+          (m.dir < 0 ? "\u2193" : "\u2191") + Math.abs(m.dir) +
+        '</span>' +
+      '</div>';
+    }).join("") +
+    (moves.length > 12 ? '<div class="rep-legend">+ ' + (moves.length - 12) + ' more</div>' : '') +
+    '<div class="rep-legend">Same scoring model applied to each year\'s numbers \u2014 not a stored history.</div>';
+
+  wireRepOpen(el);
+}
+
+// Report rows link back to the client record; without this they'd be a dead end.
+function wireRepOpen(el) {
+  el.querySelectorAll("[data-open]").forEach(function(n) {
+    n.addEventListener("click", function() {
+      if (typeof openDetail === "function") openDetail(n.dataset.open);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard layout: drag to reorder, toggle width, hide cards.
+//
+// Persisted to localStorage, NOT to Upstash. Layout is a personal preference —
+// if it went in backbone_settings, Megan rearranging her dashboard would rearrange
+// everyone else's. (Tab visibility IS shared, deliberately; that's an admin control.)
+// ---------------------------------------------------------------------------
+const DASH_LAYOUT_KEY = "backbone_dash_layout_v1";
+
+const DASH_CARD_NAMES = {
+  concentration: "Revenue concentration",
+  revtrend: "Revenue trend",
+  dormant: "Dormant & at risk",
+  cadence: "Overdue to reorder",
+  tiermove: "Tier movement",
+  leaderboard: "AM Leaderboard",
+  amload: "AM workload",
+  alerts: "Alerts"
+};
+
+function loadDashLayout() {
+  try {
+    const raw = localStorage.getItem(DASH_LAYOUT_KEY);
+    if (!raw) return { order: [], wide: {}, hidden: {} };
+    const p = JSON.parse(raw);
+    return {
+      order: Array.isArray(p.order) ? p.order : [],
+      wide: p.wide && typeof p.wide === "object" ? p.wide : {},
+      hidden: p.hidden && typeof p.hidden === "object" ? p.hidden : {}
+    };
+  } catch (e) {
+    return { order: [], wide: {}, hidden: {} };
+  }
+}
+
+function saveDashLayout(l) {
+  try { localStorage.setItem(DASH_LAYOUT_KEY, JSON.stringify(l)); } catch (e) {}
+}
+
+function applyDashLayout() {
+  const grid = document.getElementById("dashGrid");
+  if (!grid) return;
+  const l = loadDashLayout();
+  const cards = Array.from(grid.querySelectorAll(".dash-card"));
+
+  // Apply saved order. Cards added in a future release won't be in the saved order,
+  // so they keep their markup position at the end rather than disappearing.
+  if (l.order.length) {
+    l.order.forEach(function(id) {
+      const el = cards.find(function(c) { return c.dataset.card === id; });
+      if (el) grid.appendChild(el);
+    });
+    cards.forEach(function(c) {
+      if (l.order.indexOf(c.dataset.card) === -1) grid.appendChild(c);
+    });
+  }
+
+  cards.forEach(function(c) {
+    const id = c.dataset.card;
+    // `wide` only stores DEVIATIONS from each card's default width, so a card that
+    // ships full-width stays full-width unless the user narrowed it themselves.
+    const defaultWide = c.classList.contains("w-full");
+    const wide = (l.wide[id] === undefined) ? defaultWide : !!l.wide[id];
+    c.classList.toggle("w-full", wide);
+    c.classList.toggle("is-hidden", !!l.hidden[id]);
+  });
+
+  renderDashTools();
+  renderHiddenChips();
+}
+
+function currentDashOrder() {
+  const grid = document.getElementById("dashGrid");
+  return Array.from(grid.querySelectorAll(".dash-card")).map(function(c) { return c.dataset.card; });
+}
+
+function persistDashLayout() {
+  const grid = document.getElementById("dashGrid");
+  const l = loadDashLayout();
+  l.order = currentDashOrder();
+  Array.from(grid.querySelectorAll(".dash-card")).forEach(function(c) {
+    l.wide[c.dataset.card] = c.classList.contains("w-full");
+    l.hidden[c.dataset.card] = c.classList.contains("is-hidden");
+  });
+  saveDashLayout(l);
+}
+
+// Width + hide buttons, injected into each card header.
+function renderDashTools() {
+  const grid = document.getElementById("dashGrid");
+  if (!grid) return;
+  grid.querySelectorAll(".dash-card").forEach(function(c) {
+    const hd = c.querySelector(".card-hd");
+    if (!hd) return;
+    let tools = hd.querySelector(".dash-tools");
+    if (!tools) {
+      tools = document.createElement("div");
+      tools.className = "dash-tools";
+      hd.appendChild(tools);
+    }
+    const wide = c.classList.contains("w-full");
+    tools.innerHTML =
+      '<button class="dash-tool" data-act="width" title="' +
+        (wide ? "Make half width" : "Make full width") + '">' + (wide ? "\u25AB" : "\u25AC") + '</button>' +
+      '<button class="dash-tool" data-act="hide" title="Hide this card">\u2715</button>';
+
+    tools.querySelectorAll(".dash-tool").forEach(function(b) {
+      b.addEventListener("click", function(ev) {
+        ev.stopPropagation();
+        if (b.dataset.act === "width") c.classList.toggle("w-full");
+        else c.classList.add("is-hidden");
+        persistDashLayout();
+        renderDashTools();
+        renderHiddenChips();
+      });
+    });
+  });
+}
+
+// Hidden cards become chips in the toolbar — the only way back, so they must be visible.
+function renderHiddenChips() {
+  const wrap = document.getElementById("dashHiddenList");
+  const grid = document.getElementById("dashGrid");
+  if (!wrap || !grid) return;
+  const hidden = Array.from(grid.querySelectorAll(".dash-card.is-hidden"));
+  wrap.innerHTML = hidden.length
+    ? '<span style="font-size:11px;color:#C3C9D0;margin-right:2px">Hidden:</span>' +
+      hidden.map(function(c) {
+        return '<button class="dash-chip" data-show="' + c.dataset.card + '">+ ' +
+          (DASH_CARD_NAMES[c.dataset.card] || c.dataset.card) + '</button>';
+      }).join("")
+    : "";
+  wrap.querySelectorAll("[data-show]").forEach(function(b) {
+    b.addEventListener("click", function() {
+      const c = grid.querySelector('[data-card="' + b.dataset.show + '"]');
+      if (c) c.classList.remove("is-hidden");
+      persistDashLayout();
+      renderDashTools();
+      renderHiddenChips();
+    });
+  });
+}
+
+let dashDragEl = null;
+
+function initDashDrag() {
+  const grid = document.getElementById("dashGrid");
+  if (!grid || grid.dataset.dragInit) return;
+  grid.dataset.dragInit = "1";
+
+  grid.addEventListener("dragstart", function(e) {
+    const card = e.target.closest(".dash-card");
+    if (!card) return;
+    // Only start a drag from the header. Without this, selecting text inside a card
+    // or dragging a link would pick the whole card up.
+    if (!e.target.closest(".card-hd")) { e.preventDefault(); return; }
+    dashDragEl = card;
+    card.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    try { e.dataTransfer.setData("text/plain", card.dataset.card); } catch (err) {}
+  });
+
+  grid.addEventListener("dragend", function() {
+    if (dashDragEl) dashDragEl.classList.remove("dragging");
+    grid.querySelectorAll(".drag-over").forEach(function(c) { c.classList.remove("drag-over"); });
+    dashDragEl = null;
+    persistDashLayout();
+  });
+
+  grid.addEventListener("dragover", function(e) {
+    e.preventDefault();
+    const over = e.target.closest(".dash-card");
+    if (!over || !dashDragEl || over === dashDragEl) return;
+    grid.querySelectorAll(".drag-over").forEach(function(c) { c.classList.remove("drag-over"); });
+    over.classList.add("drag-over");
+
+    // Insert before or after depending on which half of the target we're over.
+    const r = over.getBoundingClientRect();
+    const after = (e.clientY - r.top) > r.height / 2;
+    grid.insertBefore(dashDragEl, after ? over.nextSibling : over);
+  });
+
+  grid.addEventListener("drop", function(e) { e.preventDefault(); });
+
+  const reset = document.getElementById("dashResetLayout");
+  if (reset) {
+    reset.addEventListener("click", function() {
+      try { localStorage.removeItem(DASH_LAYOUT_KEY); } catch (err) {}
+      location.reload();
+    });
+  }
+}
+
 function renderDashboard() {
   populateDashYearSelect();
+  applyDashLayout();
+  initDashDrag();
+  renderLeaderboard();
+  renderRevTrend();
+  renderDormant();
+  renderCadence();
+  renderTierMove();
   const rows = getDashboardData();
   if (rows.length === 0) {
     document.getElementById("dashPortfolioKpiGrid").innerHTML = "";
@@ -6019,7 +6519,15 @@ async function emailSelectedLeadsToAMSafe() {
 
 // Most mail clients (notably Outlook) silently refuse to open a mailto: past ~2000 chars.
 // That failure is invisible — the click just does nothing — so we hard-cap the URL length.
-const MAILTO_MAX = 1900;
+// Cap is measured on the PERCENT-ENCODED href, not the raw body — and encoding inflates
+// text by ~1.6x. Newlines become %0A, spaces %20, and every non-ASCII char explodes:
+// a single "★" costs NINE characters (%E2%98%85). A 1300-char body can encode past 2000.
+// That's what was silently dumping full emails down to the compact fallback.
+//
+// 1900 was an over-cautious guess of mine. Outlook's real ceiling is ~2083 (the legacy
+// IE URL limit); modern clients take much more. 5000 is safe in practice and gives the
+// body room to carry the contact block, which is the whole point of the email.
+const MAILTO_MAX = 5000;
 
 // Cache of generated brief URLs, keyed by lead_id. Survives for the session so
 // re-opening a draft doesn't regenerate (and re-upload) an identical brief.
@@ -6073,10 +6581,13 @@ async function generateBrief(lead, am) {
 }
 
 // Star rating out of 5 from the /50 score — a fast visual the AM reads before any words.
+// ASCII, deliberately. The Unicode stars looked good but cost 9 encoded chars EACH —
+// 45 characters of the mailto budget for decoration, which pushed real content (the
+// contacts) out of the email entirely. Brackets survive every mail client and cost 1.
 function scoreStars(score) {
   if (typeof score !== "number") return "";
   const filled = Math.max(1, Math.round(score / 10));
-  return "\u2605".repeat(filled) + "\u2606".repeat(5 - filled);
+  return "[" + "*".repeat(filled) + ".".repeat(5 - filled) + "]";
 }
 
 function buildLeadMailto(am, leads) {
@@ -6135,13 +6646,13 @@ function buildLeadMailto(am, leads) {
       // Separator only between leads, not before the first.
       if (i > 0) {
         parts.push("");
-        parts.push("\u2500".repeat(34));
+        parts.push("-".repeat(34));
         parts.push("");
       }
 
       // Headline: stars + name, then the score line.
       parts.push((score != null ? scoreStars(score) + "  " : "") + l.company_name.toUpperCase());
-      if (score != null) parts.push(score + "/50 \u00b7 " + tier);
+      if (score != null) parts.push(score + "/50 | " + tier);
       parts.push("");
 
       // THE LINK — first thing after the headline.
@@ -6179,8 +6690,8 @@ function buildLeadMailto(am, leads) {
         parts.push("WHO TO CONTACT");
         people.slice(0, 3).forEach(function(p, n) {
           parts.push("  " + (n + 1) + ". " + (p.name || "Name not public") +
-            (p.title ? " \u2014 " + p.title : ""));
-          parts.push("     Email: " + (p.email || "\u26A0 not found \u2014 needs manual lookup"));
+            (p.title ? " - " + p.title : ""));
+          parts.push("     Email: " + (p.email || "!! NOT FOUND - needs manual lookup"));
           if (p.phone) parts.push("     Phone: " + p.phone);
           if (p.relevance) parts.push("     " + p.relevance);
           if (n < Math.min(people.length, 3) - 1) parts.push("");
@@ -6190,14 +6701,14 @@ function buildLeadMailto(am, leads) {
           parts.push("");
           parts.push("  Also: " + rest.map(function(p) {
             return (p.name || "?") + (p.title ? " (" + p.title + ")" : "");
-          }).join(", ") + " \u2014 details in the full brief.");
+          }).join(", ") + " - details in the full brief.");
         }
         parts.push("");
       } else {
         // Loud on purpose. An empty contact block silently shipping to an AM is worse
         // than an obvious warning — they'd assume the lead simply has no people yet.
         parts.push("WHO TO CONTACT");
-        parts.push("  \u26A0 NO CONTACTS ON THIS LEAD.");
+        parts.push("  !! NO CONTACTS ON THIS LEAD.");
         parts.push("  Nothing was captured during qualification \u2014 this one needs a");
         parts.push("  manual lookup before you can reach out.");
         parts.push("");
@@ -6221,7 +6732,7 @@ function buildLeadMailto(am, leads) {
       parts.push("");
     }
 
-    parts.push("\u2014 Sent from BackBone");
+    parts.push("-- Sent from BackBone");
     return parts.join("\n");
   }
 
@@ -6759,7 +7270,6 @@ function renderLeadsPage() {
       '<div class="kpi"><div class="kpi-lbl">Won</div><div class="kpi-val">' + won + '</div></div>';
   }
 
-  renderLeaderboard();
   renderLeadsFunnel();
 
   const wrap = document.getElementById("leadsTableWrap");
