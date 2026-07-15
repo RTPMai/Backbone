@@ -562,6 +562,74 @@ export default async function handler(req, res) {
     }
 
     // =====================================================================
+    // PROBE-HISTORY — read-only schema probe. Answers one question: does Printavo
+    // expose a per-quote status-change history with timestamps? That's the only way
+    // to count "art declined N times THIS YEAR" (an event count) rather than
+    // "N quotes are declined right now" (a snapshot). We DON'T guess field names —
+    // we introspect the Quote type and report any timeline/history/activity/audit-
+    // shaped fields we find, plus a peek at their sub-fields, so we can decide
+    // whether a true YTD decline count is even buildable.
+    // =====================================================================
+    if (mode === "probe-history") {
+      const out = { ok: true, mode: "probe-history", quoteTypeFound: false, candidates: [], statusFieldShape: null, notes: [] };
+
+      // Fetch Quote type fields.
+      let quoteFields = [];
+      try {
+        const d = await gql(`query{__type(name:"Quote"){fields{name type{name kind ofType{name kind ofType{name kind}}}}}}`);
+        if (d.__type && d.__type.fields) { out.quoteTypeFound = true; quoteFields = d.__type.fields; }
+      } catch (e) { out.notes.push("Quote introspection failed: " + e.message); }
+
+      // Heuristic: field names that tend to carry status history / audit trails.
+      const rx = /(histor|timeline|activit|event|log|audit|transition|change|status_?updates?)/i;
+      function unwrap(t) {
+        // climb ofType chain to the concrete named type
+        let cur = t, name = null, kind = null, depth = 0;
+        while (cur && depth < 5) { if (cur.name) { name = cur.name; kind = cur.kind; } cur = cur.ofType; depth++; }
+        return { name, kind };
+      }
+      for (const f of quoteFields) {
+        if (rx.test(f.name)) {
+          const u = unwrap(f.type);
+          out.candidates.push({ field: f.name, typeName: u.name, typeKind: u.kind });
+        }
+      }
+
+      // For each candidate that resolves to an object/connection type, peek one level
+      // in to see if it carries a status name + a timestamp (which is what we'd need).
+      for (const c of out.candidates.slice(0, 4)) {
+        if (!c.typeName) continue;
+        try {
+          await rlPause();
+          const d = await gql(`query{__type(name:"${c.typeName}"){kind fields{name type{name kind ofType{name kind}}}}}`);
+          if (d.__type) {
+            const subs = (d.__type.fields || []).map(sf => sf.name);
+            c.subFields = subs;
+            c.looksUsable = /(status|state|name)/i.test(subs.join(" ")) &&
+                            /(at|date|time|timestamp|created|changed|updated)/i.test(subs.join(" "));
+            // Connections wrap real nodes in edges{node{...}} — note that so we know to dig further.
+            if (subs.includes("nodes") || subs.includes("edges")) c.isConnection = true;
+          }
+        } catch (e) { c.probeError = e.message; }
+      }
+
+      // Also report the Quote.status field's own shape, in case history lives there.
+      const statusField = quoteFields.find(f => f.name === "status");
+      if (statusField) {
+        const u = unwrap(statusField.type);
+        out.statusFieldShape = { typeName: u.name, typeKind: u.kind };
+      }
+
+      if (!out.candidates.length) {
+        out.notes.push("No history/timeline/activity-shaped fields on Quote. A true YTD decline COUNT likely isn't available from the quote schema; Option B (BackBone diffs snapshots over time) would be the fallback.");
+      } else {
+        out.notes.push("Candidate history fields found — check 'looksUsable' and 'subFields' to confirm one carries both a status and a timestamp before building the YTD count.");
+      }
+      return res.status(200).json(out);
+    }
+
+
+    // =====================================================================
     // INCREMENTAL — pull only invoices created after the high-water mark.
     // =====================================================================
     if (mode === "incremental") {
@@ -959,150 +1027,199 @@ export default async function handler(req, res) {
       const nowIso = new Date().toISOString();
       const yearStart = new Date().getFullYear() + "-01-01";
       const weekAgoIso = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+      const curYear = String(new Date().getFullYear());
 
       const qMeta = await resolveQuotesMeta();
       const QUOTE_FIELDS = quoteFieldSelection();
       await rlPause();
 
-      // Per-customer workload tally: { customer_id: { company, quotes, inProgress, onHold } }
-      const workloadByCustomer = {};
-      let quotesThisWeek = 0;
-      let artDeclinedYtd = 0;
-      let quotesScanned = 0;
+      // Resumable accumulator. The whole ops pull (all quotes + all current-year
+      // invoices) can exceed one function's time budget, so we persist progress to
+      // backbone_ops_partial and continue across calls (same pattern as reconcile).
+      // Phase order: "quotes" -> "invoices" -> done. Each call does as much as it can
+      // within the deadline, saves, and hands back a nextUrl to continue.
+      let acc = (await kvGet("backbone_ops_partial")) || null;
+      // ?fresh=1 forces a clean restart (ignore any stale partial).
+      if (req.query.fresh === "1" || req.query.fresh === "true") acc = null;
+      if (!acc) {
+        acc = {
+          phase: "quotes",
+          cursor: null,
+          workloadByCustomer: {},
+          quotesThisWeek: 0,
+          artDeclinedYtd: 0,
+          quotesScanned: 0,
+          quotePages: 0,
+          // Live "currently in status" counts (#3) — snapshot, all-time, no date filter.
+          currentArtDeclined: 0,
+          currentQuoteDeclined: 0,
+          outstanding: [],
+          salesByMonth: {},
+          seenOutstanding: [],   // invoice ids already booked, so resume can't double-count
+          invoicePages: 0,
+          startedAt: nowIso,
+        };
+      }
+      // Resume cursor may also be supplied explicitly on the URL.
+      if (resumeCursor) acc.cursor = resumeCursor;
 
-      // Page quotes newest-first. We only need OPEN workload + recent + YTD art
-      // declines, so we can stop once quotes get older than the current year AND
-      // older than a week — anything past that can't contribute to any counter.
-      let cursor = resumeCursor;
-      let pages = 0;
-      const deadline = Date.now() + 240000;
-      const descQ = qMeta.hasSortDescending ? ",sortDescending:true" : "";
-      let reachedOld = false;
+      const deadline = Date.now() + 230000; // leave headroom under Vercel's 300s cap
+      const seenSet = new Set(acc.seenOutstanding || []);
 
-      do {
-        const after = cursor ? `,after:"${cursor}"` : "";
-        const data = await gql(
-          `query{quotes(first:25,sortOn:${qMeta.sortOn}${descQ}${after}){${QUOTE_FIELDS}}}`
-        );
-        const nodes = (data.quotes && data.quotes.nodes) || [];
-        for (const q of nodes) {
-          quotesScanned++;
-          const statusName = q.status && q.status.name;
-          const grp = groupForStatus(statusName);
-          const created = q.createdAt || "";
-
-          // Workload buckets: count every open quote regardless of age — an
-          // on-hold order from last year is still on someone's plate today.
-          if (grp) {
-            const cust = quoteCustomer(q);
-            const key = cust.id || "unassigned";
-            if (!workloadByCustomer[key]) {
-              workloadByCustomer[key] = { customer_id: cust.id, company_name: cust.name, quotes: 0, inProgress: 0, onHold: 0 };
+      // ---------- PHASE 1: quotes (workload + this-week + art declines) ----------
+      if (acc.phase === "quotes") {
+        const descQ = qMeta.hasSortDescending ? ",sortDescending:true" : "";
+        let cursor = acc.cursor;
+        do {
+          const after = cursor ? `,after:"${cursor}"` : "";
+          const data = await gql(
+            `query{quotes(first:25,sortOn:${qMeta.sortOn}${descQ}${after}){${QUOTE_FIELDS}}}`
+          );
+          const nodes = (data.quotes && data.quotes.nodes) || [];
+          for (const q of nodes) {
+            acc.quotesScanned++;
+            const statusName = q.status && q.status.name;
+            const grp = groupForStatus(statusName);
+            const created = q.createdAt || "";
+            if (grp) {
+              const cust = quoteCustomer(q);
+              const key = cust.id || "unassigned";
+              if (!acc.workloadByCustomer[key]) {
+                acc.workloadByCustomer[key] = { customer_id: cust.id, company_name: cust.name, quotes: 0, inProgress: 0, onHold: 0 };
+              }
+              acc.workloadByCustomer[key][grp]++;
             }
-            workloadByCustomer[key][grp]++;
+            if (created && created >= weekAgoIso) acc.quotesThisWeek++;
+            if (created && created >= yearStart && normStatus(statusName) === normArtDeclined) acc.artDeclinedYtd++;
+            // Live snapshot counts (#3): what's sitting in a declined status right now,
+            // regardless of when the quote was created. QUOTE DECLINED and ART DECLINED
+            // are distinct states in Printavo, so we track them separately.
+            const ns = normStatus(statusName);
+            if (ns === normArtDeclined) acc.currentArtDeclined++;
+            if (ns === normStatus("QUOTE DECLINED")) acc.currentQuoteDeclined++;
           }
+          cursor = (data.quotes && data.quotes.pageInfo && data.quotes.pageInfo.hasNextPage)
+            ? data.quotes.pageInfo.endCursor : null;
+          acc.quotePages++;
+          acc.cursor = cursor;
+          if (cursor) await new Promise(r => setTimeout(r, 1200));
+        } while (cursor && Date.now() < deadline);
 
-          if (created && created >= weekAgoIso) quotesThisWeek++;
-          if (created && created >= yearStart && normStatus(statusName) === normArtDeclined) artDeclinedYtd++;
-
-          // Track whether we've paged past everything that could still matter.
-          if (created && created < yearStart && created < weekAgoIso) reachedOld = true;
+        if (acc.cursor) {
+          // Ran out of time mid-quotes. Save and ask to continue.
+          await kvSet("backbone_ops_partial", acc);
+          return res.status(200).json({
+            ok: true, mode: "ops", status: "partial", phase: "quotes",
+            quotesScanned: acc.quotesScanned, quotePages: acc.quotePages,
+            nextUrl: `/api/printavo-sync?mode=ops&secret=${encodeURIComponent(secret)}`,
+          });
         }
-        cursor = (data.quotes && data.quotes.pageInfo && data.quotes.pageInfo.hasNextPage)
-          ? data.quotes.pageInfo.endCursor : null;
-        pages++;
-        // Stop early only if we're sorting newest-first AND have clearly reached
-        // pre-year quotes — otherwise page the whole set to be safe.
-        if (qMeta.hasSortDescending && reachedOld) cursor = null;
-        if (cursor) await new Promise(r => setTimeout(r, 1200));
-      } while (cursor && Date.now() < deadline);
+        // Quotes done — advance to invoices phase.
+        acc.phase = "invoices";
+        acc.cursor = null;
+        await kvSet("backbone_ops_partial", acc);
+      }
 
-      const quotesPartial = !!cursor;
-
-      // ---- Outstanding invoices (amountOutstanding > 0) + sales-by-month (YTD paid)
-      // Reuse the invoice field selection which already includes amountOutstanding.
-      await rlPause();
-      const outstanding = [];
-      const salesByMonth = {}; // "YYYY-MM" -> paid revenue (current year)
-      const curYear = String(new Date().getFullYear());
-      let invCursor = null;
-      let invPages = 0;
-      const invDeadline = Date.now() + 120000;
-      // Current-year invoices only: use inProductionAfter if available, else filter client-side.
-      const ytdDateArg = argPlan.hasInProductionAfter ? `,inProductionAfter:"${yearStart}"` : "";
-      const descI = argPlan.hasSortDescending ? ",sortDescending:true" : "";
-      do {
-        const after = invCursor ? `,after:"${invCursor}"` : "";
-        const data = await gql(
-          `query{invoices(first:25,sortOn:${sortPlan.sortOn}${descI}${ytdDateArg}${after}){${GQL_FIELDS}}}`
-        );
-        const nodes = (data.invoices && data.invoices.nodes) || [];
-        for (const inv of nodes) {
-          const created = inv.createdAt || "";
-          const out = Number(inv.amountOutstanding) || 0;
-          const total = Number(inv.total) || 0;
-          if (out > 0.009) {
-            const cust = quoteCustomer(inv); // same link shape as quotes
-            outstanding.push({
-              id: inv.id,
-              visualId: inv.visualId || null,
-              company_name: cust.name,
-              customer_id: cust.id,
-              amount: Math.round(out * 100) / 100,
-              total: Math.round(total * 100) / 100,
-              status: inv.status && inv.status.name,
-              createdAt: created || null,
-            });
-          }
-          // Sales-by-month: paid portion (total - outstanding) booked to createdAt month, this year.
-          if (created && created.slice(0, 4) === curYear) {
-            const paid = Math.max(0, total - out);
-            if (paid > 0) {
-              const mk = created.slice(0, 7);
-              salesByMonth[mk] = (salesByMonth[mk] || 0) + paid;
+      // ---------- PHASE 2: current-year invoices (outstanding + sales-by-month) ----------
+      if (acc.phase === "invoices") {
+        const descI = argPlan.hasSortDescending ? ",sortDescending:true" : "";
+        const ytdDateArg = argPlan.hasInProductionAfter ? `,inProductionAfter:"${yearStart}"` : "";
+        let invCursor = acc.cursor;
+        do {
+          const after = invCursor ? `,after:"${invCursor}"` : "";
+          const data = await gql(
+            `query{invoices(first:25,sortOn:${sortPlan.sortOn}${descI}${ytdDateArg}${after}){${GQL_FIELDS}}}`
+          );
+          const nodes = (data.invoices && data.invoices.nodes) || [];
+          for (const inv of nodes) {
+            if (seenSet.has(inv.id)) continue; // dedupe across resumes
+            seenSet.add(inv.id);
+            const created = inv.createdAt || "";
+            const out = Number(inv.amountOutstanding) || 0;
+            const total = Number(inv.total) || 0;
+            if (out > 0.009) {
+              const cust = quoteCustomer(inv);
+              acc.outstanding.push({
+                id: inv.id, visualId: inv.visualId || null,
+                company_name: cust.name, customer_id: cust.id,
+                amount: Math.round(out * 100) / 100,
+                total: Math.round(total * 100) / 100,
+                status: inv.status && inv.status.name,
+                createdAt: created || null,
+              });
+            }
+            if (created && created.slice(0, 4) === curYear) {
+              const paid = Math.max(0, total - out);
+              if (paid > 0) {
+                const mk = created.slice(0, 7);
+                acc.salesByMonth[mk] = (acc.salesByMonth[mk] || 0) + paid;
+              }
             }
           }
-        }
-        invCursor = (data.invoices && data.invoices.pageInfo && data.invoices.pageInfo.hasNextPage)
-          ? data.invoices.pageInfo.endCursor : null;
-        invPages++;
-        if (invCursor) await new Promise(r => setTimeout(r, 1200));
-      } while (invCursor && Date.now() < invDeadline);
+          invCursor = (data.invoices && data.invoices.pageInfo && data.invoices.pageInfo.hasNextPage)
+            ? data.invoices.pageInfo.endCursor : null;
+          acc.invoicePages++;
+          acc.cursor = invCursor;
+          if (invCursor) await new Promise(r => setTimeout(r, 1200));
+        } while (invCursor && Date.now() < deadline);
 
-      Object.keys(salesByMonth).forEach(function (m) {
-        salesByMonth[m] = Math.round(salesByMonth[m] * 100) / 100;
+        acc.seenOutstanding = Array.from(seenSet);
+
+        if (acc.cursor) {
+          // Ran out of time mid-invoices. Save and ask to continue.
+          await kvSet("backbone_ops_partial", acc);
+          return res.status(200).json({
+            ok: true, mode: "ops", status: "partial", phase: "invoices",
+            invoicePages: acc.invoicePages, outstandingSoFar: acc.outstanding.length,
+            nextUrl: `/api/printavo-sync?mode=ops&secret=${encodeURIComponent(secret)}`,
+          });
+        }
+      }
+
+      // ---------- Finalize: everything paged, write the real key, clear partial ----------
+      const salesByMonth = {};
+      Object.keys(acc.salesByMonth).forEach(function (m) {
+        salesByMonth[m] = Math.round(acc.salesByMonth[m] * 100) / 100;
       });
-      outstanding.sort(function (a, b) { return b.amount - a.amount; });
+      const outstanding = acc.outstanding.slice().sort(function (a, b) { return b.amount - a.amount; });
       const outstandingTotal = outstanding.reduce(function (s, r) { return s + r.amount; }, 0);
 
       const opsPayload = {
         generatedAt: nowIso,
-        buildVersion: "ops-v1",
-        quotesThisWeek,
-        artDeclinedYtd,
+        buildVersion: "ops-v2-resumable",
+        quotesThisWeek: acc.quotesThisWeek,
+        artDeclinedYtd: acc.artDeclinedYtd,
+        // #3 live snapshot: quotes currently sitting in each declined status (all-time).
+        currentArtDeclined: acc.currentArtDeclined,
+        currentQuoteDeclined: acc.currentQuoteDeclined,
         outstanding,
         outstandingTotal: Math.round(outstandingTotal * 100) / 100,
         salesByMonth,
-        workload: Object.values(workloadByCustomer),
+        workload: Object.values(acc.workloadByCustomer),
         statusGroups: WORKLOAD_STATUS_GROUPS,
         diagnostics: {
-          quotesScanned, quotePages: pages, invoicePages: invPages,
-          quotesPartial, invoicePartial: !!invCursor,
+          quotesScanned: acc.quotesScanned, quotePages: acc.quotePages,
+          invoicePages: acc.invoicePages,
           quotesSort: qMeta.sortOn, quotesHasDesc: qMeta.hasSortDescending,
+          quotesArtDeclineStatusMatched: acc.artDeclinedYtd > 0,
         },
       };
 
       await kvSet("backbone_printavo_ops", opsPayload);
+      await kvSet("backbone_ops_partial", null); // clear resume state
 
       return res.status(200).json({
-        ok: true, mode: "ops", status: (quotesPartial || invCursor) ? "partial" : "done",
-        quotesThisWeek, artDeclinedYtd,
+        ok: true, mode: "ops", status: "done",
+        quotesThisWeek: opsPayload.quotesThisWeek,
+        artDeclinedYtd: opsPayload.artDeclinedYtd,
+        currentArtDeclined: opsPayload.currentArtDeclined,
+        currentQuoteDeclined: opsPayload.currentQuoteDeclined,
         outstandingCount: outstanding.length,
         outstandingTotal: opsPayload.outstandingTotal,
         workloadCustomers: opsPayload.workload.length,
         salesMonths: Object.keys(salesByMonth).length,
         diagnostics: opsPayload.diagnostics,
-        nextUrl: quotesPartial ? `/api/printavo-sync?mode=ops&cursor=${encodeURIComponent(cursor)}` : null,
+        nextUrl: null,
       });
     }
 
