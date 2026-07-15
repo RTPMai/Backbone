@@ -6307,7 +6307,8 @@ function renderDashboard() {
     // doesn't expose decline history — see the probe-history note).
     (opsData && opsData.available ?
       '<div class="kpi"><div class="kpi-lbl">New quotes this week</div><div class="kpi-val">' + (opsData.quotesThisWeek || 0) + '</div><div class="kpi-s">created in last 7 days</div></div>' +
-      '<div class="kpi"><div class="kpi-lbl">Art declined (open)</div><div class="kpi-val">' + (opsData.currentArtDeclined || 0) + '</div><div class="kpi-s">in ART DECLINED now</div></div>'
+      '<div class="kpi"><div class="kpi-lbl">Art declines YTD</div><div class="kpi-val">' + (opsData.artDeclineEventsYtd || 0) + '</div><div class="kpi-s">' +
+        (opsData.declineTrackingSeeded ? 'tracking just started' : (opsData.currentArtDeclined || 0) + ' open now') + '</div></div>'
       : '');
 
   // --- Top 10 clients: share of total revenue, expandable to full list ---
