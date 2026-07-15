@@ -829,7 +829,284 @@ export default async function handler(req, res) {
       });
     }
 
-    return res.status(400).json({ error: "Invalid mode. Use: incremental, reconcile" });
+    // =====================================================================
+    // OPS — quote/invoice operational slice for the Dashboard.
+    //
+    // Writes a SEPARATE key (backbone_printavo_ops) so it can never corrupt the
+    // roster aggregates in backbone_data. Captures the four Printavo-native
+    // dashboard metrics that customer-level reconcile can't:
+    //   1. outstanding      — open invoices with amountOutstanding > 0
+    //   2. quotesThisWeek   — quotes created in the last 7 days
+    //   3. artDeclinedYtd   — count of quotes whose status is "Art Declined", this year
+    //   4. amWorkload        — every open quote bucketed into Quotes / In-Progress /
+    //                          On-Hold by status name, mapped to owning customer_id
+    //                          (the frontend joins that to an AM via enrichment)
+    //   5. salesByMonth      — paid invoice revenue per month, current year (YTD-vs-goal chart)
+    //
+    // Like the rest of this file, it introspects the `quotes` query rather than
+    // guessing field/arg names — the quotes type is not identical to invoices.
+    // =====================================================================
+    if (mode === "ops") {
+      // The 22 workload statuses, grouped. Compared case-insensitively and with
+      // punctuation/whitespace normalized, because Printavo status strings carry
+      // emoji, stray spaces, and inconsistent hyphenation ("REVISED ART- APPROVAL").
+      const WORKLOAD_STATUS_GROUPS = {
+        quotes: [
+          "QUOTE",
+          "QUOTE APPROVAL SENT",
+          "QUOTE APPROVAL SENT - MANUALLY",
+          "QUOTE APPROVAL SENT - 2ND ATTEMPT",
+          "REVISED - QUOTE APPROVAL SENT",
+          "REMIND ME",
+          "REMIND THEM",
+          "QUOTE DECLINED",
+        ],
+        inProgress: [
+          "QUOTE APPROVED - AWAITING 50% DEPOSIT",
+          "QUOTE APPROVED - DEPOSIT PAID OR TERMS",
+          "ART START",
+          "ART APPROVAL SENT",
+          "ART DECLINED",
+          "REVISED ART- APPROVAL SENT",
+          "ART APPROVAL SENT - MANUALLY",
+          "SENT TO DIGITIZING",
+          "ART APPROVED",
+          "READY TO ORDER",
+        ],
+        onHold: [
+          "ORDER ON HOLD (INTERNAL ISSUE)",
+          "ORDER ON HOLD (EXTERNAL ISSUE)",
+          "ORDER ON HOLD - SAMPLES OUT",
+          "ORDER ON HOLD (CLC)",
+        ],
+      };
+      const ART_DECLINED_STATUS = "ART DECLINED";
+
+      // Normalize a status name for matching: strip emoji/symbols, collapse
+      // whitespace, uppercase. "🎨 ART APPROVAL SENT 🎨" -> "ART APPROVAL SENT".
+      function normStatus(s) {
+        return String(s || "")
+          .replace(/[^\x00-\x7F]/g, " ")     // drop non-ASCII (emoji)
+          .replace(/[\s\-]+/g, " ")           // collapse whitespace + hyphens to single space
+          .replace(/[^A-Za-z0-9()%& ]/g, "")  // keep only meaningful chars
+          .trim()
+          .toUpperCase();
+      }
+      const normGroups = {};
+      Object.keys(WORKLOAD_STATUS_GROUPS).forEach(function (g) {
+        normGroups[g] = WORKLOAD_STATUS_GROUPS[g].map(normStatus);
+      });
+      const normArtDeclined = normStatus(ART_DECLINED_STATUS);
+      function groupForStatus(name) {
+        const n = normStatus(name);
+        for (const g of Object.keys(normGroups)) {
+          if (normGroups[g].indexOf(n) !== -1) return g;
+        }
+        return null;
+      }
+
+      // ---- introspect the quotes query (args + sort), mirroring the invoice path
+      async function resolveQuotesMeta() {
+        let argNames = [], sortVals = [];
+        try {
+          const data = await gql(`query{__type(name:"Query"){fields{name args{name}}}}`);
+          const fields = (data.__type && data.__type.fields) || [];
+          const q = fields.find(f => f.name === "quotes");
+          argNames = q ? (q.args || []).map(a => a.name) : [];
+        } catch (e) {}
+        await rlPause();
+        try {
+          const sd = await gql(`query{__type(name:"QuoteSortField"){enumValues{name}}}`);
+          sortVals = ((sd.__type && sd.__type.enumValues) || []).map(v => v.name);
+        } catch (e) {}
+        const has = n => sortVals.includes(n);
+        let sortOn = null;
+        for (const c of ["CREATED_AT_DESC","CREATED_DESC","TIMESTAMPS_DESC","DATE_DESC"]) if (has(c)) { sortOn = c; break; }
+        if (!sortOn) for (const c of ["CREATED_AT","CREATED","TIMESTAMPS","DATE","VISUAL_ID"]) if (has(c)) { sortOn = c; break; }
+        return {
+          argNames,
+          hasCreatedAfter: argNames.includes("createdAfter"),
+          hasSortDescending: argNames.includes("sortDescending"),
+          sortOn: sortOn || "VISUAL_ID",
+        };
+      }
+
+      // Quotes link to a client the same way invoices do; reuse the resolved plan.
+      function quoteFieldSelection() {
+        const subFields = [plan.idField];
+        if (plan.nameField) subFields.push(plan.nameField);
+        if (plan.parent) subFields.push(`${plan.parent.field}{${plan.parent.idField} ${plan.parent.nameField}}`);
+        const link = `${plan.linkField}{${subFields.join(" ")}}`;
+        const contactExtra = plan.linkField === "contact" ? "" : "contact{fullName}";
+        return `nodes{id visualId createdAt total status{id name}${contactExtra}${link}}pageInfo{hasNextPage endCursor}`;
+      }
+      function quoteCustomer(q) {
+        const link = q[plan.linkField];
+        if (!link) return { id: null, name: "Unknown" };
+        if (plan.parent && link[plan.parent.field] && link[plan.parent.field][plan.parent.idField]) {
+          const p = link[plan.parent.field];
+          return { id: String(p[plan.parent.idField]), name: p[plan.parent.nameField] || "Unknown" };
+        }
+        if (link[plan.idField]) {
+          return {
+            id: String(link[plan.idField]),
+            name: (plan.nameField && link[plan.nameField]) || (q.contact && q.contact.fullName) || "Unknown",
+          };
+        }
+        return { id: null, name: "Unknown" };
+      }
+
+      const nowIso = new Date().toISOString();
+      const yearStart = new Date().getFullYear() + "-01-01";
+      const weekAgoIso = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+
+      const qMeta = await resolveQuotesMeta();
+      const QUOTE_FIELDS = quoteFieldSelection();
+      await rlPause();
+
+      // Per-customer workload tally: { customer_id: { company, quotes, inProgress, onHold } }
+      const workloadByCustomer = {};
+      let quotesThisWeek = 0;
+      let artDeclinedYtd = 0;
+      let quotesScanned = 0;
+
+      // Page quotes newest-first. We only need OPEN workload + recent + YTD art
+      // declines, so we can stop once quotes get older than the current year AND
+      // older than a week — anything past that can't contribute to any counter.
+      let cursor = resumeCursor;
+      let pages = 0;
+      const deadline = Date.now() + 240000;
+      const descQ = qMeta.hasSortDescending ? ",sortDescending:true" : "";
+      let reachedOld = false;
+
+      do {
+        const after = cursor ? `,after:"${cursor}"` : "";
+        const data = await gql(
+          `query{quotes(first:25,sortOn:${qMeta.sortOn}${descQ}${after}){${QUOTE_FIELDS}}}`
+        );
+        const nodes = (data.quotes && data.quotes.nodes) || [];
+        for (const q of nodes) {
+          quotesScanned++;
+          const statusName = q.status && q.status.name;
+          const grp = groupForStatus(statusName);
+          const created = q.createdAt || "";
+
+          // Workload buckets: count every open quote regardless of age — an
+          // on-hold order from last year is still on someone's plate today.
+          if (grp) {
+            const cust = quoteCustomer(q);
+            const key = cust.id || "unassigned";
+            if (!workloadByCustomer[key]) {
+              workloadByCustomer[key] = { customer_id: cust.id, company_name: cust.name, quotes: 0, inProgress: 0, onHold: 0 };
+            }
+            workloadByCustomer[key][grp]++;
+          }
+
+          if (created && created >= weekAgoIso) quotesThisWeek++;
+          if (created && created >= yearStart && normStatus(statusName) === normArtDeclined) artDeclinedYtd++;
+
+          // Track whether we've paged past everything that could still matter.
+          if (created && created < yearStart && created < weekAgoIso) reachedOld = true;
+        }
+        cursor = (data.quotes && data.quotes.pageInfo && data.quotes.pageInfo.hasNextPage)
+          ? data.quotes.pageInfo.endCursor : null;
+        pages++;
+        // Stop early only if we're sorting newest-first AND have clearly reached
+        // pre-year quotes — otherwise page the whole set to be safe.
+        if (qMeta.hasSortDescending && reachedOld) cursor = null;
+        if (cursor) await new Promise(r => setTimeout(r, 1200));
+      } while (cursor && Date.now() < deadline);
+
+      const quotesPartial = !!cursor;
+
+      // ---- Outstanding invoices (amountOutstanding > 0) + sales-by-month (YTD paid)
+      // Reuse the invoice field selection which already includes amountOutstanding.
+      await rlPause();
+      const outstanding = [];
+      const salesByMonth = {}; // "YYYY-MM" -> paid revenue (current year)
+      const curYear = String(new Date().getFullYear());
+      let invCursor = null;
+      let invPages = 0;
+      const invDeadline = Date.now() + 120000;
+      // Current-year invoices only: use inProductionAfter if available, else filter client-side.
+      const ytdDateArg = argPlan.hasInProductionAfter ? `,inProductionAfter:"${yearStart}"` : "";
+      const descI = argPlan.hasSortDescending ? ",sortDescending:true" : "";
+      do {
+        const after = invCursor ? `,after:"${invCursor}"` : "";
+        const data = await gql(
+          `query{invoices(first:25,sortOn:${sortPlan.sortOn}${descI}${ytdDateArg}${after}){${GQL_FIELDS}}}`
+        );
+        const nodes = (data.invoices && data.invoices.nodes) || [];
+        for (const inv of nodes) {
+          const created = inv.createdAt || "";
+          const out = Number(inv.amountOutstanding) || 0;
+          const total = Number(inv.total) || 0;
+          if (out > 0.009) {
+            const cust = quoteCustomer(inv); // same link shape as quotes
+            outstanding.push({
+              id: inv.id,
+              visualId: inv.visualId || null,
+              company_name: cust.name,
+              customer_id: cust.id,
+              amount: Math.round(out * 100) / 100,
+              total: Math.round(total * 100) / 100,
+              status: inv.status && inv.status.name,
+              createdAt: created || null,
+            });
+          }
+          // Sales-by-month: paid portion (total - outstanding) booked to createdAt month, this year.
+          if (created && created.slice(0, 4) === curYear) {
+            const paid = Math.max(0, total - out);
+            if (paid > 0) {
+              const mk = created.slice(0, 7);
+              salesByMonth[mk] = (salesByMonth[mk] || 0) + paid;
+            }
+          }
+        }
+        invCursor = (data.invoices && data.invoices.pageInfo && data.invoices.pageInfo.hasNextPage)
+          ? data.invoices.pageInfo.endCursor : null;
+        invPages++;
+        if (invCursor) await new Promise(r => setTimeout(r, 1200));
+      } while (invCursor && Date.now() < invDeadline);
+
+      Object.keys(salesByMonth).forEach(function (m) {
+        salesByMonth[m] = Math.round(salesByMonth[m] * 100) / 100;
+      });
+      outstanding.sort(function (a, b) { return b.amount - a.amount; });
+      const outstandingTotal = outstanding.reduce(function (s, r) { return s + r.amount; }, 0);
+
+      const opsPayload = {
+        generatedAt: nowIso,
+        buildVersion: "ops-v1",
+        quotesThisWeek,
+        artDeclinedYtd,
+        outstanding,
+        outstandingTotal: Math.round(outstandingTotal * 100) / 100,
+        salesByMonth,
+        workload: Object.values(workloadByCustomer),
+        statusGroups: WORKLOAD_STATUS_GROUPS,
+        diagnostics: {
+          quotesScanned, quotePages: pages, invoicePages: invPages,
+          quotesPartial, invoicePartial: !!invCursor,
+          quotesSort: qMeta.sortOn, quotesHasDesc: qMeta.hasSortDescending,
+        },
+      };
+
+      await kvSet("backbone_printavo_ops", opsPayload);
+
+      return res.status(200).json({
+        ok: true, mode: "ops", status: (quotesPartial || invCursor) ? "partial" : "done",
+        quotesThisWeek, artDeclinedYtd,
+        outstandingCount: outstanding.length,
+        outstandingTotal: opsPayload.outstandingTotal,
+        workloadCustomers: opsPayload.workload.length,
+        salesMonths: Object.keys(salesByMonth).length,
+        diagnostics: opsPayload.diagnostics,
+        nextUrl: quotesPartial ? `/api/printavo-sync?mode=ops&cursor=${encodeURIComponent(cursor)}` : null,
+      });
+    }
+
+    return res.status(400).json({ error: "Invalid mode. Use: incremental, reconcile, ops" });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
