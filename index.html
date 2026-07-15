@@ -266,10 +266,16 @@ textarea.field{min-height:60px;resize:vertical}
   box-shadow:0 1px 3px rgba(16,24,40,.07);
   transition:box-shadow .15s ease,opacity .15s ease,transform .15s ease}
 .dash-card:hover{box-shadow:0 4px 14px rgba(16,24,40,.10)}
+/* Width follows position (see reflowDashWidths). Default is a full row; a card
+   paired beside a neighbour gets .w-half. .w-full is kept as an explicit full-row
+   marker so the reflow can set it directly. */
+.dash-card{grid-column:span 2}
+.dash-card.w-half{grid-column:span 1}
 .dash-card.w-full{grid-column:span 2}
 .dash-card.is-hidden{display:none}
 .dash-card.dragging{opacity:.35;transform:scale(.99)}
 .dash-card.drag-over{box-shadow:0 0 0 2px #3D9A5C,0 6px 18px rgba(16,24,40,.12)}
+.dash-card.drag-side{box-shadow:0 0 0 2px #3D9A5C,inset 0 0 0 9999px rgba(61,154,92,.04)}
 .dash-card .card-hd{user-select:none;align-items:center}
 .dash-card .card-hd h3{font-size:13px;font-weight:800;letter-spacing:.02em}
 .dash-card.dragging .card-hd{cursor:grabbing}
@@ -287,7 +293,7 @@ textarea.field{min-height:60px;resize:vertical}
 .dash-chip:hover{color:#3D9A5C;border-color:#3D9A5C;background:#EAF5EE}
 @media(max-width:900px){
   .dash-grid{grid-template-columns:1fr}
-  .dash-card,.dash-card.w-full{grid-column:span 1}
+  .dash-card,.dash-card.w-full,.dash-card.w-half{grid-column:span 1}
 }
 
 /* --- report internals (brief-styled) ---------------------------------------- */
@@ -296,7 +302,7 @@ textarea.field{min-height:60px;resize:vertical}
   color:#9CA3AF;margin-bottom:10px}
 
 /* Headline stat, mirroring the brief's score dial. */
-.rep-hero{display:flex;align-items:baseline;gap:9px;margin-bottom:12px;
+.rep-hero{display:flex;align-items:baseline;gap:9px;margin-bottom:12px;flex-wrap:wrap;
   padding-bottom:12px;border-bottom:1px solid #F4F6F8}
 .rep-hero-n{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1}
 .rep-hero-s{font-size:12px;color:#9CA3AF;font-weight:500}
@@ -712,7 +718,7 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
         </div>
       </div>
 
-      <div class="card dash-card" data-card="top10">
+      <div class="card dash-card w-half" data-card="top10">
         <div class="card-hd"><span class="dash-grip">⠿</span><h3>Top 10 clients</h3></div>
         <div class="card-bd">
           <div class="help">Highest-revenue clients and their share of the total. Click any client to open its record.</div>
@@ -720,7 +726,7 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
         </div>
       </div>
 
-      <div class="card dash-card" data-card="industry">
+      <div class="card dash-card w-half" data-card="industry">
         <div class="card-hd"><span class="dash-grip">⠿</span><h3>By industry</h3></div>
         <div class="card-bd">
           <div class="help">Roster split by industry. Toggle to sort by number of clients or by revenue.</div>
@@ -740,7 +746,7 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
         </div>
       </div>
 
-      <div class="card dash-card" data-card="outstanding">
+      <div class="card dash-card w-half" data-card="outstanding">
         <div class="card-hd"><span class="dash-grip">⠿</span><h3>Outstanding for payment</h3></div>
         <div class="card-bd">
           <div class="help">Open invoices with a balance still owed, largest first. Needs the Printavo ops sync.</div>
@@ -748,7 +754,7 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
         </div>
       </div>
 
-      <div class="card dash-card" data-card="dormant">
+      <div class="card dash-card w-half" data-card="dormant">
         <div class="card-hd"><span class="dash-grip">⠿</span><h3>Dormant &amp; at risk</h3></div>
         <div class="card-bd">
           <div class="help">No order in 6+ months on an <b>absolute</b> clock, ranked by revenue at stake. This is "have they gone quiet, period" — regardless of how often they used to order. Mark a row resolved if the silence has a known reason (rebrand, acquisition, closure).</div>
@@ -756,7 +762,7 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
         </div>
       </div>
 
-      <div class="card dash-card" data-card="cadence">
+      <div class="card dash-card w-half" data-card="cadence">
         <div class="card-hd"><span class="dash-grip">⠿</span><h3>Overdue to reorder</h3></div>
         <div class="card-bd">
           <div class="help">Past due against <em>their own</em> ordering rhythm — a monthly buyer who's 3 months quiet, not a fixed date. This catches clients slipping <b>relative to their normal cadence</b>, before they'd ever show as dormant.</div>
@@ -764,7 +770,7 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
         </div>
       </div>
 
-      <div class="card dash-card" data-card="tiermove">
+      <div class="card dash-card w-half" data-card="tiermove">
         <div class="card-hd"><span class="dash-grip">⠿</span><h3>Tier movement</h3></div>
         <div class="card-bd">
           <div class="help">Score recomputed on last year's numbers vs this year's, to see who moved.</div>
@@ -772,7 +778,7 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
         </div>
       </div>
 
-      <div class="card dash-card" data-card="leaderboard">
+      <div class="card dash-card w-half" data-card="leaderboard">
         <div class="card-hd"><span class="dash-grip">⠿</span><h3>AM Leaderboard</h3></div>
         <div class="card-bd"><div id="leaderboardWrap"></div></div>
       </div>
@@ -5467,6 +5473,7 @@ function renderDormant() {
     '<div class="rep-hero">' +
       '<span class="rep-hero-n" style="color:#B91C1C">' + fmtMoney(atStake) + '</span>' +
       '<span class="rep-hero-s">at stake across ' + active.length + ' unresolved account' + (active.length === 1 ? '' : 's') + '</span>' +
+      (active.length ? '<button class="am-brief-btn" style="margin-left:auto" onclick="openDormantBrief()">Generate brief</button>' : '') +
     '</div>';
 
   if (!active.length) {
@@ -5652,7 +5659,7 @@ function wireRepOpen(el) {
 // separated, sales-goal / outstanding / ops workload added). A v1 saved layout
 // references cards that no longer exist and lacks the new ones, so starting fresh
 // once is cleaner than orphaning the new cards at the bottom.
-const DASH_LAYOUT_KEY = "backbone_dash_layout_v2";
+const DASH_LAYOUT_KEY = "backbone_dash_layout_v3";
 
 const DASH_CARD_NAMES = {
   salesgoal: "YTD sales vs goal",
@@ -5671,15 +5678,15 @@ const DASH_CARD_NAMES = {
 function loadDashLayout() {
   try {
     const raw = localStorage.getItem(DASH_LAYOUT_KEY);
-    if (!raw) return { order: [], wide: {}, hidden: {} };
+    if (!raw) return { order: [], paired: {}, hidden: {} };
     const p = JSON.parse(raw);
     return {
       order: Array.isArray(p.order) ? p.order : [],
-      wide: p.wide && typeof p.wide === "object" ? p.wide : {},
+      paired: p.paired && typeof p.paired === "object" ? p.paired : {},
       hidden: p.hidden && typeof p.hidden === "object" ? p.hidden : {}
     };
   } catch (e) {
-    return { order: [], wide: {}, hidden: {} };
+    return { order: [], paired: {}, hidden: {} };
   }
 }
 
@@ -5705,25 +5712,25 @@ function applyDashLayout() {
     });
   }
 
+  // Restore hidden state + saved pairing intent, then let reflow compute the actual
+  // half/full spans from position. Width is never stored directly — only whether a
+  // card was part of a side-by-side pair — so the "beside = half, alone = full" rule
+  // stays consistent even as cards are shown/hidden. On a first load with no saved
+  // layout, seed pairing from each card's initial w-half class in the markup, so the
+  // dashboard opens in its intended two-column arrangement rather than a single stack.
+  const hasSaved = l.order.length || Object.keys(l.paired).length;
   cards.forEach(function(c) {
     const id = c.dataset.card;
-    // `wide` only stores DEVIATIONS from each card's default width, so a card that
-    // ships full-width stays full-width unless the user narrowed it themselves.
-    const defaultWide = c.classList.contains("w-full");
-    const wide = (l.wide[id] === undefined) ? defaultWide : !!l.wide[id];
-    c.classList.toggle("w-full", wide);
     c.classList.toggle("is-hidden", !!l.hidden[id]);
+    const paired = hasSaved ? !!l.paired[id] : c.classList.contains("w-half");
+    c.dataset.paired = paired ? "1" : "0";
+    c.dataset.pairIntent = "";
   });
 
+  reflowDashWidths();
   renderDashTools();
   renderHiddenChips();
 }
-
-// NOTE: there is deliberately no "orphan" auto-stretch here any more.
-// An earlier version stretched a lone half-width card to fill its row — which meant
-// clicking "make half width" on the last card instantly snapped it back to full,
-// because it was now alone. The user's explicit width choice must win over tidiness.
-// A half-width card with empty space beside it is correct if that's what was asked for.
 
 function currentDashOrder() {
   const grid = document.getElementById("dashGrid");
@@ -5734,14 +5741,18 @@ function persistDashLayout() {
   const grid = document.getElementById("dashGrid");
   const l = loadDashLayout();
   l.order = currentDashOrder();
+  l.paired = {};
+  l.hidden = {};
   Array.from(grid.querySelectorAll(".dash-card")).forEach(function(c) {
-    l.wide[c.dataset.card] = c.classList.contains("w-full");
+    l.paired[c.dataset.card] = c.classList.contains("w-half");
     l.hidden[c.dataset.card] = c.classList.contains("is-hidden");
   });
   saveDashLayout(l);
 }
 
-// Width + hide buttons, injected into each card header.
+// Hide button only. Width is no longer a manual toggle — it follows drag position
+// (drop a card beside another to pair them half/half; drop it on its own row for
+// full width). One less control to fight with the layout.
 function renderDashTools() {
   const grid = document.getElementById("dashGrid");
   if (!grid) return;
@@ -5754,17 +5765,14 @@ function renderDashTools() {
       tools.className = "dash-tools";
       hd.appendChild(tools);
     }
-    const wide = c.classList.contains("w-full");
     tools.innerHTML =
-      '<button class="dash-tool" data-act="width" title="' +
-        (wide ? "Make half width" : "Make full width") + '">' + (wide ? "\u25AB" : "\u25AC") + '</button>' +
       '<button class="dash-tool" data-act="hide" title="Hide this card">\u2715</button>';
 
     tools.querySelectorAll(".dash-tool").forEach(function(b) {
       b.addEventListener("click", function(ev) {
         ev.stopPropagation();
-        if (b.dataset.act === "width") c.classList.toggle("w-full");
-        else c.classList.add("is-hidden");
+        c.classList.add("is-hidden");
+        reflowDashWidths();
         persistDashLayout();
         renderDashTools();
         renderHiddenChips();
@@ -5799,6 +5807,38 @@ function renderHiddenChips() {
 
 let dashDragEl = null;
 
+// Width follows position. We walk the cards in order and pair them up: a card that
+// wants to sit beside its neighbour (pairIntent, or a saved pairing) becomes half
+// width alongside that neighbour; anything left alone on its row is full width.
+// This is the "beside = both shrink, under = full" rule the layout is built around,
+// and it means width is never a separate thing the user has to toggle.
+function reflowDashWidths() {
+  const grid = document.getElementById("dashGrid");
+  if (!grid) return;
+  const cards = Array.from(grid.querySelectorAll(".dash-card:not(.is-hidden)"));
+  let i = 0;
+  while (i < cards.length) {
+    const cur = cards[i];
+    const next = cards[i + 1];
+    // Pair cur+next into a half/half row when either side expressed side-by-side
+    // intent on the most recent drag, OR they were a saved pair and neither has since
+    // asked to be full. Otherwise cur takes a full row on its own.
+    const curWantsPair = cur.dataset.pairIntent === "1" || cur.dataset.paired === "1";
+    const nextWantsPair = next && (next.dataset.pairIntent === "1" || next.dataset.paired === "1");
+    if (next && (curWantsPair || nextWantsPair)) {
+      cur.classList.add("w-half"); cur.classList.remove("w-full");
+      next.classList.add("w-half"); next.classList.remove("w-full");
+      cur.dataset.paired = "1"; next.dataset.paired = "1";
+      cur.dataset.pairIntent = ""; next.dataset.pairIntent = "";
+      i += 2;
+    } else {
+      cur.classList.add("w-full"); cur.classList.remove("w-half");
+      cur.dataset.paired = "0"; cur.dataset.pairIntent = "";
+      i += 1;
+    }
+  }
+}
+
 function initDashDrag() {
   const grid = document.getElementById("dashGrid");
   if (!grid || grid.dataset.dragInit) return;
@@ -5832,8 +5872,9 @@ function initDashDrag() {
 
   grid.addEventListener("dragend", function() {
     if (dashDragEl) { dashDragEl.classList.remove("dragging"); dashDragEl.draggable = false; }
-    grid.querySelectorAll(".drag-over").forEach(function(c) { c.classList.remove("drag-over"); });
+    grid.querySelectorAll(".drag-over,.drag-side").forEach(function(c) { c.classList.remove("drag-over","drag-side"); });
     dashDragEl = null;
+    reflowDashWidths();   // width follows position: paired => half, alone => full
     persistDashLayout();
   });
 
@@ -5841,21 +5882,31 @@ function initDashDrag() {
     e.preventDefault();
     const over = e.target.closest(".dash-card");
     if (!over || !dashDragEl || over === dashDragEl) return;
-    grid.querySelectorAll(".drag-over").forEach(function(c) { c.classList.remove("drag-over"); });
+    grid.querySelectorAll(".drag-over,.drag-side").forEach(function(c) { c.classList.remove("drag-over","drag-side"); });
     over.classList.add("drag-over");
 
-    // 2-column grid: decide insert side by the pointer's position within the
-    // target card. Use the horizontal midpoint when the dragged card and target
-    // sit on the same row (side-by-side), and the vertical midpoint otherwise.
-    // This makes "drop it to the left / right of that card" behave predictably
-    // instead of only ever inserting above/below.
+    // Position decides both ORDER and WIDTH. Horizontal drops (left/right edge of a
+    // card) mean "sit beside this card" → the two become a half-width pair. Vertical
+    // drops (top/bottom) mean "own row" → full width. We mark intent here and let
+    // reflowDashWidths() on drop compute the actual spans, so the rule is always
+    // "beside = half for both, under = full", regardless of how cards started.
     const r = over.getBoundingClientRect();
-    const dr = dashDragEl.getBoundingClientRect();
-    const sameRow = Math.abs(dr.top - r.top) < r.height * 0.5;
-    const after = sameRow
-      ? (e.clientX - r.left) > r.width / 2
-      : (e.clientY - r.top) > r.height / 2;
-    grid.insertBefore(dashDragEl, after ? over.nextSibling : over);
+    const dx = e.clientX - r.left;
+    const edgeZone = r.width * 0.28; // near a vertical edge => side-by-side intent
+    const nearLeftEdge = dx < edgeZone;
+    const nearRightEdge = dx > (r.width - edgeZone);
+
+    if (nearLeftEdge || nearRightEdge) {
+      // Side-by-side: place immediately before/after the target and flag the pair.
+      over.classList.add("drag-side");
+      grid.insertBefore(dashDragEl, nearRightEdge ? over.nextSibling : over);
+      dashDragEl.dataset.pairIntent = "1";
+    } else {
+      // Own row: insert above/below by vertical midpoint, clear pairing intent.
+      const after = (e.clientY - r.top) > r.height / 2;
+      grid.insertBefore(dashDragEl, after ? over.nextSibling : over);
+      dashDragEl.dataset.pairIntent = "0";
+    }
   });
 
   grid.addEventListener("drop", function(e) { e.preventDefault(); });
@@ -6108,6 +6159,92 @@ function openAmBrief(amName) {
 function closeAmBrief() { document.getElementById("amBriefOverlay").classList.remove("open"); }
 window.openAmBrief = openAmBrief;
 window.closeAmBrief = closeAmBrief;
+
+// ---- Dormant / at-risk Brief ----
+// Sendable rundown of every UNRESOLVED at-risk account, grouped by the AM who owns
+// it (resolved accounts — rebrands, acquisitions, closures — are excluded, same as
+// the card). Mirrors the Leads Brief: a printable doc plus a mailto draft. Accounts
+// with no AM fall under "Unassigned" so nothing silently drops off the list.
+function buildDormantBriefData() {
+  const rows = getDashboardData();
+  const items = rows.map(function(r) {
+    const c = state.synced.find(function(s) { return s.customer_id === r.customer_id; }) || {};
+    return {
+      id: r.customer_id, name: r.company_name, rev: r.total_revenue || 0,
+      am: (r.am && ACCOUNT_MANAGERS.indexOf(r.am) !== -1) ? r.am : "Unassigned",
+      days: daysSince(c.last_invoice_date), invoices: Number(c.invoice_count) || 0,
+      resolution: getDormantResolution(r.customer_id)
+    };
+  }).filter(function(r) {
+    return r.days != null && r.days >= 180 && r.rev > 0 && r.invoices >= 2 && !r.resolution;
+  }).sort(function(a, b) { return b.rev - a.rev; });
+
+  const byAm = {};
+  items.forEach(function(r) { (byAm[r.am] = byAm[r.am] || []).push(r); });
+  const totalAtStake = items.reduce(function(s, r) { return s + r.rev; }, 0);
+  return { items: items, byAm: byAm, totalAtStake: totalAtStake };
+}
+
+function dormantBriefHtml(d) {
+  const when = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  let h = '<div class="brief-doc">' +
+    '<h2>Dormant &amp; At-Risk Brief</h2>' +
+    '<div class="brief-meta">' + when + ' \u00b7 ' + d.items.length + ' quiet account' + (d.items.length === 1 ? '' : 's') +
+      ' \u00b7 ' + fmtMoney(d.totalAtStake) + ' at stake</div>';
+  const ams = Object.keys(d.byAm).sort(function(a, b) {
+    const ra = d.byAm[a].reduce(function(s, r) { return s + r.rev; }, 0);
+    const rb = d.byAm[b].reduce(function(s, r) { return s + r.rev; }, 0);
+    return rb - ra;
+  });
+  ams.forEach(function(am) {
+    const list = d.byAm[am];
+    const sub = list.reduce(function(s, r) { return s + r.rev; }, 0);
+    h += '<div class="brief-sec"><div class="brief-sec-l">' + am + ' \u00b7 ' + list.length +
+      ' account' + (list.length === 1 ? '' : 's') + ' \u00b7 ' + fmtMoney(sub) + '</div>';
+    h += list.map(function(r) {
+      return '<div class="brief-line"><span class="bl-name">' + r.name + '</span>' +
+        '<span class="bl-meta">' + Math.round(r.days / 30) + 'mo quiet \u00b7 ' + r.invoices + ' invoices \u00b7 ' + fmtMoney(r.rev) + '</span></div>';
+    }).join("");
+    h += '</div>';
+  });
+  h += '</div>';
+  return h;
+}
+
+function dormantBriefPlainText(d) {
+  const when = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  let t = "Dormant & At-Risk Brief\n" + when + "\n" +
+    d.items.length + " quiet accounts · " + fmtMoney(d.totalAtStake) + " at stake\n";
+  const ams = Object.keys(d.byAm).sort();
+  ams.forEach(function(am) {
+    const list = d.byAm[am];
+    const sub = list.reduce(function(s, r) { return s + r.rev; }, 0);
+    t += "\n" + am.toUpperCase() + " — " + list.length + " accounts, " + fmtMoney(sub) + ":\n";
+    t += list.map(function(r) {
+      return "  - " + r.name + " — " + Math.round(r.days / 30) + "mo quiet, " + r.invoices + " invoices, " + fmtMoney(r.rev);
+    }).join("\n") + "\n";
+  });
+  return t;
+}
+
+function openDormantBrief() {
+  const d = buildDormantBriefData();
+  if (!d.items.length) return;
+  document.getElementById("briefPrintArea").innerHTML = dormantBriefHtml(d);
+  const subj = encodeURIComponent("Dormant & At-Risk Brief (" + new Date().toLocaleDateString() + ")");
+  const body = encodeURIComponent(dormantBriefPlainText(d));
+  const mailBtn = document.getElementById("briefMailBtn");
+  mailBtn.href = "mailto:?subject=" + subj + "&body=" + body;
+  mailBtn.style.display = "";
+  document.getElementById("briefCopyBtn").onclick = function() {
+    navigator.clipboard.writeText(dormantBriefPlainText(d)).then(function() {
+      document.getElementById("briefCopyBtn").textContent = "Copied ✓";
+      setTimeout(function() { document.getElementById("briefCopyBtn").textContent = "Copy text"; }, 1500);
+    });
+  };
+  document.getElementById("amBriefOverlay").classList.add("open");
+}
+window.openDormantBrief = openDormantBrief;
 
 function renderDashboard() {
   populateDashYearSelect();
@@ -9296,8 +9433,21 @@ function showApp(role, tabs) {
 // gates: the global on/off (admin hides it from everyone) AND this role's list.
 function applyRolePerms() {
   // Tabs are handled by applyTabVisibility(). This function only does cards + edit rights.
-  const allowedCards = currentPerms.cards || [];
+  let allowedCards = currentPerms.cards || [];
   if (allowedCards.length) {
+    // Migrate legacy allow-lists. The dashboard used to have a single "concentration"
+    // card (revenue concentration + industry mix combined). It was split into "top10"
+    // and "industry", and "salesgoal"/"outstanding" were added. A role saved before
+    // that split lists "concentration" but none of the new ids — which would silently
+    // remove the new cards. Expand the old id to its successors, and if the role could
+    // see the old combined card, grant it the new roster-derived cards too, so nobody
+    // loses dashboard content just because their role predates the split.
+    allowedCards = allowedCards.slice();
+    if (allowedCards.indexOf("concentration") !== -1) {
+      ["top10", "industry", "salesgoal", "outstanding"].forEach(function(id) {
+        if (allowedCards.indexOf(id) === -1) allowedCards.push(id);
+      });
+    }
     document.querySelectorAll(".dash-card").forEach(function(c) {
       if (allowedCards.indexOf(c.dataset.card) === -1) {
         // remove() not hide() — a hidden card can still be un-hidden from the chips row.
