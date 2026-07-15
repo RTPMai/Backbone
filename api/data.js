@@ -1,7 +1,16 @@
-export default async function handler(req, res) {
+// Session guard. Uses getSession (same helper api/auth.js uses for its plain
+// "is this a valid session" check) rather than requireAuth — this endpoint only
+// needs "is the caller logged in at all", with no role requirement, and getSession
+// has no role argument to get wrong. Returns the session object or a falsy value.
+const { getSession } = require("../lib/auth.js");
+
+module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+
+  const sess = getSession(req);
+  if (!sess) return res.status(401).json({ error: "Not authenticated" });
 
   const url = process.env.KV_REST_API_URL;
   const token = process.env.KV_REST_API_TOKEN;
@@ -88,4 +97,4 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
-}
+};
