@@ -6300,7 +6300,15 @@ function renderDashboard() {
       yearSubNote + '</div>' +
     '<div class="kpi"><div class="kpi-lbl">Total clients</div><div class="kpi-val">' + rows.length + '</div></div>' +
     '<div class="kpi"><div class="kpi-lbl">Avg score</div><div class="kpi-val">' + avgScore.toFixed(2) + '</div><div class="kpi-s">out of 5' + (dashYear !== "all" ? " · this year's revenue/invoices" : "") + '</div></div>' +
-    '<div class="kpi"><div class="kpi-lbl">Platinum + Gold</div><div class="kpi-val">' + topTierShare + '%</div><div class="kpi-s">of roster' + (dashYear !== "all" ? ", " + dashYear + " basis" : "") + '</div></div>';
+    '<div class="kpi"><div class="kpi-lbl">Platinum + Gold</div><div class="kpi-val">' + topTierShare + '%</div><div class="kpi-s">of roster' + (dashYear !== "all" ? ", " + dashYear + " basis" : "") + '</div></div>' +
+    // Ops mini-KPIs — only when the Printavo ops slice is loaded. "New quotes" is a
+    // real 7-day event count; "Art declined (open)" is a live snapshot of quotes
+    // currently in that status, NOT a YTD event total (Printavo's quote schema
+    // doesn't expose decline history — see the probe-history note).
+    (opsData && opsData.available ?
+      '<div class="kpi"><div class="kpi-lbl">New quotes this week</div><div class="kpi-val">' + (opsData.quotesThisWeek || 0) + '</div><div class="kpi-s">created in last 7 days</div></div>' +
+      '<div class="kpi"><div class="kpi-lbl">Art declined (open)</div><div class="kpi-val">' + (opsData.currentArtDeclined || 0) + '</div><div class="kpi-s">in ART DECLINED now</div></div>'
+      : '');
 
   // --- Top 10 clients: share of total revenue, expandable to full list ---
   const sortedByRev = rows.slice().sort(function(a, b) { return b.total_revenue - a.total_revenue; });
