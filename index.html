@@ -148,6 +148,66 @@ textarea.field{min-height:60px;resize:vertical}
 .mix-bar-track{flex:1;background:#F1F3F5;border-radius:99px;height:14px;overflow:hidden;display:flex}
 .mix-bar-fill{height:100%}
 .mix-bar-val{width:110px;flex-shrink:0;text-align:right;color:#6B7280;font-size:12px}
+/* Industry sort toggle */
+.mix-sort{display:inline-flex;gap:3px;background:#F4F6F8;padding:3px;border-radius:99px;margin-bottom:12px}
+.mix-sort button{border:none;background:none;font-family:inherit;font-size:11.5px;font-weight:600;
+  color:#9CA3AF;padding:4px 12px;border-radius:99px;cursor:pointer;transition:all .12s ease}
+.mix-sort button.on{background:#fff;color:#111827;box-shadow:0 1px 2px rgba(16,24,40,.08)}
+/* Sales vs goal (flat, no gradients) */
+.sg-hero{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.sg-hero-n{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.sg-hero-s{font-size:12px;color:#9CA3AF;font-weight:500}
+.sg-track{height:10px;background:#F1F3F5;border-radius:99px;overflow:hidden;margin:10px 0 4px}
+.sg-fill{height:100%;border-radius:99px;transition:width .5s cubic-bezier(.22,1,.36,1)}
+.sg-months{display:flex;align-items:flex-end;gap:6px;height:150px;padding-top:10px}
+.sg-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0}
+.sg-barwrap{width:100%;max-width:38px;height:110px;display:flex;align-items:flex-end;position:relative}
+.sg-bar{width:100%;border-radius:6px 6px 0 0;min-height:2px;transition:height .5s cubic-bezier(.22,1,.36,1)}
+.sg-goal-line{position:absolute;left:-2px;right:-2px;height:2px;background:#111827;opacity:.28}
+.sg-mlbl{font-size:10px;color:#9CA3AF;font-weight:700}
+.sg-mval{font-size:9.5px;color:#6B7280;font-weight:700}
+/* Outstanding list */
+.out-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #F4F6F8;font-size:13px}
+.out-row:last-child{border-bottom:none}
+.out-main{flex:1;min-width:0}
+.out-name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.out-name:hover{color:#3D9A5C}
+.out-sub{font-size:11px;color:#9CA3AF;margin-top:2px}
+.out-amt{flex:0 0 auto;font-weight:800;color:#B91C1C;font-size:14px}
+/* Workload bucket pills in AM table */
+.wl-cell{display:flex;gap:5px;flex-wrap:wrap}
+.wl-pill{font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px;white-space:nowrap;letter-spacing:.02em}
+.wl-q{background:#EAF1FB;color:#1E40AF}
+.wl-p{background:#FEF3C7;color:#92400E}
+.wl-h{background:#FEE2E2;color:#991B1B}
+.wl-zero{color:#C3C9D0;font-size:12px}
+.am-brief-btn{border:1px solid #E5E9ED;background:#fff;color:#3D9A5C;font-family:inherit;font-size:11px;
+  font-weight:700;padding:4px 10px;border-radius:99px;cursor:pointer}
+.am-brief-btn:hover{background:#EAF5EE;border-color:#3D9A5C}
+/* Dormant resolve controls */
+.dm-resolve{display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-left:8px}
+.dm-rbtn{border:1px solid #E5E9ED;background:#fff;color:#6B7280;font-family:inherit;font-size:10.5px;
+  font-weight:700;padding:3px 8px;border-radius:99px;cursor:pointer}
+.dm-rbtn:hover{border-color:#9CA3AF;color:#374151}
+.dm-resolved{font-size:10.5px;color:#9CA3AF;font-style:italic}
+.dm-undo{border:none;background:none;color:#3D9A5C;font-family:inherit;font-size:10.5px;font-weight:700;cursor:pointer;padding:0 2px}
+/* Brief modal print area */
+.brief-doc{font-size:13px;line-height:1.5;color:#111827}
+.brief-doc h2{font-size:18px;font-weight:800;margin-bottom:2px}
+.brief-doc .brief-meta{font-size:12px;color:#9CA3AF;margin-bottom:16px}
+.brief-sec{margin-bottom:18px}
+.brief-sec-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#9CA3AF;margin-bottom:8px;border-bottom:1px solid #F1F3F5;padding-bottom:5px}
+.brief-line{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid #F7F8FA}
+.brief-line:last-child{border-bottom:none}
+.brief-line .bl-name{font-weight:700}
+.brief-line .bl-meta{color:#6B7280;font-size:12px;text-align:right;flex-shrink:0}
+.brief-empty{color:#9CA3AF;font-size:12px}
+@media print{
+  body *{visibility:hidden}
+  #briefPrintArea,#briefPrintArea *{visibility:visible}
+  #briefPrintArea{position:absolute;left:0;top:0;width:100%;padding:24px}
+  .brief-noprint{display:none !important}
+}
 .am-table td,.am-table th{white-space:normal}
 .tier-pill{display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;margin-right:3px}
 
@@ -196,8 +256,11 @@ textarea.field{min-height:60px;resize:vertical}
 /* --- Customizable dashboard grid -------------------------------------------- */
 /* Styled to match the emailed Lead Brief: 16px radius, soft shadow, uppercase
    micro-labels with wide tracking, pill badges, and the same tier colour language. */
+/* No `dense` packing: it silently reflows cards to backfill gaps, which is exactly
+   the "I put it here and it jumped" behaviour. Plain row flow keeps every card in
+   the order the user dragged it to, even if that leaves a half-width gap. */
 .dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;
-  grid-auto-flow:row dense}
+  grid-auto-flow:row}
 
 .dash-card{grid-column:span 1;position:relative;border-radius:16px;
   box-shadow:0 1px 3px rgba(16,24,40,.07);
@@ -258,7 +321,7 @@ textarea.field{min-height:60px;resize:vertical}
 .rep-bars{display:flex;align-items:flex-end;gap:10px;height:158px;padding-top:8px}
 .rep-bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0}
 .rep-bar{width:100%;max-width:56px;border-radius:8px 8px 0 0;
-  background:linear-gradient(180deg,#4FB673,#3D9A5C);
+  background:#3D9A5C;
   transition:height .5s cubic-bezier(.22,1,.36,1);min-height:3px}
 .rep-bar.dim{background:#E5E9ED}
 .rep-bar-lbl{font-size:11px;color:#9CA3AF;font-weight:700}
@@ -641,10 +704,30 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
     <div class="kpi-grid" id="dashPortfolioKpiGrid"></div>
 
     <div class="dash-grid" id="dashGrid">
-      <div class="card dash-card w-full" data-card="concentration">
-        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Revenue concentration &amp; industry mix</h3></div>
+      <div class="card dash-card w-full" data-card="salesgoal">
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>YTD sales vs goal</h3></div>
         <div class="card-bd">
-          <div id="dashConcentrationWrap" style="margin-bottom:18px"></div>
+          <div class="help">Paid revenue booked per month this year against the $280k/month target. Needs the Printavo ops sync.</div>
+          <div id="dashSalesGoalWrap"></div>
+        </div>
+      </div>
+
+      <div class="card dash-card" data-card="top10">
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Top 10 clients</h3></div>
+        <div class="card-bd">
+          <div class="help">Highest-revenue clients and their share of the total. Click any client to open its record.</div>
+          <div id="dashConcentrationWrap"></div>
+        </div>
+      </div>
+
+      <div class="card dash-card" data-card="industry">
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>By industry</h3></div>
+        <div class="card-bd">
+          <div class="help">Roster split by industry. Toggle to sort by number of clients or by revenue.</div>
+          <div class="mix-sort" id="dashIndustrySort">
+            <button data-isort="count" class="on">By # clients</button>
+            <button data-isort="revenue">By $ spent</button>
+          </div>
           <div id="dashIndustryWrap"></div>
         </div>
       </div>
@@ -657,10 +740,18 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
         </div>
       </div>
 
+      <div class="card dash-card" data-card="outstanding">
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Outstanding for payment</h3></div>
+        <div class="card-bd">
+          <div class="help">Open invoices with a balance still owed, largest first. Needs the Printavo ops sync.</div>
+          <div id="dashOutstandingWrap"></div>
+        </div>
+      </div>
+
       <div class="card dash-card" data-card="dormant">
         <div class="card-hd"><span class="dash-grip">⠿</span><h3>Dormant &amp; at risk</h3></div>
         <div class="card-bd">
-          <div class="help">Clients with real history who have gone quiet, ranked by revenue at stake.</div>
+          <div class="help">No order in 6+ months on an <b>absolute</b> clock, ranked by revenue at stake. This is "have they gone quiet, period" — regardless of how often they used to order. Mark a row resolved if the silence has a known reason (rebrand, acquisition, closure).</div>
           <div id="dashDormantWrap"></div>
         </div>
       </div>
@@ -668,7 +759,7 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
       <div class="card dash-card" data-card="cadence">
         <div class="card-hd"><span class="dash-grip">⠿</span><h3>Overdue to reorder</h3></div>
         <div class="card-bd">
-          <div class="help">Compares each client against <em>their own</em> ordering rhythm, not a fixed threshold.</div>
+          <div class="help">Past due against <em>their own</em> ordering rhythm — a monthly buyer who's 3 months quiet, not a fixed date. This catches clients slipping <b>relative to their normal cadence</b>, before they'd ever show as dormant.</div>
           <div id="dashCadenceWrap"></div>
         </div>
       </div>
@@ -689,7 +780,7 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
       <div class="card dash-card w-full" data-card="amload">
         <div class="card-hd"><span class="dash-grip">⠿</span><h3>Account Manager workload</h3></div>
         <div class="card-bd">
-          <div class="help">Client count, combined revenue, and tier mix per AM. "Needs review" counts clients with no explicit industry or AM set.</div>
+          <div class="help">Client count, revenue, and tier mix per AM, plus live open-quote load split into Quotes / In-progress / On-hold (from the Printavo ops sync). "Needs review" counts clients with no explicit industry or AM set. Click <b>Brief</b> to build a sendable rundown for that AM.</div>
           <div id="dashAmWrap"></div>
         </div>
       </div>
@@ -868,6 +959,23 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
       <button class="btn btn-green" id="handoffOpenAll">Open all drafts</button>
       <button class="btn btn-gray" id="handoffCopyAll">Copy all to clipboard</button>
       <span id="handoffHint" class="help" style="margin-left:auto;font-size:12px"></span>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="amBriefOverlay">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-hd brief-noprint">
+      <h3>Account Manager Brief</h3>
+      <button class="modal-close" onclick="closeAmBrief()">&times;</button>
+    </div>
+    <div class="modal-bd">
+      <div id="briefPrintArea"></div>
+    </div>
+    <div class="modal-ft brief-noprint">
+      <a class="btn btn-green" id="briefMailBtn" href="#">Email to AM</a>
+      <button class="btn btn-gray" id="briefCopyBtn">Copy text</button>
+      <button class="btn btn-gray" onclick="window.print()">Print / PDF</button>
     </div>
   </div>
 </div>
@@ -4260,6 +4368,22 @@ let state_leads = [];
 let leadsSearchQuery = "";
 let activeLeadId = null;
 
+// Printavo operational slice (outstanding, quotes-this-week, art declines, AM
+// workload, sales-by-month). Populated by /api/printavo-sync?mode=ops and read
+// from /api/data?ops=1. Held separately from `state` so it can be absent without
+// breaking the roster-based dashboard.
+let opsData = { available: false };
+
+async function loadOpsData() {
+  try {
+    const r = await fetch("/api/data?ops=1", { credentials: "same-origin" });
+    const d = await r.json();
+    opsData = d && d.available ? d : { available: false };
+  } catch (e) {
+    opsData = { available: false };
+  }
+}
+
 async function loadData() {
   try {
     const r = await fetch("/api/data", { credentials: "same-origin" });
@@ -4274,6 +4398,9 @@ async function loadData() {
   }
   state.enrichment = backfillMondaySeed(state.enrichment || {});
   saveEnrichment(state.enrichment).catch(function() {});
+  // Ops data loads in parallel and re-renders the dashboard when it arrives, so
+  // roster metrics never wait on the Printavo ops slice.
+  loadOpsData().then(function() { if (typeof renderDashboard === "function") renderDashboard(); });
   render();
 }
 
@@ -5126,7 +5253,9 @@ const DASH_THRESHOLDS = {
 };
 
 let dashYear = "all";
+let dashYearInitialized = false; // so we only auto-default to the current year once
 let dashConcentrationOpen = false; // remembers whether the full-client concentration list is expanded
+let dashIndustrySort = "count"; // "count" | "revenue" — By industry card sort
 let dashGroupState = { atrisk: true, reengage: false, unassigned: false }; // remembers open/closed across re-renders
 
 // Year filtering requires a `revenue_by_year` (and optionally `invoices_by_year`) object on the
@@ -5194,6 +5323,14 @@ function getDashboardData() {
 function populateDashYearSelect() {
   const sel = document.getElementById("dashYearSelect");
   const years = getDashboardYears();
+  // Default to the current year the first time we have per-year data, rather than
+  // "All time" — the dashboard should open on "how are we doing now". Falls back to
+  // the newest year present, then to "all" if there's no year data at all.
+  if (!dashYearInitialized && years.length) {
+    const cur = String(new Date().getFullYear());
+    dashYear = years.indexOf(cur) !== -1 ? cur : years[0];
+    dashYearInitialized = true;
+  }
   const options = [["all", "All time"]].concat(years.map(function(y) { return [y, y]; }));
   sel.innerHTML = options.map(function(o) {
     return '<option value="' + o[0] + '"' + (o[0] === dashYear ? " selected" : "") + '>' + o[1] + '</option>';
@@ -5255,36 +5392,87 @@ function renderRevTrend() {
 
 // Clients with real history who have stopped ordering. Ranked by revenue at stake,
 // because "who went quiet" only matters in proportion to what they were worth.
+// Per-account dormancy resolution lives in enrichment so it persists and is
+// merged (never wiped) by the server. Shape:
+//   enrichment[id].dormant_resolution = { status:"resolved", reason:"rebranded", note, at }
+// A resolved account drops off the at-risk list; the reason is retained so it can
+// be shown/undone. This is what lets "WRH, Inc — rebranded" stop nagging the team.
+const DORMANT_REASONS = [
+  ["rebranded", "Rebranded / renamed"],
+  ["acquired", "Acquired / merged"],
+  ["closed", "Closed / out of business"],
+  ["moved", "Moved to another vendor"],
+  ["seasonal", "Seasonal — expected gap"],
+  ["other", "Other (still valid concern)"],
+];
+
+function getDormantResolution(id) {
+  const e = state.enrichment && state.enrichment[id];
+  return (e && e.dormant_resolution) || null;
+}
+
+async function setDormantResolution(id, reasonKey) {
+  if (!state.enrichment) state.enrichment = {};
+  if (!state.enrichment[id]) state.enrichment[id] = {};
+  if (reasonKey === null) {
+    delete state.enrichment[id].dormant_resolution;
+  } else {
+    const label = (DORMANT_REASONS.find(function(r) { return r[0] === reasonKey; }) || [reasonKey, reasonKey])[1];
+    state.enrichment[id].dormant_resolution = {
+      status: "resolved", reason: reasonKey, label: label, at: new Date().toISOString()
+    };
+  }
+  renderDormant();
+  try { await saveEnrichment(state.enrichment); } catch (e) {}
+}
+window.setDormantResolution = setDormantResolution;
+
+let dashDormantShowResolved = false;
+
 function renderDormant() {
   const el = document.getElementById("dashDormantWrap");
   if (!el) return;
 
-  const rows = state.synced.map(function(c) {
+  const all = state.synced.map(function(c) {
     return {
       id: c.customer_id,
       name: c.company_name,
       rev: Number(c.total_revenue) || 0,
       days: daysSince(c.last_invoice_date),
-      invoices: Number(c.invoice_count) || 0
+      invoices: Number(c.invoice_count) || 0,
+      resolution: getDormantResolution(c.customer_id)
     };
   }).filter(function(r) {
-    // Needs enough history to call it dormancy rather than "new and hasn't ordered yet".
     return r.days != null && r.days >= 180 && r.rev > 0 && r.invoices >= 2;
   }).sort(function(a, b) { return b.rev - a.rev; });
 
-  if (!rows.length) {
+  const active = all.filter(function(r) { return !r.resolution; });
+  const resolved = all.filter(function(r) { return r.resolution; });
+
+  if (!all.length) {
     el.innerHTML = '<div class="empty-state">Nobody with real history has gone quiet. Good sign.</div>';
     return;
   }
 
-  const atStake = rows.reduce(function(s, r) { return s + r.rev; }, 0);
+  const atStake = active.reduce(function(s, r) { return s + r.rev; }, 0);
 
-  el.innerHTML =
+  function reasonMenu(id) {
+    return '<select class="dm-rbtn" onchange="if(this.value){setDormantResolution(\'' + id + '\',this.value);this.value=\'\';}">' +
+      '<option value="">Resolve…</option>' +
+      DORMANT_REASONS.map(function(r) { return '<option value="' + r[0] + '">' + r[1] + '</option>'; }).join("") +
+      '</select>';
+  }
+
+  let html =
     '<div class="rep-hero">' +
       '<span class="rep-hero-n" style="color:#B91C1C">' + fmtMoney(atStake) + '</span>' +
-      '<span class="rep-hero-s">at stake across ' + rows.length + ' quiet accounts</span>' +
-    '</div>' +
-    rows.slice(0, 12).map(function(r) {
+      '<span class="rep-hero-s">at stake across ' + active.length + ' unresolved account' + (active.length === 1 ? '' : 's') + '</span>' +
+    '</div>';
+
+  if (!active.length) {
+    html += '<div class="empty-state">Every quiet account here has been reviewed and resolved.</div>';
+  } else {
+    html += active.slice(0, 12).map(function(r) {
       const sev = r.days >= 540 ? "rep-red" : (r.days >= 365 ? "rep-amber" : "rep-gray");
       const lbl = r.days >= 540 ? "cold" : (r.days >= 365 ? "1yr+" : "quiet");
       return '<div class="rep-row">' +
@@ -5294,10 +5482,32 @@ function renderDormant() {
         '</div>' +
         '<span class="rep-pill ' + sev + '">' + lbl + '</span>' +
         '<div class="rep-val">' + fmtMoney(r.rev) + '</div>' +
+        '<div class="dm-resolve">' + reasonMenu(r.id) + '</div>' +
       '</div>';
-    }).join("") +
-    (rows.length > 12 ? '<div class="rep-legend">+ ' + (rows.length - 12) + ' more</div>' : '');
+    }).join("");
+    if (active.length > 12) html += '<div class="rep-legend">+ ' + (active.length - 12) + ' more</div>';
+  }
 
+  if (resolved.length) {
+    html += '<details class="alert-group sev-low" style="margin-top:10px"' + (dashDormantShowResolved ? " open" : "") + '>' +
+      '<summary>' + resolved.length + ' resolved (excluded from at-risk)</summary>' +
+      '<div class="alert-group-body">' +
+        resolved.map(function(r) {
+          return '<div class="rep-row">' +
+            '<div class="rep-name" data-open="' + r.id + '">' + r.name +
+              '<div class="dm-resolved">' + (r.resolution.label || r.resolution.reason) +
+                ' \u00b7 ' + Math.round(r.days / 30) + 'mo quiet</div>' +
+            '</div>' +
+            '<div class="rep-val">' + fmtMoney(r.rev) + '</div>' +
+            '<div class="dm-resolve"><button class="dm-undo" onclick="setDormantResolution(\'' + r.id + '\',null)">undo</button></div>' +
+          '</div>';
+        }).join("") +
+      '</div></details>';
+  }
+
+  el.innerHTML = html;
+  var d = el.querySelector("details");
+  if (d) d.addEventListener("toggle", function() { dashDormantShowResolved = d.open; });
   wireRepOpen(el);
 }
 
@@ -5438,11 +5648,18 @@ function wireRepOpen(el) {
 // if it went in backbone_settings, Megan rearranging her dashboard would rearrange
 // everyone else's. (Tab visibility IS shared, deliberately; that's an admin control.)
 // ---------------------------------------------------------------------------
-const DASH_LAYOUT_KEY = "backbone_dash_layout_v1";
+// Bumped to v2 when the dashboard cards were split/added (Top 10 + By industry
+// separated, sales-goal / outstanding / ops workload added). A v1 saved layout
+// references cards that no longer exist and lacks the new ones, so starting fresh
+// once is cleaner than orphaning the new cards at the bottom.
+const DASH_LAYOUT_KEY = "backbone_dash_layout_v2";
 
 const DASH_CARD_NAMES = {
-  concentration: "Revenue concentration",
+  salesgoal: "YTD sales vs goal",
+  top10: "Top 10 clients",
+  industry: "By industry",
   revtrend: "Revenue trend",
+  outstanding: "Outstanding for payment",
   dormant: "Dormant & at risk",
   cadence: "Overdue to reorder",
   tiermove: "Tier movement",
@@ -5627,9 +5844,17 @@ function initDashDrag() {
     grid.querySelectorAll(".drag-over").forEach(function(c) { c.classList.remove("drag-over"); });
     over.classList.add("drag-over");
 
-    // Insert before or after depending on which half of the target we're over.
+    // 2-column grid: decide insert side by the pointer's position within the
+    // target card. Use the horizontal midpoint when the dragged card and target
+    // sit on the same row (side-by-side), and the vertical midpoint otherwise.
+    // This makes "drop it to the left / right of that card" behave predictably
+    // instead of only ever inserting above/below.
     const r = over.getBoundingClientRect();
-    const after = (e.clientY - r.top) > r.height / 2;
+    const dr = dashDragEl.getBoundingClientRect();
+    const sameRow = Math.abs(dr.top - r.top) < r.height * 0.5;
+    const after = sameRow
+      ? (e.clientX - r.left) > r.width / 2
+      : (e.clientY - r.top) > r.height / 2;
     grid.insertBefore(dashDragEl, after ? over.nextSibling : over);
   });
 
@@ -5644,15 +5869,258 @@ function initDashDrag() {
   }
 }
 
+// ---- Industry sort toggle wiring (By industry card) ----
+function wireIndustrySort() {
+  const wrap = document.getElementById("dashIndustrySort");
+  if (!wrap || wrap.dataset.wired) return;
+  wrap.dataset.wired = "1";
+  wrap.querySelectorAll("button").forEach(function(b) {
+    b.addEventListener("click", function() {
+      dashIndustrySort = b.dataset.isort;
+      wrap.querySelectorAll("button").forEach(function(x) { x.classList.toggle("on", x === b); });
+      renderDashboard();
+    });
+  });
+}
+
+// ---- YTD sales by month vs the $280k/month goal ----
+const MONTHLY_GOAL = 280000;
+const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function renderSalesGoal() {
+  const el = document.getElementById("dashSalesGoalWrap");
+  if (!el) return;
+  if (!opsData || !opsData.available || !opsData.salesByMonth) {
+    el.innerHTML = '<div class="empty-state">Waiting on the Printavo ops sync.<br/>' +
+      '<span style="font-size:11px">Run <code>/api/printavo-sync?mode=ops</code> to populate monthly sales.</span></div>';
+    return;
+  }
+  const year = new Date().getFullYear();
+  const curMonth = new Date().getMonth(); // 0-based; months elapsed so far
+  const byMonth = [];
+  for (let m = 0; m < 12; m++) {
+    const key = year + "-" + String(m + 1).padStart(2, "0");
+    byMonth.push(Number(opsData.salesByMonth[key]) || 0);
+  }
+  const ytdActual = byMonth.slice(0, curMonth + 1).reduce(function(s, v) { return s + v; }, 0);
+  const ytdGoal = MONTHLY_GOAL * (curMonth + 1);
+  const pace = ytdGoal > 0 ? (ytdActual / ytdGoal * 100) : 0;
+  const maxBar = Math.max(MONTHLY_GOAL, Math.max.apply(null, byMonth.concat([1])));
+
+  const paceColor = pace >= 100 ? "#3D9A5C" : (pace >= 85 ? "#D97706" : "#B91C1C");
+
+  el.innerHTML =
+    '<div class="sg-hero">' +
+      '<span class="sg-hero-n" style="color:' + paceColor + '">' + fmtMoney(ytdActual) + '</span>' +
+      '<span class="sg-hero-s">of ' + fmtMoney(ytdGoal) + ' YTD goal \u00b7 ' + pace.toFixed(0) + '% of pace (' + (curMonth + 1) + ' mo \u00d7 ' + fmtMoney(MONTHLY_GOAL) + ')</span>' +
+    '</div>' +
+    '<div class="sg-track"><div class="sg-fill" style="width:' + Math.min(100, pace).toFixed(1) + '%;background:' + paceColor + '"></div></div>' +
+    '<div class="sg-months">' +
+      byMonth.map(function(v, m) {
+        const h = maxBar > 0 ? (v / maxBar * 100) : 0;
+        const goalPct = maxBar > 0 ? (MONTHLY_GOAL / maxBar * 100) : 0;
+        const future = m > curMonth;
+        const hit = v >= MONTHLY_GOAL;
+        const barColor = future ? "#E5E9ED" : (hit ? "#3D9A5C" : "#B7C0C9");
+        return '<div class="sg-col">' +
+          '<div class="sg-barwrap">' +
+            '<div class="sg-bar" style="height:' + h.toFixed(1) + '%;background:' + barColor + '"></div>' +
+            '<div class="sg-goal-line" style="bottom:' + goalPct.toFixed(1) + '%"></div>' +
+          '</div>' +
+          '<div class="sg-mval">' + (v > 0 ? "$" + Math.round(v / 1000) + "k" : "—") + '</div>' +
+          '<div class="sg-mlbl">' + MONTH_ABBR[m] + '</div>' +
+        '</div>';
+      }).join("") +
+    '</div>' +
+    '<div class="help" style="margin-top:8px">Black line marks the $' + Math.round(MONTHLY_GOAL / 1000) + 'k monthly goal. Bars are paid revenue by invoice month; greyed months are still ahead.</div>';
+}
+
+// ---- Outstanding for payment (open invoice balances) ----
+let dashOutstandingOpen = false;
+function renderOutstanding() {
+  const el = document.getElementById("dashOutstandingWrap");
+  if (!el) return;
+  if (!opsData || !opsData.available || !Array.isArray(opsData.outstanding)) {
+    el.innerHTML = '<div class="empty-state">Waiting on the Printavo ops sync.<br/>' +
+      '<span style="font-size:11px">Run <code>/api/printavo-sync?mode=ops</code> to pull open balances.</span></div>';
+    return;
+  }
+  const list = opsData.outstanding;
+  if (!list.length) {
+    el.innerHTML = '<div class="empty-state">No open balances. Everything invoiced is paid.</div>';
+    return;
+  }
+  const total = Number(opsData.outstandingTotal) || list.reduce(function(s, r) { return s + (r.amount || 0); }, 0);
+  function row(r) {
+    return '<div class="out-row">' +
+      '<div class="out-main">' +
+        '<div class="out-name"' + (r.customer_id ? ' data-open="' + r.customer_id + '"' : '') + '>' + (r.company_name || "Unknown") + '</div>' +
+        '<div class="out-sub">' + (r.visualId ? '#' + r.visualId + ' \u00b7 ' : '') + (r.status || '') +
+          (r.createdAt ? ' \u00b7 ' + daysSince(r.createdAt) + 'd old' : '') + '</div>' +
+      '</div>' +
+      '<div class="out-amt">' + fmtMoney(r.amount) + '</div>' +
+    '</div>';
+  }
+  el.innerHTML =
+    '<div class="sg-hero"><span class="sg-hero-n" style="color:#B91C1C">' + fmtMoney(total) + '</span>' +
+      '<span class="sg-hero-s">owed across ' + list.length + ' open invoice' + (list.length === 1 ? '' : 's') + '</span></div>' +
+    list.slice(0, 8).map(row).join("") +
+    (list.length > 8 ?
+      '<details class="alert-group sev-low" style="margin-top:8px"' + (dashOutstandingOpen ? " open" : "") + '>' +
+        '<summary>See all ' + list.length + '</summary><div class="alert-group-body">' +
+        list.slice(8).map(row).join("") + '</div></details>' : "");
+  var d = el.querySelector("details");
+  if (d) d.addEventListener("toggle", function() { dashOutstandingOpen = d.open; });
+  el.querySelectorAll(".out-name[data-open]").forEach(function(n) {
+    n.addEventListener("click", function() { openDetail(n.dataset.open); });
+  });
+}
+
+// ---- Per-AM Brief: a sendable rundown modeled on the Leads Brief ----
+function buildAmBriefData(amName) {
+  const rows = getDashboardData();
+  const mine = rows.filter(function(r) {
+    return amName === "Unassigned" ? !(r.am && ACCOUNT_MANAGERS.indexOf(r.am) !== -1) : r.am === amName;
+  });
+  const myIds = {};
+  mine.forEach(function(r) { if (r.customer_id != null) myIds[String(r.customer_id)] = true; });
+
+  // At-risk (unresolved dormant) among this AM's clients
+  const atRisk = mine.map(function(r) {
+    const c = state.synced.find(function(s) { return s.customer_id === r.customer_id; }) || {};
+    return { id: r.customer_id, name: r.company_name, rev: r.total_revenue || 0,
+      days: daysSince(c.last_invoice_date), invoices: Number(c.invoice_count) || 0,
+      resolution: getDormantResolution(r.customer_id) };
+  }).filter(function(r) {
+    return r.days != null && r.days >= 180 && r.rev > 0 && r.invoices >= 2 && !r.resolution;
+  }).sort(function(a, b) { return b.rev - a.rev; });
+
+  // Overdue to reorder among this AM's clients
+  const overdue = mine.map(function(r) {
+    const c = state.synced.find(function(s) { return s.customer_id === r.customer_id; }) || {};
+    const gap = Number(c.median_gap_days);
+    const days = daysSince(c.last_invoice_date);
+    return { id: r.customer_id, name: r.company_name, rev: r.total_revenue || 0, gap: gap, days: days,
+      overdue: (gap > 0 && days != null) ? days / gap : null };
+  }).filter(function(r) { return r.gap > 0 && r.overdue != null && r.overdue >= 1.5; })
+    .sort(function(a, b) { return (b.rev * b.overdue) - (a.rev * a.overdue); });
+
+  // Live quote workload for this AM's clients (from ops slice)
+  let wl = { quotes: 0, inProgress: 0, onHold: 0 };
+  const wlAccounts = [];
+  if (opsData && opsData.available && Array.isArray(opsData.workload)) {
+    opsData.workload.forEach(function(w) {
+      if (w.customer_id != null && myIds[String(w.customer_id)]) {
+        wl.quotes += w.quotes || 0; wl.inProgress += w.inProgress || 0; wl.onHold += w.onHold || 0;
+        wlAccounts.push(w);
+      }
+    });
+  }
+
+  const topClients = mine.slice().sort(function(a, b) { return b.total_revenue - a.total_revenue; }).slice(0, 5);
+  const totalRev = mine.reduce(function(s, r) { return s + (r.total_revenue || 0); }, 0);
+
+  return { amName: amName, clientCount: mine.length, totalRev: totalRev,
+    atRisk: atRisk, overdue: overdue, wl: wl, wlAccounts: wlAccounts, topClients: topClients };
+}
+
+function amBriefHtml(d) {
+  const when = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  function line(name, meta) {
+    return '<div class="brief-line"><span class="bl-name">' + name + '</span><span class="bl-meta">' + meta + '</span></div>';
+  }
+  let h = '<div class="brief-doc">' +
+    '<h2>' + d.amName + ' — Account Brief</h2>' +
+    '<div class="brief-meta">' + when + ' \u00b7 ' + d.clientCount + ' clients \u00b7 ' + fmtMoney(d.totalRev) + ' lifetime revenue</div>';
+
+  h += '<div class="brief-sec"><div class="brief-sec-l">Open quote load</div>';
+  if (opsData && opsData.available) {
+    h += '<div style="font-size:13px">' + d.wl.quotes + ' quotes \u00b7 ' + d.wl.inProgress + ' in-progress \u00b7 ' + d.wl.onHold + ' on-hold</div>';
+  } else {
+    h += '<div class="brief-empty">Ops sync hasn\u2019t run — quote load unavailable.</div>';
+  }
+  h += '</div>';
+
+  h += '<div class="brief-sec"><div class="brief-sec-l">At risk — no order in 6+ months (' + d.atRisk.length + ')</div>';
+  h += d.atRisk.length ? d.atRisk.slice(0, 10).map(function(r) {
+    return line(r.name, Math.round(r.days / 30) + 'mo quiet \u00b7 ' + fmtMoney(r.rev));
+  }).join("") : '<div class="brief-empty">None. Nice.</div>';
+  h += '</div>';
+
+  h += '<div class="brief-sec"><div class="brief-sec-l">Overdue to reorder — past their own rhythm (' + d.overdue.length + ')</div>';
+  h += d.overdue.length ? d.overdue.slice(0, 10).map(function(r) {
+    return line(r.name, r.overdue.toFixed(1) + '\u00d7 late \u00b7 orders ~every ' + Math.round(r.gap) + 'd \u00b7 ' + fmtMoney(r.rev));
+  }).join("") : '<div class="brief-empty">Everyone\u2019s on cadence.</div>';
+  h += '</div>';
+
+  h += '<div class="brief-sec"><div class="brief-sec-l">Top clients</div>';
+  h += d.topClients.length ? d.topClients.map(function(r) {
+    return line(r.company_name, fmtMoney(r.total_revenue));
+  }).join("") : '<div class="brief-empty">No clients assigned.</div>';
+  h += '</div></div>';
+  return h;
+}
+
+function amBriefPlainText(d) {
+  const when = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  let t = d.amName + " — Account Brief\n" + when + "\n";
+  t += d.clientCount + " clients · " + fmtMoney(d.totalRev) + " lifetime revenue\n\n";
+  if (opsData && opsData.available) {
+    t += "OPEN QUOTE LOAD: " + d.wl.quotes + " quotes, " + d.wl.inProgress + " in-progress, " + d.wl.onHold + " on-hold\n\n";
+  }
+  t += "AT RISK (no order 6+ months):\n";
+  t += d.atRisk.length ? d.atRisk.slice(0, 10).map(function(r) {
+    return "  - " + r.name + " — " + Math.round(r.days / 30) + "mo quiet, " + fmtMoney(r.rev);
+  }).join("\n") : "  none";
+  t += "\n\nOVERDUE TO REORDER (past their own rhythm):\n";
+  t += d.overdue.length ? d.overdue.slice(0, 10).map(function(r) {
+    return "  - " + r.name + " — " + r.overdue.toFixed(1) + "x late, orders ~every " + Math.round(r.gap) + "d, " + fmtMoney(r.rev);
+  }).join("\n") : "  none";
+  t += "\n\nTOP CLIENTS:\n";
+  t += d.topClients.map(function(r) { return "  - " + r.company_name + " — " + fmtMoney(r.total_revenue); }).join("\n");
+  return t;
+}
+
+function amEmailFor(amName) {
+  // AM emails follow firstname@pmapparel.com; derive from the first name.
+  const first = String(amName || "").trim().split(/\s+/)[0].toLowerCase();
+  return first && amName !== "Unassigned" ? first + "@pmapparel.com" : "";
+}
+
+function openAmBrief(amName) {
+  const d = buildAmBriefData(amName);
+  const modal = document.getElementById("amBriefOverlay");
+  document.getElementById("briefPrintArea").innerHTML = amBriefHtml(d);
+  const email = amEmailFor(amName);
+  const subj = encodeURIComponent(amName + " — Account Brief (" + new Date().toLocaleDateString() + ")");
+  const body = encodeURIComponent(amBriefPlainText(d));
+  const mailBtn = document.getElementById("briefMailBtn");
+  mailBtn.href = "mailto:" + email + "?subject=" + subj + "&body=" + body;
+  mailBtn.style.display = email ? "" : "none";
+  document.getElementById("briefCopyBtn").onclick = function() {
+    navigator.clipboard.writeText(amBriefPlainText(d)).then(function() {
+      document.getElementById("briefCopyBtn").textContent = "Copied ✓";
+      setTimeout(function() { document.getElementById("briefCopyBtn").textContent = "Copy text"; }, 1500);
+    });
+  };
+  modal.classList.add("open");
+}
+function closeAmBrief() { document.getElementById("amBriefOverlay").classList.remove("open"); }
+window.openAmBrief = openAmBrief;
+window.closeAmBrief = closeAmBrief;
+
 function renderDashboard() {
   populateDashYearSelect();
   applyDashLayout();
   initDashDrag();
+  wireIndustrySort();
   renderLeaderboard();
   renderRevTrend();
   renderDormant();
   renderCadence();
   renderTierMove();
+  renderSalesGoal();
+  renderOutstanding();
   const rows = getDashboardData();
   if (rows.length === 0) {
     document.getElementById("dashPortfolioKpiGrid").innerHTML = "";
@@ -5697,7 +6165,7 @@ function renderDashboard() {
     '<div class="kpi"><div class="kpi-lbl">Avg score</div><div class="kpi-val">' + avgScore.toFixed(2) + '</div><div class="kpi-s">out of 5' + (dashYear !== "all" ? " · this year's revenue/invoices" : "") + '</div></div>' +
     '<div class="kpi"><div class="kpi-lbl">Platinum + Gold</div><div class="kpi-val">' + topTierShare + '%</div><div class="kpi-s">of roster' + (dashYear !== "all" ? ", " + dashYear + " basis" : "") + '</div></div>';
 
-  // --- Revenue concentration: top 10 clients' share of total revenue, expandable to full list ---
+  // --- Top 10 clients: share of total revenue, expandable to full list ---
   const sortedByRev = rows.slice().sort(function(a, b) { return b.total_revenue - a.total_revenue; });
   const top10 = sortedByRev.slice(0, 10);
   const top10Revenue = top10.reduce(function(s, r) { return s + r.total_revenue; }, 0);
@@ -5711,12 +6179,15 @@ function renderDashboard() {
   }
   document.getElementById("dashConcentrationWrap").innerHTML =
     '<div class="mix-bar-row">' +
-      '<div class="mix-bar-lbl">Top 10 clients</div>' +
+      '<div class="mix-bar-lbl">Top 10 share</div>' +
       '<div class="mix-bar-track"><div class="mix-bar-fill" style="width:' + top10Share.toFixed(1) + '%;background:#3D9A5C"></div></div>' +
       '<div class="mix-bar-val">' + top10Share.toFixed(0) + '% of revenue</div>' +
     '</div>' +
+    '<div class="alert-group-body" style="margin-top:8px">' +
+      top10.map(function(r, i) { return concClientRow(r, i + 1); }).join("") +
+    '</div>' +
     '<details class="alert-group sev-low" style="margin-top:8px"' + (dashConcentrationOpen ? " open" : "") + '>' +
-      '<summary>Top 10 clients — click to see all ' + sortedByRev.length + '</summary>' +
+      '<summary>See all ' + sortedByRev.length + ' clients by revenue</summary>' +
       '<div class="alert-group-body">' +
         sortedByRev.map(function(r, i) { return concClientRow(r, i + 1); }).join("") +
       '</div>' +
@@ -5729,12 +6200,11 @@ function renderDashboard() {
     el.addEventListener("click", function() { openDetail(el.dataset.id); });
   });
 
-  // --- Industry mix ---
+  // --- By industry (own card, sortable by # clients or $ spent) ---
   const industryMap = {};
   rows.forEach(function(r) {
     // A record whose industry field holds two comma-joined industries can't be attributed to a
-    // single lane, so it shouldn't render as its own industry bucket. Fold it into "Needs review"
-    // alongside the genuinely unclassified ones.
+    // single lane, so it shouldn't render as its own industry bucket. Fold it into "Needs review".
     const key = r.dualIndustry ? "Needs review" : (r.industry || "Unclassified");
     if (!industryMap[key]) industryMap[key] = { count: 0, revenue: 0 };
     industryMap[key].count++;
@@ -5742,24 +6212,29 @@ function renderDashboard() {
   });
   const industryList = Object.keys(industryMap).map(function(k) {
     return { industry: k, count: industryMap[k].count, revenue: industryMap[k].revenue };
-  }).sort(function(a, b) { return b.count - a.count; });
-  const maxIndustryCount = industryList.length ? industryList[0].count : 1;
+  });
+  const byRevenue = dashIndustrySort === "revenue";
+  industryList.sort(function(a, b) {
+    return byRevenue ? (b.revenue - a.revenue) : (b.count - a.count);
+  });
+  const maxVal = industryList.length
+    ? (byRevenue ? industryList[0].revenue : industryList[0].count) : 1;
   document.getElementById("dashIndustryWrap").innerHTML =
-    '<div class="section-lbl" style="margin-top:0">By industry (client count)</div>' +
     industryList.map(function(i) {
-      const pct = (i.count / maxIndustryCount * 100).toFixed(0);
+      const v = byRevenue ? i.revenue : i.count;
+      const pct = maxVal > 0 ? (v / maxVal * 100).toFixed(0) : 0;
       const color = (i.industry === "Unclassified" || i.industry === "Needs review") ? "#D1D5DB" : "#3D9A5C";
       return '<div class="mix-bar-row">' +
         '<div class="mix-bar-lbl">' + i.industry + '</div>' +
         '<div class="mix-bar-track"><div class="mix-bar-fill" style="width:' + pct + '%;background:' + color + '"></div></div>' +
-        '<div class="mix-bar-val">' + i.count + ' · ' + fmtMoney(i.revenue) + '</div>' +
+        '<div class="mix-bar-val">' + i.count + (i.count === 1 ? ' client' : ' clients') + ' · ' + fmtMoney(i.revenue) + '</div>' +
       '</div>';
     }).join("");
 
   // --- AM workload ---
   const amMap = {};
-  ACCOUNT_MANAGERS.forEach(function(a) { amMap[a] = { count: 0, revenue: 0, tiers: { "Platinum": 0, "Gold": 0, "Silver": 0, "Bronze": 0, "Valuable Dirt": 0 }, needsReview: 0, scoreSum: 0 }; });
-  amMap["Unassigned"] = { count: 0, revenue: 0, tiers: { "Platinum": 0, "Gold": 0, "Silver": 0, "Bronze": 0, "Valuable Dirt": 0 }, needsReview: 0, scoreSum: 0 };
+  ACCOUNT_MANAGERS.forEach(function(a) { amMap[a] = { count: 0, revenue: 0, tiers: { "Platinum": 0, "Gold": 0, "Silver": 0, "Bronze": 0, "Valuable Dirt": 0 }, needsReview: 0, scoreSum: 0, wl: { quotes: 0, inProgress: 0, onHold: 0 } }; });
+  amMap["Unassigned"] = { count: 0, revenue: 0, tiers: { "Platinum": 0, "Gold": 0, "Silver": 0, "Bronze": 0, "Valuable Dirt": 0 }, needsReview: 0, scoreSum: 0, wl: { quotes: 0, inProgress: 0, onHold: 0 } };
   rows.forEach(function(r) {
     const key = r.am && amMap[r.am] ? r.am : "Unassigned";
     amMap[key].count++;
@@ -5768,27 +6243,70 @@ function renderDashboard() {
     amMap[key].scoreSum += r.total;
     if (r.needsReview) amMap[key].needsReview++;
   });
-  const amRows = Object.keys(amMap).filter(function(k) { return amMap[k].count > 0; })
-    .sort(function(a, b) { return amMap[b].revenue - amMap[a].revenue; });
+
+  // Fold live quote workload (from the Printavo ops slice) onto each AM by mapping
+  // each quote's owning customer_id to that customer's assigned AM via enrichment.
+  // Quotes whose customer isn't on the roster (or has no AM) land in "Unassigned".
+  let opsWorkloadTotal = 0;
+  if (opsData && opsData.available && Array.isArray(opsData.workload)) {
+    const custToAm = {};
+    rows.forEach(function(r) {
+      if (r.customer_id != null) custToAm[String(r.customer_id)] = (r.am && amMap[r.am]) ? r.am : "Unassigned";
+    });
+    opsData.workload.forEach(function(w) {
+      const am = (w.customer_id != null && custToAm[String(w.customer_id)]) ? custToAm[String(w.customer_id)] : "Unassigned";
+      if (!amMap[am]) return;
+      amMap[am].wl.quotes += w.quotes || 0;
+      amMap[am].wl.inProgress += w.inProgress || 0;
+      amMap[am].wl.onHold += w.onHold || 0;
+      opsWorkloadTotal += (w.quotes || 0) + (w.inProgress || 0) + (w.onHold || 0);
+    });
+  }
+  const showWl = opsData && opsData.available;
+
+  const amRows = Object.keys(amMap).filter(function(k) {
+    return amMap[k].count > 0 || (amMap[k].wl.quotes + amMap[k].wl.inProgress + amMap[k].wl.onHold) > 0;
+  }).sort(function(a, b) { return amMap[b].revenue - amMap[a].revenue; });
   let amHtml = '<table class="am-table"><thead><tr>' +
     '<th>Account Manager</th><th>Clients</th><th>Revenue</th><th>Avg Score</th><th>Tier mix</th><th>Needs review</th>' +
+    (showWl ? '<th>Open quote load</th>' : '') + '<th></th>' +
     '</tr></thead><tbody>';
   amRows.forEach(function(k) {
     const a = amMap[k];
     const tierPills = Object.keys(a.tiers).filter(function(t) { return a.tiers[t] > 0; }).map(function(t) {
       return '<span class="tier-pill" style="background:#F3F4F6;color:' + (TIER_COLORS[t] || "#374151") + '">' + t.slice(0, 4) + ' ' + a.tiers[t] + '</span>';
     }).join("");
+    let wlCell = "";
+    if (showWl) {
+      const w = a.wl;
+      const tot = w.quotes + w.inProgress + w.onHold;
+      wlCell = tot === 0 ? '<td><span class="wl-zero">none open</span></td>' :
+        '<td><div class="wl-cell">' +
+          (w.quotes ? '<span class="wl-pill wl-q">' + w.quotes + ' quote' + (w.quotes === 1 ? '' : 's') + '</span>' : '') +
+          (w.inProgress ? '<span class="wl-pill wl-p">' + w.inProgress + ' in-prog</span>' : '') +
+          (w.onHold ? '<span class="wl-pill wl-h">' + w.onHold + ' on-hold</span>' : '') +
+        '</div></td>';
+    }
+    const avgScore = a.count ? (a.scoreSum / a.count).toFixed(2) : "—";
     amHtml += '<tr>' +
       '<td class="company-cell">' + k + '</td>' +
       '<td>' + a.count + '</td>' +
       '<td>' + fmtMoney(a.revenue) + '</td>' +
-      '<td>' + (a.scoreSum / a.count).toFixed(2) + '</td>' +
+      '<td>' + avgScore + '</td>' +
       '<td>' + tierPills + '</td>' +
       '<td>' + (a.needsReview > 0 ? '<span class="badge badge-amber">' + a.needsReview + '</span>' : '—') + '</td>' +
+      wlCell +
+      '<td><button class="am-brief-btn" data-am="' + k.replace(/"/g, '&quot;') + '">Brief</button></td>' +
       '</tr>';
   });
   amHtml += '</tbody></table>';
+  if (!showWl) {
+    amHtml += '<div class="help" style="margin-top:8px">Open quote load is blank until the Printavo ops sync has run (<code>/api/printavo-sync?mode=ops</code>).</div>';
+  }
   document.getElementById("dashAmWrap").innerHTML = amHtml;
+  document.querySelectorAll("#dashAmWrap .am-brief-btn").forEach(function(btn) {
+    btn.addEventListener("click", function() { openAmBrief(btn.dataset.am); });
+  });
 
   // --- Alerts ---
   // Recency (days_since) always reflects true last-activity regardless of the Year filter above;
@@ -8850,8 +9368,8 @@ let adminRoles = {};
 let adminAMs = [];
 
 const ALL_TABS = ["dashboard", "roster", "scorecard", "leads", "inbox", "settings"];
-const ALL_CARDS = ["concentration", "revtrend", "dormant", "cadence", "tiermove",
-                   "leaderboard", "amload", "alerts"];
+const ALL_CARDS = ["salesgoal", "top10", "industry", "revtrend", "outstanding",
+                   "dormant", "cadence", "tiermove", "leaderboard", "amload", "alerts"];
 
 async function loadUsersAndRoles() {
   const uw = document.getElementById("usersWrap");
