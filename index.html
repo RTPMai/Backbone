@@ -4522,6 +4522,27 @@ function getAssignedAM(industry) {
   return { industry: "Other / Not Listed", am: "Abby Penton", isFallback: true };
 }
 
+// Canonical AM resolution for a LEAD. Priority, highest first:
+//   1. lead.account_manager  — explicit manual override set on the lead card
+//   2. lead.industry         — the Industry dropdown on the Intake form (what the AM edits)
+//   3. qualification's industry_classification — the frozen AI value, fallback only
+// Every place that shows/uses a lead's suggested AM must go through this so the dropdown
+// (and the manual override) actually take effect instead of the stale qualification value.
+// Returns { am, varies, source } where source is "override" | "industry" | "qualification" | null.
+function leadSuggestedAM(lead) {
+  if (!lead) return { am: "", varies: false, source: null };
+  const explicit = (lead.account_manager || "").trim();
+  if (explicit) return { am: explicit, varies: false, source: "override" };
+  const co = (lead.qualification && lead.qualification.company_overview) || {};
+  const ind = (lead.industry || "").trim() || (co.industry_classification || "").trim();
+  if (!ind) return { am: "", varies: false, source: null };
+  const lane = getAssignedAM(ind);
+  if (!lane) return { am: "", varies: false, source: null };
+  const src = (lead.industry || "").trim() ? "industry" : "qualification";
+  if (lane.varies) return { am: "", varies: true, source: src };
+  return { am: lane.am, varies: false, source: src };
+}
+
 // Detect records where two industries got stuck into one field (e.g.
 // "Blue Collar/Agriculture, Corporate/Small Business"). Tricky because one *legitimate*
 // lane name — "City Fire, EMS & Police" — itself contains a comma. So we don't just look
@@ -6302,9 +6323,8 @@ function getLeadsRows(ignoreStage) {
     const q = l.qualification;
     const score = q ? q.qualification_scoring.total_score : null;
     const tier = q ? q.qualification_scoring.qualification_tier : "";
-    const industry = q ? q.company_overview.industry_classification : (l.industry || "");
-    const lane = industry ? getAssignedAM(industry) : null;
-    const amText = !lane ? "" : (lane.varies ? "Varies" : lane.am);
+    const amR = leadSuggestedAM(l);
+    const amText = amR.varies ? "Varies" : (amR.am || "");
     const followUp = q ? q.routing.follow_up_speed : "";
     const contact = leadBestContact(l);
     return Object.assign({}, l, {
@@ -6582,7 +6602,7 @@ function leadRundownBlock(lead) {
   const ag = (q && q.at_a_glance) || {};
   const ns = (q && q.next_steps) || {};
   const rt = (q && q.routing) || {};
-  const industry = normalizeIndustry(co.industry_classification || lead.industry || "");
+  const industry = normalizeIndustry((lead.industry || "").trim() || co.industry_classification || "");
   const lines = [];
   lines.push("Company: " + (lead.company_name || "—"));
   if (lead.website_url) lines.push("Website: " + lead.website_url);
@@ -7037,10 +7057,8 @@ async function emailSelectedLeadsToAM() {
     const q = l.qualification;
     // Guard: a lead can have a qualification object with no company_overview (failed/partial
     // parse). Reaching straight into q.company_overview.x throws and kills the whole handler.
-    const co = (q && q.company_overview) || {};
-    const ind = co.industry_classification || l.industry || "";
-    const lane = ind ? getAssignedAM(ind) : null;
-    let am = lane && !lane.varies ? lane.am : "";
+    const r = leadSuggestedAM(l);
+    let am = r.varies ? "" : r.am;
     const key = am || "Unassigned (varies / no industry)";
     (groups[key] = groups[key] || []).push(l);
   });
@@ -7149,10 +7167,8 @@ let lbMetric = "won"; // "won" | "pipeline" | "volume"
 // Same routing rule the email handoff uses, so leaderboard credit and inbox
 // destination can never disagree.
 function leadOwner(l) {
-  const co = (l.qualification && l.qualification.company_overview) || {};
-  const ind = co.industry_classification || l.industry || "";
-  const lane = ind ? getAssignedAM(ind) : null;
-  return (lane && !lane.varies) ? lane.am : null;
+  const r = leadSuggestedAM(l);
+  return (r.am && !r.varies) ? r.am : null;
 }
 
 // Deterministic color per AM so the same person is the same color every render.
@@ -7774,6 +7790,10 @@ function buildIntakeEditForm(lead) {
         '<option value="">Not set</option>' +
         INDUSTRY_LANES.map(function(l) { return '<option value="' + l.industry + '"' + (l.industry === (lead.industry || "") ? ' selected' : '') + '>' + l.industry + '</option>'; }).join("") +
       '</select></div>' +
+      '<div><label class="field-lbl">Account Manager</label><select class="field" id="editLeadAM">' +
+        '<option value="">Auto (from industry)</option>' +
+        ACCOUNT_MANAGERS.map(function(a) { return '<option value="' + a + '"' + (a === (lead.account_manager || "") ? ' selected' : '') + '>' + a + '</option>'; }).join("") +
+      '</select></div>' +
       '<div class="wide"><label class="field-lbl">Inquiry notes</label><textarea class="field" id="editLeadInquiryNotes">' + escapeHtml(lead.inquiry_notes) + '</textarea></div>' +
       '<div class="wide"><label class="field-lbl">Existing CRM notes</label><textarea class="field" id="editLeadCrmNotes">' + escapeHtml(lead.existing_crm_notes) + '</textarea></div>' +
     '</div>' +
@@ -7792,6 +7812,7 @@ async function handleSaveLeadIntake() {
   lead.contact_phone = document.getElementById("editLeadPhone").value.trim();
   lead.source_type = document.getElementById("editLeadSource").value;
   lead.industry = document.getElementById("editLeadIndustry").value;
+  lead.account_manager = document.getElementById("editLeadAM").value;
   lead.inquiry_notes = document.getElementById("editLeadInquiryNotes").value.trim();
   lead.existing_crm_notes = document.getElementById("editLeadCrmNotes").value.trim();
   const statusEl = document.getElementById("saveLeadIntakeStatus");
@@ -7799,6 +7820,7 @@ async function handleSaveLeadIntake() {
   try {
     await saveLeads();
     statusEl.textContent = "Saved";
+    renderLeadDetailBody(lead);
     renderLeadsPage();
   } catch (e) {
     statusEl.textContent = "Save failed, try again";
@@ -7834,8 +7856,10 @@ function renderLeadDetailBody(lead) {
 
   const s = q.qualification_scoring;
   const suggestedAM = (function() {
-    const lane = q.company_overview.industry_classification ? getAssignedAM(q.company_overview.industry_classification) : null;
-    return !lane ? "—" : (lane.varies ? "Varies by account" : lane.am);
+    const r = leadSuggestedAM(lead);
+    if (r.source === "override") return r.am + " (manual)";
+    if (r.varies) return "Varies by account";
+    return r.am || "—";
   })();
 
   // ---- Rundown: score + tier up top, plain-English summary, two clean stat blocks below ----
@@ -8155,7 +8179,8 @@ async function handlePromoteToRoster() {
   }
   const customerId = "LEAD-" + lead.lead_id.slice(5, 13).toUpperCase();
   const q = lead.qualification;
-  const industry = q ? q.company_overview.industry_classification : lead.industry;
+  const co = (q && q.company_overview) || {};
+  const industry = (lead.industry || "").trim() || co.industry_classification || "";
 
   state.synced.push({
     customer_id: customerId,
@@ -8170,6 +8195,7 @@ async function handlePromoteToRoster() {
   const promoContact = leadBestContact(lead);
   state.enrichment[customerId] = {
     industry: industry || "",
+    account_manager: (lead.account_manager || "").trim(),
     website_url: lead.website_url || "",
     contact_first_name: lead.contact_name || "",
     contact_email: promoContact.email || "",
