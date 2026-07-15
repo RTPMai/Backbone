@@ -1,22 +1,13 @@
-// Session guard. Uses getSession (same helper api/auth.js uses for its plain
-// "is this a valid session" check) rather than requireAuth — this endpoint only
-// needs "is the caller logged in at all", with no role requirement, and getSession
-// has no role argument to get wrong. Returns the session object or a falsy value.
-const { getSession } = require("../lib/auth.js");
-
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
-
-  const sess = getSession(req);
-  if (!sess) return res.status(401).json({ error: "Not authenticated" });
 
   const url = process.env.KV_REST_API_URL;
   const token = process.env.KV_REST_API_TOKEN;
   if (!url || !token) return res.status(500).json({ error: "Upstash not configured" });
 
-  // Shared chunked/multi-encoded Upstash value decoder (same pattern as backbone_data).
+  // Shared decoder for Upstash values that may be JSON-stringified and/or chunked.
   function decodeKv(result) {
     if (!result) return null;
     let data = result;
@@ -36,10 +27,8 @@ module.exports = async function handler(req, res) {
     return data;
   }
 
-  // ?ops=1 returns the Printavo operational slice (outstanding, quotes-this-week,
-  // art declines, AM workload, sales-by-month) written by printavo-sync?mode=ops.
-  // Kept on a separate key so the roster payload stays lean for callers that
-  // don't need it.
+  // ?ops=1 returns the Printavo operational slice written by
+  // printavo-sync?mode=ops. Separate key so the roster payload stays lean.
   if (req.query.ops === "1" || req.query.ops === "true") {
     try {
       const r = await fetch(`${url}/get/backbone_printavo_ops`, {
@@ -49,9 +38,7 @@ module.exports = async function handler(req, res) {
       const data = decodeKv(json.result);
       res.setHeader("Content-Type", "application/json");
       res.setHeader("Cache-Control", "s-maxage=10, stale-while-revalidate=60");
-      if (!data) {
-        return res.status(200).json({ available: false });
-      }
+      if (!data) return res.status(200).json({ available: false });
       return res.status(200).json(Object.assign({ available: true }, data));
     } catch (e) {
       return res.status(500).json({ error: e.message });
@@ -97,4 +84,4 @@ module.exports = async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
-};
+}
