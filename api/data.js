@@ -7,6 +7,48 @@ export default async function handler(req, res) {
   const token = process.env.KV_REST_API_TOKEN;
   if (!url || !token) return res.status(500).json({ error: "Upstash not configured" });
 
+  // Shared chunked/multi-encoded Upstash value decoder (same pattern as backbone_data).
+  function decodeKv(result) {
+    if (!result) return null;
+    let data = result;
+    let attempts = 0;
+    while (typeof data === "string" && attempts < 3) {
+      try { data = JSON.parse(data); } catch (e) { break; }
+      attempts++;
+    }
+    if (data && typeof data === "object" && !Array.isArray(data) &&
+        data.synced === undefined && data["0"] !== undefined) {
+      try {
+        data = JSON.parse(
+          Object.keys(data).sort((a, b) => Number(a) - Number(b)).map((k) => data[k]).join("")
+        );
+      } catch (e) {}
+    }
+    return data;
+  }
+
+  // ?ops=1 returns the Printavo operational slice (outstanding, quotes-this-week,
+  // art declines, AM workload, sales-by-month) written by printavo-sync?mode=ops.
+  // Kept on a separate key so the roster payload stays lean for callers that
+  // don't need it.
+  if (req.query.ops === "1" || req.query.ops === "true") {
+    try {
+      const r = await fetch(`${url}/get/backbone_printavo_ops`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await r.json();
+      const data = decodeKv(json.result);
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Cache-Control", "s-maxage=10, stale-while-revalidate=60");
+      if (!data) {
+        return res.status(200).json({ available: false });
+      }
+      return res.status(200).json(Object.assign({ available: true }, data));
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   try {
     const r = await fetch(`${url}/get/backbone_data`, {
       headers: { Authorization: `Bearer ${token}` },
