@@ -1011,33 +1011,74 @@ export default async function handler(req, res) {
         }
       });
 
-      // 2. For each candidate container, introspect its element type's sub-fields
-      // and flag anything category/product/name-shaped. Also peek one nested object
-      // level down (e.g. a lineItemGroup -> style/product with the real category).
-      const catRx = /(categ|product|style|garment|item ?name|^name$|descrip)/i;
+      // 2. For each candidate container, introspect its element type. Printavo wraps
+      // line items in a Connection (edges/nodes/pageInfo), so if we hit one, follow
+      // `nodes` into the real node type and report ITS fields. Then dig one nested
+      // object level from the node (e.g. group -> style/product carrying the category).
+      const catRx = /(categ|product|style|garment|color|item ?name|^name$|descrip|mockup|imprint|decor)/i;
+
+      async function fieldsOf(typeName) {
+        const d = await gql(`query{__type(name:"${typeName}"){fields{name type{name kind ofType{name kind ofType{name kind}}}}}}`);
+        return (d.__type && d.__type.fields) || [];
+      }
+
       for (const c of out.candidates.slice(0, 6)) {
         if (!c.typeName) continue;
         try {
           await rlPause();
-          const d = await gql(`query{__type(name:"${c.typeName}"){fields{name type{name kind ofType{name kind}}}}}`);
-          const fs = (d.__type && d.__type.fields) || [];
-          c.subFields = fs.map(sf => sf.name);
-          c.categoryLikeFields = fs.filter(sf => catRx.test(sf.name)).map(sf => sf.name);
-          // Nested objects that might hold the category (dig one level).
+          let fs = await fieldsOf(c.typeName);
+          let names = fs.map(sf => sf.name);
+
+          // Connection? Follow nodes (preferred) or edges.node into the element type.
+          if (names.includes("nodes") || names.includes("edges")) {
+            c.isConnection = true;
+            const nodesField = fs.find(sf => sf.name === "nodes");
+            let elemType = nodesField ? unwrap(nodesField.type).name : null;
+            if (!elemType && names.includes("edges")) {
+              const edgesField = fs.find(sf => sf.name === "edges");
+              const edgeType = edgesField ? unwrap(edgesField.type).name : null;
+              if (edgeType) {
+                await rlPause();
+                const ef = await fieldsOf(edgeType);
+                const nodeF = ef.find(x => x.name === "node");
+                elemType = nodeF ? unwrap(nodeF.type).name : null;
+              }
+            }
+            if (elemType) {
+              c.nodeType = elemType;
+              await rlPause();
+              fs = await fieldsOf(elemType);
+              names = fs.map(sf => sf.name);
+            }
+          }
+
+          c.itemFields = names;
+          c.categoryLikeFields = names.filter(n => catRx.test(n));
+
+          // Dig one nested object level from the item/node for a category-bearing object.
           c.nested = [];
           for (const sf of fs) {
             const u = unwrap(sf.type);
-            if (u.kind === "OBJECT" && /(group|style|product|categor|item)/i.test(sf.name) && u.name) {
+            if (u.kind === "OBJECT" && u.name && /(group|style|product|categor|item|line)/i.test(sf.name)) {
               try {
                 await rlPause();
-                const nd = await gql(`query{__type(name:"${u.name}"){fields{name}}}`);
-                const nfs = ((nd.__type && nd.__type.fields) || []).map(x => x.name);
-                c.nested.push({ field: sf.name, typeName: u.name, subFields: nfs, categoryLikeFields: nfs.filter(n => catRx.test(n)) });
+                let nfsFields = await fieldsOf(u.name);
+                let nnames = nfsFields.map(x => x.name);
+                // If THIS is also a connection, follow nodes once more.
+                if (nnames.includes("nodes")) {
+                  const nn = nfsFields.find(x => x.name === "nodes");
+                  const nt = nn ? unwrap(nn.type).name : null;
+                  if (nt) { await rlPause(); nfsFields = await fieldsOf(nt); nnames = nfsFields.map(x => x.name); u.name = nt; }
+                }
+                c.nested.push({ field: sf.name, typeName: u.name, subFields: nnames, categoryLikeFields: nnames.filter(n => catRx.test(n)) });
               } catch (e) { /* skip */ }
             }
           }
         } catch (e) { c.probeError = e.message; }
       }
+
+      // Focus the caller on the real line-item container, not productionFiles etc.
+      out.notes.push("lineItemGroups is the line-item container (a Connection: query lineItemGroups{nodes{...}}). Look at its 'itemFields' / 'categoryLikeFields' and 'nested[]' below for the field that names the product/category.");
 
       if (!out.candidates.length) {
         out.notes.push("No list-of-object or item/product/group-named fields on Invoice. Line items may live on a different type (e.g. Quote), or require a different query shape.");
