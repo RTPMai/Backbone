@@ -438,18 +438,18 @@ export default async function handler(req, res) {
     }
 
     // Line items for product-category mix, if the shape was discovered.
-    // Printavo nests connections AND category/product are OBJECT types, so the leaf
-    // selection is e.g. category{name} product{name} inside lineItems{nodes{...}}.
+    // Printavo nests connections AND category/product are OBJECT types. Each nested
+    // connection multiplies Printavo's query-complexity score, and fetching BOTH
+    // category and product blew past their 25k ceiling. Category is what the brief's
+    // "what they normally order" actually uses (Screen Printing / Embroidery / Promo),
+    // so we select ONLY category by default and fall back to product just when there
+    // is no category field at all. This keeps the query lean enough to page.
     let itemsExtra = "";
     if (plan.lineItems) {
       const li = plan.lineItems;
-      const leaf = [];
       function ref(r) { return r ? (r.sub ? `${r.field}{${r.sub}}` : r.field) : null; }
-      const catSel = ref(li.cat), prodSel = ref(li.prod);
-      if (catSel) leaf.push(catSel);
-      if (prodSel) leaf.push(prodSel);
-      if (leaf.length) {
-        const leafSel = leaf.join(" ");
+      const leafSel = ref(li.cat) || ref(li.prod); // category preferred; product only if no category
+      if (leafSel) {
         if (li.inner) {
           const innerSel = li.innerIsConn ? `${li.inner}{nodes{${leafSel}}}` : `${li.inner}{${leafSel}}`;
           itemsExtra = li.outerIsConn ? `${li.outer}{nodes{${innerSel}}}` : `${li.outer}{${innerSel}}`;
@@ -935,6 +935,12 @@ export default async function handler(req, res) {
     }
 
     const GQL_FIELDS = buildFieldSelection(plan);
+    // Printavo scores queries by complexity (max 25000). The nested line-item
+    // selection (lineItemGroups>nodes>lineItems>nodes>category) multiplies the score,
+    // so when it's present we page in smaller batches to stay under the ceiling.
+    // Without line items the flat query is cheap and can page larger.
+    const hasLineItems = /lineItemGroups|lineItems\{/.test(GQL_FIELDS);
+    const RECONCILE_PAGE = hasLineItems ? 8 : 15;
     const sortPlan = await resolveInvoiceSort();
     const argPlan = await resolveInvoiceArgs();
 
@@ -1200,7 +1206,7 @@ export default async function handler(req, res) {
         else if (argPlan.hasInProductionAfter) dateArg = `,inProductionAfter:"${overlapIso}"`;
         const descI = argPlan.hasSortDescending ? ",sortDescending:true" : "";
         const data = await gql(
-          `query{invoices(first:25,sortOn:${sortPlan.sortOn}${descI}${dateArg}${after}){${GQL_FIELDS}}}`
+          `query{invoices(first:${RECONCILE_PAGE},sortOn:${sortPlan.sortOn}${descI}${dateArg}${after}){${GQL_FIELDS}}}`
         );
         for (const inv of data.invoices.nodes) {
           if (seen.has(inv.id)) continue;
@@ -1316,7 +1322,7 @@ export default async function handler(req, res) {
           // smaller page and drop sortOn entirely — ordering is irrelevant to
           // completeness here (we page the whole window), and omitting the sort
           // makes the query cheaper for the server to resolve.
-          const qstr = `query{invoices(first:15${statusArg}${windowArg}${after}){${GQL_FIELDS}}}`;
+          const qstr = `query{invoices(first:${RECONCILE_PAGE}${statusArg}${windowArg}${after}){${GQL_FIELDS}}}`;
           let data;
           try {
             data = await gql(qstr);
@@ -1330,7 +1336,7 @@ export default async function handler(req, res) {
             });
             return res.status(500).json({
               error: (qe && qe.message) || "query failed",
-              failedAt: { year, pass, hasCursor: !!cursor, pageSize: 15, usedPaymentStatus: !!statusArg },
+              failedAt: { year, pass, hasCursor: !!cursor, pageSize: RECONCILE_PAGE, usedPaymentStatus: !!statusArg },
               customersSoFar: Object.keys(acc).length,
               hint: "Progress saved. Re-run reconcile to resume from this point.",
             });
@@ -1734,7 +1740,7 @@ export default async function handler(req, res) {
         do {
           const after = invCursor ? `,after:"${invCursor}"` : "";
           const data = await gql(
-            `query{invoices(first:25,sortOn:${sortPlan.sortOn}${descI}${ytdDateArg}${after}){${GQL_FIELDS}}}`
+            `query{invoices(first:${RECONCILE_PAGE},sortOn:${sortPlan.sortOn}${descI}${ytdDateArg}${after}){${GQL_FIELDS}}}`
           );
           const nodes = (data.invoices && data.invoices.nodes) || [];
           for (const inv of nodes) {
