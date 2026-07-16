@@ -52,6 +52,9 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;font-s
 .dash{padding:24px;max-width:1440px;margin:0 auto}
 
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin-bottom:22px}
+#page-dashboard #dashPortfolioKpiGrid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+#page-dashboard #dashPortfolioKpiGrid .kpi{padding:13px 15px}
+#page-dashboard #dashPortfolioKpiGrid .kpi-val{font-size:24px}
 .kpi{position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;box-shadow:var(--shadow-card)}
 .kpi-lbl{font-size:13px;color:var(--muted);font-weight:500;margin-bottom:8px;padding-right:44px}
 .kpi-val{font-size:28px;font-weight:700;letter-spacing:-.6px;line-height:1.1}
@@ -157,8 +160,10 @@ textarea.field{min-height:60px;resize:vertical}
 .sg-hero{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
 .sg-hero-n{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1}
 .sg-hero-s{font-size:12px;color:#9CA3AF;font-weight:500}
-.sg-track{height:10px;background:#F1F3F5;border-radius:99px;overflow:hidden;margin:10px 0 4px}
+.sg-track{position:relative;height:10px;background:#F1F3F5;border-radius:99px;overflow:visible;margin:10px 0 4px}
 .sg-fill{height:100%;border-radius:99px;transition:width .5s cubic-bezier(.22,1,.36,1)}
+.sg-pace-marker{position:absolute;top:-3px;bottom:-3px;width:2px;background:#111827;opacity:.5;border-radius:2px}
+.sg-pacenote{font-size:11.5px;font-weight:700;margin:2px 0 2px}
 .sg-months{display:flex;align-items:flex-end;gap:6px;height:150px;padding-top:10px}
 .sg-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0}
 .sg-barwrap{width:100%;max-width:38px;height:110px;display:flex;align-items:flex-end;position:relative}
@@ -259,13 +264,18 @@ textarea.field{min-height:60px;resize:vertical}
 /* No `dense` packing: it silently reflows cards to backfill gaps, which is exactly
    the "I put it here and it jumped" behaviour. Plain row flow keeps every card in
    the order the user dragged it to, even if that leaves a half-width gap. */
-.dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;
+.dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start;
   grid-auto-flow:row}
 
-.dash-card{grid-column:span 1;position:relative;border-radius:16px;
+.dash-card{grid-column:span 1;position:relative;border-radius:14px;
   box-shadow:0 1px 3px rgba(16,24,40,.07);
   transition:box-shadow .15s ease,opacity .15s ease,transform .15s ease}
 .dash-card:hover{box-shadow:0 4px 14px rgba(16,24,40,.10)}
+/* Denser dashboard cards: tighter header + body than the app-wide default so the
+   whole board reads as a compact widget grid rather than a long scroll. */
+.dash-card .card-hd{padding:11px 16px 10px}
+.dash-card .card-bd{padding:12px 16px}
+.dash-card .card-bd .help{margin-bottom:8px;font-size:11.5px;line-height:1.45}
 /* Width follows position (see reflowDashWidths). Default is a full row; a card
    paired beside a neighbour gets .w-half. .w-full is kept as an explicit full-row
    marker so the reflow can set it directly. */
@@ -376,6 +386,42 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
   color:#9CA3AF;padding:4px 12px;border-radius:99px;cursor:pointer;transition:all .12s ease}
 .lb-metric button.on{background:#fff;color:#111827;box-shadow:0 1px 2px rgba(16,24,40,.08)}
 @media(max-width:760px){.lb-badges{display:none}.lb-bar{max-width:120px}}
+
+/* --- Account Managers (merged leaderboard + workload) ----------------------- */
+.amp-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.amp-tb-lbl{font-size:11px;font-weight:700;color:#9CA3AF;text-transform:uppercase;letter-spacing:.04em}
+.amp-sort{display:flex;gap:3px;background:#F4F6F8;padding:3px;border-radius:99px;flex-wrap:wrap}
+.amp-sort button{border:none;background:none;font-family:inherit;font-size:11.5px;font-weight:600;
+  color:#9CA3AF;padding:4px 12px;border-radius:99px;cursor:pointer;transition:all .12s ease}
+.amp-sort button.on{background:#fff;color:#111827;box-shadow:0 1px 2px rgba(16,24,40,.08)}
+.amp-sort button:disabled{opacity:.4;cursor:not-allowed}
+.amp-row{display:flex;align-items:flex-start;gap:12px;padding:11px 10px;border-radius:12px;transition:background .12s ease}
+.amp-row:hover{background:#F9FAFB}
+.amp-row + .amp-row{border-top:1px solid #F4F6F8}
+.amp-unassigned{opacity:.85}
+.amp-rank{flex:0 0 24px;text-align:center;font-size:14px;font-weight:700;color:#C3C9D0;padding-top:4px}
+.amp-av{flex:0 0 32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+  font-size:11.5px;font-weight:700;color:#fff;letter-spacing:.02em;margin-top:1px}
+.amp-main{flex:1 1 auto;min-width:0}
+.amp-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.amp-name{font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.amp-badges{display:flex;gap:4px}
+.amp-chips{display:flex;flex-wrap:wrap;gap:5px 8px;margin-top:4px}
+.amp-chip{font-size:11.5px;color:#6B7280}
+.amp-chip b{color:#111827;font-weight:700}
+.amp-chip-warn{color:#92400E}
+.amp-chip-warn b{color:#92400E}
+.amp-tiers{display:flex;flex-wrap:wrap;gap:3px;margin-top:5px}
+.amp-tier{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10.5px;font-weight:700;background:#F3F4F6}
+.amp-loadline{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.amp-load-zero{font-size:11px;color:#C3C9D0}
+.amp-bar{height:4px;border-radius:99px;background:#EEF1F4;margin-top:7px;overflow:hidden;max-width:320px}
+.amp-fill{height:100%;border-radius:99px;transition:width .5s cubic-bezier(.22,1,.36,1)}
+.amp-right{flex:0 0 auto;text-align:right;min-width:64px;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.amp-val{font-size:17px;font-weight:800;line-height:1.05;color:#111827}
+.amp-vlbl{font-size:9px;color:#B7BEC7;text-transform:uppercase;letter-spacing:.05em}
+.amp-brief{margin-top:2px}
+@media(max-width:760px){.amp-bar{max-width:160px}.amp-badges{display:none}}
 .lead-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 .lead-form-grid .wide{grid-column:1/-1}
 .qual-section{margin-bottom:16px}
@@ -778,23 +824,18 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
         </div>
       </div>
 
-      <div class="card dash-card w-half" data-card="leaderboard">
-        <div class="card-hd"><span class="dash-grip">⠿</span><h3>AM Leaderboard</h3></div>
-        <div class="card-bd"><div id="leaderboardWrap"></div></div>
-      </div>
-
       <div class="card dash-card w-full" data-card="amload">
-        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Account Manager workload</h3></div>
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Account Managers</h3></div>
         <div class="card-bd">
-          <div class="help">Client count, revenue, and tier mix per AM, plus live open-quote load split into Quotes / In-progress / On-hold (from the Printavo ops sync). "Needs review" counts clients with no explicit industry or AM set. Click <b>Brief</b> to build a sendable rundown for that AM.</div>
+          <div class="help">Every AM ranked on one line: leads (wins, pipeline, hot), roster (clients, revenue, tier mix), and live open-quote load — all in one place. Toggle what the ranking sorts by. Click <b>Brief</b> for a sendable rundown.</div>
           <div id="dashAmWrap"></div>
         </div>
       </div>
 
       <div class="card dash-card w-full" data-card="alerts">
-        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Alerts</h3></div>
+        <div class="card-hd"><span class="dash-grip">⠿</span><h3>Needs assignment</h3></div>
         <div class="card-bd">
-          <div class="help">Computed from existing roster data — no separate pull required. Click a company to open its record.</div>
+          <div class="help">Clients with no industry or AM set, or two industries picked — largest revenue first. Click a company to open its record. (At-risk & dormant accounts have their own card above.)</div>
           <div id="dashAlertsWrap"></div>
         </div>
       </div>
@@ -925,7 +966,10 @@ body.read-only .btn-green,body.read-only .btn-red{display:none !important}
   <div class="modal">
     <div class="modal-hd">
       <h3 id="detailTitle"></h3>
-      <button class="modal-close" id="detailClose">&times;</button>
+      <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
+        <button class="am-brief-btn" id="detailBriefBtn" style="display:none">At-risk brief</button>
+        <button class="modal-close" id="detailClose">&times;</button>
+      </div>
     </div>
     <div class="modal-bd">
       <div class="section-lbl">Synced from Apparelytics</div>
@@ -5670,9 +5714,8 @@ const DASH_CARD_NAMES = {
   dormant: "Dormant & at risk",
   cadence: "Overdue to reorder",
   tiermove: "Tier movement",
-  leaderboard: "AM Leaderboard",
-  amload: "AM workload",
-  alerts: "Alerts"
+  amload: "Account Managers",
+  alerts: "Needs assignment"
 };
 
 function loadDashLayout() {
@@ -5958,32 +6001,58 @@ function renderSalesGoal() {
   const pace = ytdGoal > 0 ? (ytdActual / ytdGoal * 100) : 0;
   const maxBar = Math.max(MONTHLY_GOAL, Math.max.apply(null, byMonth.concat([1])));
 
-  const paceColor = pace >= 100 ? "#3D9A5C" : (pace >= 85 ? "#D97706" : "#B91C1C");
+  // Per-month color bands (shared by the bars and the pace bar):
+  //   green  >= $280k  (met/exceeded goal)
+  //   orange  $200k–$280k  (close)
+  //   red    <  $200k  (well off)
+  const MONTH_CLOSE = 200000;
+  function monthColor(v) {
+    if (v >= MONTHLY_GOAL) return "#3D9A5C";
+    if (v >= MONTH_CLOSE) return "#D97706";
+    return "#DC2626";
+  }
+
+  // The overall progress bar reads as "how far toward the full-year goal are we,"
+  // which is a fill-toward story — always green, so a mid-year 67% doesn't read as
+  // failure. A neutral track behind it shows the remaining runway. A separate goal
+  // marker shows where we'd be if perfectly on pace.
+  const yearGoal = MONTHLY_GOAL * 12;
+  const yearPct = yearGoal > 0 ? Math.min(100, ytdActual / yearGoal * 100) : 0;
+  const paceMarkerPct = Math.min(100, (curMonth + 1) / 12 * 100);
+  const onPace = pace >= 100;
+  const heroColor = onPace ? "#3D9A5C" : "#111827"; // number stays neutral/positive, never alarm-red
 
   el.innerHTML =
     '<div class="sg-hero">' +
-      '<span class="sg-hero-n" style="color:' + paceColor + '">' + fmtMoney(ytdActual) + '</span>' +
-      '<span class="sg-hero-s">of ' + fmtMoney(ytdGoal) + ' YTD goal \u00b7 ' + pace.toFixed(0) + '% of pace (' + (curMonth + 1) + ' mo \u00d7 ' + fmtMoney(MONTHLY_GOAL) + ')</span>' +
+      '<span class="sg-hero-n" style="color:' + heroColor + '">' + fmtMoney(ytdActual) + '</span>' +
+      '<span class="sg-hero-s">of ' + fmtMoney(yearGoal) + ' annual goal \u00b7 ' + pace.toFixed(0) + '% of pace through ' + MONTH_ABBR[curMonth] + '</span>' +
     '</div>' +
-    '<div class="sg-track"><div class="sg-fill" style="width:' + Math.min(100, pace).toFixed(1) + '%;background:' + paceColor + '"></div></div>' +
+    '<div class="sg-track">' +
+      '<div class="sg-fill" style="width:' + yearPct.toFixed(1) + '%;background:#3D9A5C"></div>' +
+      '<div class="sg-pace-marker" style="left:' + paceMarkerPct.toFixed(1) + '%" title="On-pace target for ' + MONTH_ABBR[curMonth] + '"></div>' +
+    '</div>' +
+    '<div class="sg-pacenote" style="color:' + (onPace ? "#3D9A5C" : "#D97706") + '">' +
+      (onPace
+        ? 'Ahead of the ' + fmtMoney(ytdGoal) + ' on-pace target \u2014 ' + fmtMoney(ytdActual - ytdGoal) + ' up'
+        : fmtMoney(ytdGoal - ytdActual) + ' behind the ' + fmtMoney(ytdGoal) + ' on-pace target') +
+    '</div>' +
     '<div class="sg-months">' +
       byMonth.map(function(v, m) {
         const h = maxBar > 0 ? (v / maxBar * 100) : 0;
         const goalPct = maxBar > 0 ? (MONTHLY_GOAL / maxBar * 100) : 0;
         const future = m > curMonth;
-        const hit = v >= MONTHLY_GOAL;
-        const barColor = future ? "#E5E9ED" : (hit ? "#3D9A5C" : "#B7C0C9");
+        const barColor = future ? "#E5E9ED" : monthColor(v);
         return '<div class="sg-col">' +
           '<div class="sg-barwrap">' +
             '<div class="sg-bar" style="height:' + h.toFixed(1) + '%;background:' + barColor + '"></div>' +
             '<div class="sg-goal-line" style="bottom:' + goalPct.toFixed(1) + '%"></div>' +
           '</div>' +
-          '<div class="sg-mval">' + (v > 0 ? "$" + Math.round(v / 1000) + "k" : "—") + '</div>' +
+          '<div class="sg-mval"' + (future ? '' : ' style="color:' + monthColor(v) + '"') + '>' + (v > 0 ? "$" + Math.round(v / 1000) + "k" : "\u2014") + '</div>' +
           '<div class="sg-mlbl">' + MONTH_ABBR[m] + '</div>' +
         '</div>';
       }).join("") +
     '</div>' +
-    '<div class="help" style="margin-top:8px">Black line marks the $' + Math.round(MONTHLY_GOAL / 1000) + 'k monthly goal. Bars are paid revenue by invoice month; greyed months are still ahead.</div>';
+    '<div class="help" style="margin-top:8px">Line marks the $' + Math.round(MONTHLY_GOAL / 1000) + 'k monthly goal. Bars: <b style="color:#3D9A5C">green</b> met goal, <b style="color:#D97706">orange</b> within $' + Math.round(MONTH_CLOSE/1000) + 'k\u2013$' + Math.round(MONTHLY_GOAL/1000) + 'k, <b style="color:#DC2626">red</b> under $' + Math.round(MONTH_CLOSE/1000) + 'k. Greyed months are still ahead.</div>';
 }
 
 // ---- Outstanding for payment (open invoice balances) ----
@@ -6251,7 +6320,6 @@ function renderDashboard() {
   applyDashLayout();
   initDashDrag();
   wireIndustrySort();
-  renderLeaderboard();
   renderRevTrend();
   renderDormant();
   renderCadence();
@@ -6284,14 +6352,13 @@ function renderDashboard() {
 
   // Choose the more informative sub-note: if a large share of the roster has no year
   // breakdown at all, that's a "run a reconcile" signal, not a per-client $0 fact.
+  // Keep only the "run a reconcile" signal — that's an actionable data-quality flag.
+  // The per-client "$0 this year" note was removed: it read as alarming noise rather
+  // than information (a client simply not having ordered yet this year is normal).
   var yearSubNote = "";
-  if (dashYear !== "all") {
-    if (noBreakdownCount >= Math.max(1, Math.floor(rows.length * 0.5))) {
-      yearSubNote = '<div class="kpi-s" style="color:#D97706">' + noBreakdownCount + ' of ' + rows.length +
-        ' clients have no per-year data — run a full Printavo reconcile to populate ' + dashYear + ' figures</div>';
-    } else if (missingYearData) {
-      yearSubNote = '<div class="kpi-s" style="color:#D97706">' + missingYearData + ' clients had no ' + dashYear + ' orders (counted as $0)</div>';
-    }
+  if (dashYear !== "all" && noBreakdownCount >= Math.max(1, Math.floor(rows.length * 0.5))) {
+    yearSubNote = '<div class="kpi-s" style="color:#D97706">' + noBreakdownCount + ' of ' + rows.length +
+      ' clients have no per-year data — run a full Printavo reconcile to populate ' + dashYear + ' figures</div>';
   }
 
   const kpiGrid = document.getElementById("dashPortfolioKpiGrid");
@@ -6375,101 +6442,19 @@ function renderDashboard() {
       '</div>';
     }).join("");
 
-  // --- AM workload ---
-  const amMap = {};
-  ACCOUNT_MANAGERS.forEach(function(a) { amMap[a] = { count: 0, revenue: 0, tiers: { "Platinum": 0, "Gold": 0, "Silver": 0, "Bronze": 0, "Valuable Dirt": 0 }, needsReview: 0, scoreSum: 0, wl: { quotes: 0, inProgress: 0, onHold: 0 } }; });
-  amMap["Unassigned"] = { count: 0, revenue: 0, tiers: { "Platinum": 0, "Gold": 0, "Silver": 0, "Bronze": 0, "Valuable Dirt": 0 }, needsReview: 0, scoreSum: 0, wl: { quotes: 0, inProgress: 0, onHold: 0 } };
-  rows.forEach(function(r) {
-    const key = r.am && amMap[r.am] ? r.am : "Unassigned";
-    amMap[key].count++;
-    amMap[key].revenue += r.total_revenue || 0;
-    amMap[key].tiers[r.tier]++;
-    amMap[key].scoreSum += r.total;
-    if (r.needsReview) amMap[key].needsReview++;
-  });
+  // --- Account Managers (merged leaderboard + workload) ---
+  // One row per AM combining three signal sources that used to live in two cards:
+  //   Leads  (from state_leads):  wins, live pipeline score, hot leads, win rate
+  //   Roster (from rows):         client count, revenue, tier mix, needs-review
+  //   Ops    (from opsData):      live open-quote load (quotes / in-prog / on-hold)
+  renderAmPanel(rows);
 
-  // Fold live quote workload (from the Printavo ops slice) onto each AM by mapping
-  // each quote's owning customer_id to that customer's assigned AM via enrichment.
-  // Quotes whose customer isn't on the roster (or has no AM) land in "Unassigned".
-  let opsWorkloadTotal = 0;
-  if (opsData && opsData.available && Array.isArray(opsData.workload)) {
-    const custToAm = {};
-    rows.forEach(function(r) {
-      if (r.customer_id != null) custToAm[String(r.customer_id)] = (r.am && amMap[r.am]) ? r.am : "Unassigned";
-    });
-    opsData.workload.forEach(function(w) {
-      const am = (w.customer_id != null && custToAm[String(w.customer_id)]) ? custToAm[String(w.customer_id)] : "Unassigned";
-      if (!amMap[am]) return;
-      amMap[am].wl.quotes += w.quotes || 0;
-      amMap[am].wl.inProgress += w.inProgress || 0;
-      amMap[am].wl.onHold += w.onHold || 0;
-      opsWorkloadTotal += (w.quotes || 0) + (w.inProgress || 0) + (w.onHold || 0);
-    });
-  }
-  const showWl = opsData && opsData.available;
-
-  const amRows = Object.keys(amMap).filter(function(k) {
-    return amMap[k].count > 0 || (amMap[k].wl.quotes + amMap[k].wl.inProgress + amMap[k].wl.onHold) > 0;
-  }).sort(function(a, b) { return amMap[b].revenue - amMap[a].revenue; });
-  let amHtml = '<table class="am-table"><thead><tr>' +
-    '<th>Account Manager</th><th>Clients</th><th>Revenue</th><th>Avg Score</th><th>Tier mix</th><th>Needs review</th>' +
-    (showWl ? '<th>Open quote load</th>' : '') + '<th></th>' +
-    '</tr></thead><tbody>';
-  amRows.forEach(function(k) {
-    const a = amMap[k];
-    const tierPills = Object.keys(a.tiers).filter(function(t) { return a.tiers[t] > 0; }).map(function(t) {
-      return '<span class="tier-pill" style="background:#F3F4F6;color:' + (TIER_COLORS[t] || "#374151") + '">' + t.slice(0, 4) + ' ' + a.tiers[t] + '</span>';
-    }).join("");
-    let wlCell = "";
-    if (showWl) {
-      const w = a.wl;
-      const tot = w.quotes + w.inProgress + w.onHold;
-      wlCell = tot === 0 ? '<td><span class="wl-zero">none open</span></td>' :
-        '<td><div class="wl-cell">' +
-          (w.quotes ? '<span class="wl-pill wl-q">' + w.quotes + ' quote' + (w.quotes === 1 ? '' : 's') + '</span>' : '') +
-          (w.inProgress ? '<span class="wl-pill wl-p">' + w.inProgress + ' in-prog</span>' : '') +
-          (w.onHold ? '<span class="wl-pill wl-h">' + w.onHold + ' on-hold</span>' : '') +
-        '</div></td>';
-    }
-    const avgScore = a.count ? (a.scoreSum / a.count).toFixed(2) : "—";
-    amHtml += '<tr>' +
-      '<td class="company-cell">' + k + '</td>' +
-      '<td>' + a.count + '</td>' +
-      '<td>' + fmtMoney(a.revenue) + '</td>' +
-      '<td>' + avgScore + '</td>' +
-      '<td>' + tierPills + '</td>' +
-      '<td>' + (a.needsReview > 0 ? '<span class="badge badge-amber">' + a.needsReview + '</span>' : '—') + '</td>' +
-      wlCell +
-      '<td><button class="am-brief-btn" data-am="' + k.replace(/"/g, '&quot;') + '">Brief</button></td>' +
-      '</tr>';
-  });
-  amHtml += '</tbody></table>';
-  if (!showWl) {
-    amHtml += '<div class="help" style="margin-top:8px">Open quote load is blank until the Printavo ops sync has run (<code>/api/printavo-sync?mode=ops</code>).</div>';
-  }
-  document.getElementById("dashAmWrap").innerHTML = amHtml;
-  document.querySelectorAll("#dashAmWrap .am-brief-btn").forEach(function(btn) {
-    btn.addEventListener("click", function() { openAmBrief(btn.dataset.am); });
-  });
-
-  // --- Alerts ---
-  // Recency (days_since) always reflects true last-activity regardless of the Year filter above;
-  // only the revenue threshold on re-engagement candidates uses the currently selected year's figure.
-  const atRisk = rows.filter(function(r) {
-    return (r.tier === "Platinum" || r.tier === "Gold") && r.days_since > DASH_THRESHOLDS.atRiskDaysSince;
-  }).sort(function(a, b) { return b.days_since - a.days_since; });
-
-  const reengage = rows.filter(function(r) {
-    return r.days_since > DASH_THRESHOLDS.reengageDaysSince && r.total_revenue >= DASH_THRESHOLDS.reengageMinRevenue;
-  }).sort(function(a, b) { return b.days_since - a.days_since; });
-
+  // --- Needs assignment ---
+  // At-risk and re-engagement now live entirely in the Dormant & at-risk card (and
+  // each client's own record), so this surface is just the assignment backlog:
+  // clients with no industry/AM, or two industries picked. Largest revenue first.
   const unassigned = rows.filter(function(r) { return r.needsReview; })
     .sort(function(a, b) { return b.total_revenue - a.total_revenue; });
-
-  function daysBadge(days, warnAt, critAt) {
-    const color = days > critAt ? "#DC2626" : days > warnAt ? "#D97706" : "#374151";
-    return '<span style="color:' + color + ';font-weight:700">' + days + ' days</span>';
-  }
 
   function alertRow(r, metaFn) {
     return '<div class="alert-row" data-id="' + r.customer_id + '">' +
@@ -6497,28 +6482,10 @@ function renderDashboard() {
     return html;
   }
 
-  const urgencyStrip =
-    '<div class="kpi-grid" style="margin-bottom:16px">' +
-      '<div class="kpi" style="border-left:4px solid #DC2626"><div class="kpi-lbl">At risk</div><div class="kpi-val" style="color:' + (atRisk.length ? "#DC2626" : "#111827") + '">' + atRisk.length + '</div></div>' +
-      '<div class="kpi" style="border-left:4px solid #D97706"><div class="kpi-lbl">Re-engagement</div><div class="kpi-val" style="color:' + (reengage.length ? "#D97706" : "#111827") + '">' + reengage.length + '</div></div>' +
-      '<div class="kpi" style="border-left:4px solid #9CA3AF"><div class="kpi-lbl">Needs assignment</div><div class="kpi-val">' + unassigned.length + '</div></div>' +
-    '</div>';
-
-  const alertsHtml = urgencyStrip +
-    alertGroup(
-      "atrisk", "🔴 ",
-      "At-risk high-value (Platinum/Gold, " + DASH_THRESHOLDS.atRiskDaysSince + "+ days quiet)",
-      atRisk, "sev-high", "warn",
-      function(r) { return daysBadge(r.days_since, DASH_THRESHOLDS.atRiskDaysSince, DASH_THRESHOLDS.atRiskDaysSince * 2) + ' quiet · ' + r.tier + ' · ' + fmtMoney(r.total_revenue); },
-      "None — no top-tier clients have gone quiet."
-    ) +
-    alertGroup(
-      "reengage", "🟠 ",
-      "Re-engagement candidates (" + DASH_THRESHOLDS.reengageDaysSince + "+ days dormant, was worth " + fmtMoney(DASH_THRESHOLDS.reengageMinRevenue) + "+)",
-      reengage, "sev-med", "amber",
-      function(r) { return daysBadge(r.days_since, DASH_THRESHOLDS.reengageDaysSince, DASH_THRESHOLDS.reengageDaysSince * 2) + ' dormant · historically ' + fmtMoney(r.total_revenue); },
-      "None currently meet the threshold."
-    ) +
+  const alertsHtml =
+    '<div class="kpi-grid" style="margin-bottom:14px">' +
+      '<div class="kpi" style="border-left:4px solid #9CA3AF"><div class="kpi-lbl">Needs assignment</div><div class="kpi-val">' + unassigned.length + '</div><div class="kpi-s">clients with no industry or AM set</div></div>' +
+    '</div>' +
     alertGroup(
       "unassigned", "⚪ ",
       "Needs industry/AM assignment",
@@ -6686,8 +6653,66 @@ function openDetail(customerId) {
   });
 
   document.getElementById("saveStatus").textContent = "";
+
+  // Per-client at-risk brief. Only surfaced when this client actually meets the
+  // dormant threshold (matches the Dormant & at-risk card): 180+ days quiet, real
+  // revenue, 2+ lifetime invoices. Replaces the roster-wide "Generate brief" button
+  // that used to live on the dashboard card — the brief is now per-client, opened
+  // from the record itself.
+  const briefBtn = document.getElementById("detailBriefBtn");
+  if (briefBtn) {
+    const dq = daysSince(rec.last_invoice_date);
+    const qualifies = dq != null && dq >= 180 && (Number(rec.total_revenue) || 0) > 0 && (Number(rec.invoice_count) || 0) >= 2;
+    briefBtn.style.display = qualifies ? "" : "none";
+    briefBtn.onclick = qualifies ? function() { openClientDormantBrief(customerId); } : null;
+  }
+
   document.getElementById("detailOverlay").classList.add("open");
 }
+
+// Single-client dormant/at-risk brief, opened from the client record. Reuses the
+// same brief modal + mailto/copy plumbing as the roster-wide version, scoped to one
+// account and routed to its owning AM.
+function openClientDormantBrief(customerId) {
+  const rec = state.synced.find(function(c) { return c.customer_id === customerId; });
+  if (!rec) return;
+  const enr = state.enrichment[customerId] || {};
+  const am = (enr.account_manager && ACCOUNT_MANAGERS.indexOf(enr.account_manager) !== -1) ? enr.account_manager : null;
+  const days = daysSince(rec.last_invoice_date);
+  const rev = Number(rec.total_revenue) || 0;
+  const invoices = Number(rec.invoice_count) || 0;
+  const when = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  const mo = days != null ? Math.round(days / 30) : "?";
+
+  const html = '<div class="brief-doc">' +
+    '<h2>At-Risk Account Brief</h2>' +
+    '<div class="brief-meta">' + when + ' \u00b7 ' + rec.company_name + (am ? ' \u00b7 ' + am : ' \u00b7 unassigned') + '</div>' +
+    '<div class="brief-sec"><div class="brief-sec-l">Status</div>' +
+      '<div class="brief-line"><span class="bl-name">' + rec.company_name + '</span>' +
+      '<span class="bl-meta">' + mo + 'mo quiet \u00b7 ' + invoices + ' lifetime invoices \u00b7 ' + fmtMoney(rev) + ' lifetime</span></div>' +
+    '</div>' +
+    (enr.notes ? '<div class="brief-sec"><div class="brief-sec-l">Notes</div><div style="font-size:13px;color:#374151;white-space:pre-wrap">' + escapeHtml(enr.notes) + '</div></div>' : '') +
+    '</div>';
+
+  const plain = "At-Risk Account Brief\n" + when + "\n" +
+    rec.company_name + (am ? " — " + am : " — unassigned") + "\n\n" +
+    mo + " months quiet · " + invoices + " lifetime invoices · " + fmtMoney(rev) + " lifetime revenue" +
+    (enr.notes ? "\n\nNotes:\n" + enr.notes : "") + "\n";
+
+  document.getElementById("briefPrintArea").innerHTML = html;
+  const subj = encodeURIComponent("At-Risk: " + rec.company_name);
+  const mailBtn = document.getElementById("briefMailBtn");
+  mailBtn.href = "mailto:" + (am ? encodeURIComponent(amEmail(am)) : "") + "?subject=" + subj + "&body=" + encodeURIComponent(plain);
+  mailBtn.style.display = "";
+  document.getElementById("briefCopyBtn").onclick = function() {
+    navigator.clipboard.writeText(plain).then(function() {
+      document.getElementById("briefCopyBtn").textContent = "Copied \u2713";
+      setTimeout(function() { document.getElementById("briefCopyBtn").textContent = "Copy text"; }, 1500);
+    });
+  };
+  document.getElementById("amBriefOverlay").classList.add("open");
+}
+window.openClientDormantBrief = openClientDormantBrief;
 
 function closeDetail() {
   document.getElementById("detailOverlay").classList.remove("open");
@@ -7824,8 +7849,6 @@ function toggleLeadSelected(leadId, checked) {
 // computable yet. That column is deliberately absent rather than faked. Adding a
 // status_history array on status change would unlock it.
 
-let lbMetric = "won"; // "won" | "pipeline" | "volume"
-
 // Same routing rule the email handoff uses, so leaderboard credit and inbox
 // destination can never disagree.
 function leadOwner(l) {
@@ -7845,127 +7868,189 @@ function amInitials(name) {
   return name.split(/\s+/).map(function(p) { return p[0] || ""; }).join("").slice(0, 2).toUpperCase();
 }
 
-function renderLeaderboard() {
-  const el = document.getElementById("leaderboardWrap");
-  if (!el) return;
+// --- Account Managers panel (merged leaderboard + workload) ------------------
+// amSort controls the ranking metric. All three data sources feed every row; the
+// toggle only changes what we sort on, never what's shown.
+let amSort = "revenue"; // revenue | wins | pipeline | clients | load
 
-  // Seed every real AM so someone with zero leads still shows up (and can see it).
-  const stats = {};
-  ACCOUNT_MANAGERS.forEach(function(am) {
-    stats[am] = { am: am, total: 0, won: 0, dead: 0, closed: 0, live: 0, pipeline: 0, scored: 0, hot: 0 };
+function renderAmPanel(rosterRows) {
+  const el = document.getElementById("dashAmWrap");
+  if (!el) return;
+  if (!rosterRows) rosterRows = getDashboardData();
+
+  // Seed every real AM plus an Unassigned bucket.
+  const A = {};
+  function blank(name) {
+    return { am: name, clients: 0, revenue: 0, scoreSum: 0, needsReview: 0,
+      tiers: { "Platinum": 0, "Gold": 0, "Silver": 0, "Bronze": 0, "Valuable Dirt": 0 },
+      wl: { quotes: 0, inProgress: 0, onHold: 0 },
+      leadsTotal: 0, won: 0, dead: 0, live: 0, pipeline: 0, hot: 0, scored: 0 };
+  }
+  ACCOUNT_MANAGERS.forEach(function(a) { A[a] = blank(a); });
+  A["Unassigned"] = blank("Unassigned");
+
+  // Roster signal.
+  rosterRows.forEach(function(r) {
+    const key = r.am && A[r.am] ? r.am : "Unassigned";
+    A[key].clients++;
+    A[key].revenue += r.total_revenue || 0;
+    A[key].tiers[r.tier]++;
+    A[key].scoreSum += r.total;
+    if (r.needsReview) A[key].needsReview++;
   });
 
-  state_leads.forEach(function(l) {
+  // Leads signal — same routing rule as the email handoff (leadOwner).
+  (typeof state_leads !== "undefined" ? state_leads : []).forEach(function(l) {
     const am = leadOwner(l);
-    if (!am || !stats[am]) return; // unrouted leads belong to nobody yet
-    const s = stats[am];
+    if (!am || !A[am]) return;
+    const s = A[am];
     const qs = (l.qualification && l.qualification.qualification_scoring) || {};
     const score = typeof qs.total_score === "number" ? qs.total_score : null;
-
-    s.total++;
+    s.leadsTotal++;
     if (l.status === "Won") s.won++;
     else if (l.status === "Dead") s.dead++;
     else s.live++;
-
     if (score != null) {
       s.scored += score;
-      // "Pipeline" = summed score of leads still in play. Won/Dead are settled,
-      // so they don't inflate what's actually still winnable.
       if (l.status !== "Won" && l.status !== "Dead") s.pipeline += score;
       if (score >= 40 && l.status !== "Dead") s.hot++;
     }
   });
 
-  const rows = ACCOUNT_MANAGERS.map(function(am) {
-    const s = stats[am];
-    s.closed = s.won + s.dead;
-    // Win rate only counts *settled* leads. Judging someone on leads still sitting
-    // in Contacted would punish a full pipeline, which is exactly backwards.
-    s.winRate = s.closed ? Math.round((s.won / s.closed) * 100) : null;
-    s.avgScore = s.total && s.scored ? Math.round(s.scored / s.total) : null;
-    return s;
-  });
-
-  const METRICS = {
-    won:      { key: "won",      label: "Wins",     sub: "closed won" },
-    pipeline: { key: "pipeline", label: "Pipeline", sub: "live score" },
-    volume:   { key: "total",    label: "Leads",    sub: "assigned" }
-  };
-  const m = METRICS[lbMetric];
-
-  rows.sort(function(a, b) {
-    const d = b[m.key] - a[m.key];
-    if (d !== 0) return d;
-    return b.total - a.total; // tiebreak on volume
-  });
-
-  const max = rows.reduce(function(x, r) { return Math.max(x, r[m.key]); }, 0) || 1;
-  const anyLeads = rows.some(function(r) { return r.total > 0; });
-
-  const medals = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
-
-  let html = '<div class="lb-toolbar">' +
-    '<div class="lb-metric">' +
-      Object.keys(METRICS).map(function(k) {
-        return '<button data-lb="' + k + '"' + (lbMetric === k ? ' class="on"' : '') + '>' +
-          METRICS[k].label + '</button>';
-      }).join("") +
-    '</div>' +
-    '<div class="fnl-hint" style="font-size:11px;color:#9CA3AF">Ranked by ' + m.label.toLowerCase() +
-      ' \u00b7 unrouted leads aren\'t credited to anyone</div>' +
-  '</div>';
-
-  if (!anyLeads) {
-    html += '<div class="empty-state">No routed leads yet \u2014 qualify a lead and set its industry to put it on the board.</div>';
-    el.innerHTML = html;
-    return;
+  // Ops signal — live open-quote load mapped customer_id -> AM via the roster.
+  const showWl = opsData && opsData.available;
+  if (showWl && Array.isArray(opsData.workload)) {
+    const custToAm = {};
+    rosterRows.forEach(function(r) {
+      if (r.customer_id != null) custToAm[String(r.customer_id)] = (r.am && A[r.am]) ? r.am : "Unassigned";
+    });
+    opsData.workload.forEach(function(w) {
+      const am = (w.customer_id != null && custToAm[String(w.customer_id)]) ? custToAm[String(w.customer_id)] : "Unassigned";
+      if (!A[am]) return;
+      A[am].wl.quotes += w.quotes || 0;
+      A[am].wl.inProgress += w.inProgress || 0;
+      A[am].wl.onHold += w.onHold || 0;
+    });
   }
 
-  html += rows.map(function(r, i) {
-    const val = r[m.key];
-    const color = amColor(r.am);
-    const width = Math.round((val / max) * 100);
+  // Derived fields.
+  Object.keys(A).forEach(function(k) {
+    const s = A[k];
+    s.closed = s.won + s.dead;
+    s.winRate = s.closed ? Math.round(s.won / s.closed * 100) : null;
+    s.avgScore = s.clients ? (s.scoreSum / s.clients) : null;
+    s.loadTotal = s.wl.quotes + s.wl.inProgress + s.wl.onHold;
+  });
 
-    // Badges: earned, not decorative. Each one means a specific thing.
-    const badges = [];
-    if (r.hot > 0) badges.push('<span class="lb-badge lb-hot">' + r.hot + ' hot</span>');
-    if (r.won >= 3) badges.push('<span class="lb-badge lb-streak">' + r.won + ' wins</span>');
-    if (r.winRate != null && r.winRate >= 60 && r.closed >= 3) {
-      badges.push('<span class="lb-badge lb-clean">' + r.winRate + '% close</span>');
+  // Only show AMs that actually have something (roster clients, leads, or open load).
+  // Unassigned only shows if it has weight.
+  const keys = Object.keys(A).filter(function(k) {
+    const s = A[k];
+    return s.clients > 0 || s.leadsTotal > 0 || s.loadTotal > 0;
+  });
+
+  const SORTS = {
+    revenue:  { label: "Revenue",  get: function(s){ return s.revenue; } },
+    wins:     { label: "Wins",     get: function(s){ return s.won; } },
+    pipeline: { label: "Pipeline", get: function(s){ return s.pipeline; } },
+    clients:  { label: "Clients",  get: function(s){ return s.clients; } },
+    load:     { label: "Open load",get: function(s){ return s.loadTotal; } }
+  };
+  if (!SORTS[amSort]) amSort = "revenue";
+  const sortGet = SORTS[amSort].get;
+  keys.sort(function(a, b) {
+    const d = sortGet(A[b]) - sortGet(A[a]);
+    if (d !== 0) return d;
+    return A[b].revenue - A[a].revenue;
+  });
+
+  const maxVal = keys.reduce(function(x, k) { return Math.max(x, sortGet(A[k])); }, 0) || 1;
+  const medals = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
+
+  // Toolbar: sort toggle.
+  let html = '<div class="amp-toolbar">' +
+    '<span class="amp-tb-lbl">Rank by</span>' +
+    '<div class="amp-sort">' +
+      Object.keys(SORTS).map(function(k) {
+        return '<button data-amsort="' + k + '"' + (amSort === k ? ' class="on"' : '') +
+          (k === "load" && !showWl ? ' disabled title="Needs the Printavo ops sync"' : '') +
+          '>' + SORTS[k].label + '</button>';
+      }).join("") +
+    '</div>' +
+  '</div>';
+
+  html += keys.map(function(k, i) {
+    const s = A[k];
+    const color = amColor(s.am);
+    const val = sortGet(s);
+    const width = Math.round(val / maxVal * 100);
+    const isUnassigned = k === "Unassigned";
+    const rank = (!isUnassigned && i < 3 && val > 0) ? medals[i] : (isUnassigned ? "\u2022" : (i + 1));
+
+    // Tier mix pills.
+    const tierPills = Object.keys(s.tiers).filter(function(t){ return s.tiers[t] > 0; }).map(function(t){
+      return '<span class="amp-tier" style="color:' + (TIER_COLORS[t] || "#374151") + '">' + t.slice(0,4) + ' ' + s.tiers[t] + '</span>';
+    }).join("");
+
+    // Open-quote load pills.
+    let loadPills = "";
+    if (showWl) {
+      const w = s.wl;
+      loadPills = s.loadTotal === 0
+        ? '<span class="amp-load-zero">no open quotes</span>'
+        : (w.quotes ? '<span class="wl-pill wl-q">' + w.quotes + ' quote' + (w.quotes === 1 ? '' : 's') + '</span>' : '') +
+          (w.inProgress ? '<span class="wl-pill wl-p">' + w.inProgress + ' in-prog</span>' : '') +
+          (w.onHold ? '<span class="wl-pill wl-h">' + w.onHold + ' on-hold</span>' : '');
     }
-    if (r.total === 0) badges.push('<span class="lb-badge lb-cold">no leads</span>');
 
-    const rank = (i < 3 && val > 0) ? medals[i] : (i + 1);
+    // Earned badges.
+    const badges = [];
+    if (s.hot > 0) badges.push('<span class="lb-badge lb-hot">' + s.hot + ' hot</span>');
+    if (s.winRate != null && s.winRate >= 60 && s.closed >= 3) badges.push('<span class="lb-badge lb-clean">' + s.winRate + '% close</span>');
 
-    const subParts = [];
-    subParts.push(r.live + " live");
-    if (r.won) subParts.push(r.won + " won");
-    if (r.winRate != null) subParts.push(r.winRate + "% close rate");
-    if (r.avgScore != null) subParts.push("avg " + r.avgScore + "/50");
+    // Stat chips row: the durable per-AM numbers, whatever the sort is.
+    const chips = [];
+    chips.push('<span class="amp-chip"><b>' + s.clients + '</b> clients</span>');
+    chips.push('<span class="amp-chip"><b>' + fmtMoney(s.revenue) + '</b></span>');
+    if (s.avgScore != null) chips.push('<span class="amp-chip">avg <b>' + s.avgScore.toFixed(2) + '</b></span>');
+    chips.push('<span class="amp-chip"><b>' + s.won + '</b> won</span>');
+    chips.push('<span class="amp-chip"><b>' + s.live + '</b> live</span>');
+    if (s.winRate != null) chips.push('<span class="amp-chip">' + s.winRate + '% close</span>');
+    if (s.needsReview > 0) chips.push('<span class="amp-chip amp-chip-warn">' + s.needsReview + ' to review</span>');
 
-    return '<div class="lb-row' + (i < 3 && val > 0 ? ' lb-' + (i + 1) : '') + '">' +
-      '<div class="lb-rank">' + rank + '</div>' +
-      '<div class="lb-av" style="background:' + color + '">' + amInitials(r.am) + '</div>' +
-      '<div class="lb-main">' +
-        '<div class="lb-name">' + r.am + '</div>' +
-        '<div class="lb-sub">' + subParts.join(" \u00b7 ") + '</div>' +
-        '<div class="lb-bar"><div class="lb-fill" style="width:' + width + '%;background:' + color + '"></div></div>' +
+    return '<div class="amp-row' + (isUnassigned ? ' amp-unassigned' : '') + '">' +
+      '<div class="amp-rank">' + rank + '</div>' +
+      '<div class="amp-av" style="background:' + (isUnassigned ? "#9CA3AF" : color) + '">' + (isUnassigned ? "?" : amInitials(s.am)) + '</div>' +
+      '<div class="amp-main">' +
+        '<div class="amp-top">' +
+          '<span class="amp-name">' + s.am + '</span>' +
+          '<span class="amp-badges">' + badges.join("") + '</span>' +
+        '</div>' +
+        '<div class="amp-chips">' + chips.join("") + '</div>' +
+        (tierPills ? '<div class="amp-tiers">' + tierPills + '</div>' : '') +
+        (showWl ? '<div class="amp-loadline">' + loadPills + '</div>' : '') +
+        '<div class="amp-bar"><div class="amp-fill" style="width:' + width + '%;background:' + (isUnassigned ? "#9CA3AF" : color) + '"></div></div>' +
       '</div>' +
-      '<div class="lb-badges">' + badges.join("") + '</div>' +
-      '<div class="lb-stat">' +
-        '<div class="lb-val" style="color:' + (val > 0 ? "#111827" : "#D1D5DB") + '">' + val + '</div>' +
-        '<div class="lb-lbl">' + m.sub + '</div>' +
+      '<div class="amp-right">' +
+        '<div class="amp-val">' + (amSort === "revenue" ? fmtMoney(val) : val) + '</div>' +
+        '<div class="amp-vlbl">' + SORTS[amSort].label + '</div>' +
+        (isUnassigned ? '' : '<button class="am-brief-btn amp-brief" data-am="' + s.am.replace(/"/g,'&quot;') + '">Brief</button>') +
       '</div>' +
     '</div>';
   }).join("");
 
+  if (!showWl) {
+    html += '<div class="help" style="margin-top:8px">Open-quote load appears once the Printavo ops sync has run (<code>/api/printavo-sync?mode=ops</code>).</div>';
+  }
+
   el.innerHTML = html;
 
-  el.querySelectorAll("[data-lb]").forEach(function(btn) {
-    btn.addEventListener("click", function() {
-      lbMetric = btn.dataset.lb;
-      renderLeaderboard();
-    });
+  el.querySelectorAll("[data-amsort]").forEach(function(btn) {
+    if (btn.disabled) return;
+    btn.addEventListener("click", function() { amSort = btn.dataset.amsort; renderAmPanel(rosterRows); });
+  });
+  el.querySelectorAll(".am-brief-btn").forEach(function(btn) {
+    btn.addEventListener("click", function() { openAmBrief(btn.dataset.am); });
   });
 }
 
@@ -9526,7 +9611,7 @@ let adminAMs = [];
 
 const ALL_TABS = ["dashboard", "roster", "scorecard", "leads", "inbox", "settings"];
 const ALL_CARDS = ["salesgoal", "top10", "industry", "revtrend", "outstanding",
-                   "dormant", "cadence", "tiermove", "leaderboard", "amload", "alerts"];
+                   "dormant", "cadence", "tiermove", "amload", "alerts"];
 
 async function loadUsersAndRoles() {
   const uw = document.getElementById("usersWrap");
