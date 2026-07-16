@@ -337,17 +337,42 @@ export default async function handler(req, res) {
         // Follow the connection's nodes to the element type.
         const groupNodeType = groupsConn.nodes ? groupsConn.nodes.typeName : null;
 
-        if (groupsField === "lineItems" && groupNodeType) {
-          // Simple case: Invoice.lineItems -> nodes -> LineItem{category,...}
+        // Resolve how to read category/product off a LineItem. Each may be a scalar
+        // (select bare) or an object type (must select a name-ish sub-field, e.g.
+        // category{ id name }). Printavo returns Category/Product OBJECTS, so we
+        // introspect them and pick a label sub-field.
+        async function resolveLeafRef(itemFields, fieldName) {
+          const meta = itemFields[fieldName];
+          if (!meta) return null;
+          if (meta.kind !== "OBJECT" || !meta.typeName) {
+            // Scalar — select bare, read directly.
+            return { field: fieldName, sub: null };
+          }
+          // Object — find a name-like scalar sub-field to select.
           await rlPause();
-          const li = await fieldsOf(groupNodeType);
-          const s = has(li);
-          plan.lineItems = {
-            outer: groupsField, outerIsConn: true,
-            inner: null,
-            catField: s.category ? "category" : null,
-            productField: s.product ? "product" : (s.description ? "description" : null),
+          const sub = await fieldsOf(meta.typeName);
+          const pick = sub.name ? "name" : (sub.title ? "title" : (sub.label ? "label" : (sub.description ? "description" : null)));
+          if (!pick) return null;
+          return { field: fieldName, sub: pick };
+        }
+
+        async function buildLeafPlan(itemType, outerField, innerField, innerIsConn) {
+          await rlPause();
+          const li = await fieldsOf(itemType);
+          const cat = li.category ? await resolveLeafRef(li, "category") : null;
+          const prod = li.product ? await resolveLeafRef(li, "product")
+                     : (li.description ? { field: "description", sub: null } : null);
+          if (!cat && !prod) return null;
+          return {
+            outer: outerField, outerIsConn: true,
+            inner: innerField, innerIsConn: !!innerIsConn,
+            cat, prod, // each: { field, sub } or null
           };
+        }
+
+        if (groupsField === "lineItems" && groupNodeType) {
+          // Simple case: Invoice.lineItems -> nodes -> LineItem{category,product,...}
+          plan.lineItems = await buildLeafPlan(groupNodeType, groupsField, null, false);
         } else if (groupNodeType) {
           // Nested case: group -> lineItems (connection) -> nodes -> LineItem
           await rlPause();
@@ -359,20 +384,12 @@ export default async function handler(req, res) {
             const innerConn = await fieldsOf(groupFields[innerField].typeName);
             const itemType = innerConn.nodes ? innerConn.nodes.typeName : groupFields[innerField].typeName;
             if (itemType) {
-              await rlPause();
-              const li = await fieldsOf(itemType);
-              const s = has(li);
-              plan.lineItems = {
-                outer: groupsField, outerIsConn: true,
-                inner: innerField, innerIsConn: !!innerConn.nodes,
-                catField: s.category ? "category" : null,
-                productField: s.product ? "product" : (s.description ? "description" : null),
-              };
+              plan.lineItems = await buildLeafPlan(itemType, groupsField, innerField, !!innerConn.nodes);
             }
           }
         }
         // Only keep it if we actually found something to read.
-        if (plan.lineItems && !plan.lineItems.catField && !plan.lineItems.productField) {
+        if (plan.lineItems && !plan.lineItems.cat && !plan.lineItems.prod) {
           plan.lineItems = null;
         }
       }
@@ -421,21 +438,22 @@ export default async function handler(req, res) {
     }
 
     // Line items for product-category mix, if the shape was discovered.
-    // Printavo nests connections: lineItemGroups{nodes{ lineItems{nodes{ category product }}}}
+    // Printavo nests connections AND category/product are OBJECT types, so the leaf
+    // selection is e.g. category{name} product{name} inside lineItems{nodes{...}}.
     let itemsExtra = "";
     if (plan.lineItems) {
       const li = plan.lineItems;
       const leaf = [];
-      if (li.catField) leaf.push(li.catField);
-      if (li.productField) leaf.push(li.productField);
+      function ref(r) { return r ? (r.sub ? `${r.field}{${r.sub}}` : r.field) : null; }
+      const catSel = ref(li.cat), prodSel = ref(li.prod);
+      if (catSel) leaf.push(catSel);
+      if (prodSel) leaf.push(prodSel);
       if (leaf.length) {
         const leafSel = leaf.join(" ");
         if (li.inner) {
-          // group(connection).inner(connection).leaf
           const innerSel = li.innerIsConn ? `${li.inner}{nodes{${leafSel}}}` : `${li.inner}{${leafSel}}`;
           itemsExtra = li.outerIsConn ? `${li.outer}{nodes{${innerSel}}}` : `${li.outer}{${innerSel}}`;
         } else {
-          // outer(connection).leaf directly
           itemsExtra = li.outerIsConn ? `${li.outer}{nodes{${leafSel}}}` : `${li.outer}{${leafSel}}`;
         }
       }
@@ -633,11 +651,17 @@ export default async function handler(req, res) {
           if (Array.isArray(v.edges)) return v.edges.map(e => e && e.node).filter(Boolean);
           return [];
         }
+        function readRef(leaf, r) {
+          if (!r) return null;
+          const v = leaf[r.field];
+          if (v == null) return null;
+          if (r.sub) return (v && typeof v === "object") ? v[r.sub] : null;
+          // scalar
+          return (typeof v === "object") ? (v.name || v.description || null) : v;
+        }
         function bump(leaf) {
           if (!leaf) return;
-          let cat = (li.catField && leaf[li.catField]) || (li.productField && leaf[li.productField]) || null;
-          // product may itself be an object (e.g. {itemNumber, description}); take a label.
-          if (cat && typeof cat === "object") cat = cat.name || cat.description || cat.itemNumber || null;
+          let cat = readRef(leaf, li.cat) || readRef(leaf, li.prod);
           if (!cat) return;
           cat = String(cat).trim();
           if (!cat) return;
