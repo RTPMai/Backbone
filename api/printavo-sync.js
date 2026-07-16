@@ -235,6 +235,9 @@ export default async function handler(req, res) {
         linkedType: meta.typeName,
         // When present, group by parent.field.id/name instead of the link's own.
         parent,
+        // Populated below (outside this loop) once we know which type is the Contact.
+        contactFields: null,
+        lineItems: null,
       };
     }
 
@@ -243,19 +246,160 @@ export default async function handler(req, res) {
     return null;
   }
 
+  // Second-stage introspection: given a resolved link plan, discover the fields
+  // needed for (a) the buying contact's reachability and (b) the product-category
+  // mix. Kept separate from the link discovery so a failure here degrades to
+  // "no contact/category data" rather than breaking the whole sync. Mutates and
+  // returns the plan.
+  async function enrichPlanWithContactAndItems(plan) {
+    if (!plan) return plan;
+
+    async function fieldsOf(typeName) {
+      if (!typeName) return {};
+      try {
+        const td = await gql(`query{__type(name:"${typeName}"){fields{name type{name kind ofType{name kind}}}}}`);
+        const map = {};
+        ((td.__type && td.__type.fields) || []).forEach(f => {
+          const t = f.type || {};
+          const nm = t.name || (t.ofType && t.ofType.name) || null;
+          const kd = t.kind === "OBJECT" ? "OBJECT" : (t.ofType && t.ofType.kind) || t.kind;
+          map[f.name] = { typeName: nm, kind: kd };
+        });
+        return map;
+      } catch (e) { return {}; }
+    }
+    function has(m) { const o = {}; Object.keys(m).forEach(k => o[k] = true); return o; }
+    function pickEmail(s){ return s.email?"email":s.emailAddress?"emailAddress":null; }
+    function pickPhone(s){ return s.phone?"phone":s.phoneNumber?"phoneNumber":s.phoneNumberFull?"phoneNumberFull":s.mobile?"mobile":null; }
+    function pickTitle(s){ return s.title?"title":s.jobTitle?"jobTitle":s.role?"role":null; }
+    function pickFullName(s){ return s.fullName?"fullName":null; }
+    function pickFirst(s){ return s.firstName?"firstName":null; }
+    function pickLast(s){ return s.lastName?"lastName":null; }
+
+    // --- Contact reachability ---
+    // The contact type is either the link itself (linkField === "contact") or the
+    // invoice's separate `contact{...}` object. Introspect whichever applies.
+    try {
+      await rlPause();
+      let contactTypeName = null;
+      if (plan.linkField === "contact") {
+        contactTypeName = plan.linkedType;
+      } else {
+        // Find the type of Invoice.contact.
+        const invFields = await fieldsOf("Invoice");
+        const cm = invFields.contact;
+        if (cm && cm.kind === "OBJECT" && cm.typeName) contactTypeName = cm.typeName;
+      }
+      if (contactTypeName) {
+        await rlPause();
+        const cf = await fieldsOf(contactTypeName);
+        const s = has(cf);
+        plan.contactFields = {
+          typeName: contactTypeName,
+          fullName: pickFullName(s),
+          firstName: pickFirst(s),
+          lastName: pickLast(s),
+          email: pickEmail(s),
+          phone: pickPhone(s),
+          title: pickTitle(s),
+        };
+      }
+    } catch (e) { plan.contactFields = null; }
+
+    // --- Product category mix (from invoice line items) ---
+    // Discover Invoice.lineItems (a list of line-item objects) and which sub-field
+    // carries the category/product name. Printavo schemas vary, so we probe a set
+    // of likely names and store whichever exists.
+    try {
+      await rlPause();
+      const invFields = await fieldsOf("Invoice");
+      const liCandidates = ["lineItems", "lineItemGroups", "items"];
+      let liField = null, liType = null;
+      for (const c of liCandidates) {
+        const m = invFields[c];
+        if (m && m.typeName) { liField = c; liType = m.typeName; break; }
+      }
+      if (liField && liType) {
+        await rlPause();
+        const lf = await fieldsOf(liType);
+        const s = has(lf);
+        // A line item may hold the category directly, or nest a group/product.
+        const catField = s.category ? "category" : (s.categoryName ? "categoryName" : null);
+        const nameField = s.name ? "name" : (s.productName ? "productName" : (s.description ? "description" : null));
+        // A nested group object (e.g. lineItemGroups -> style) sometimes holds it.
+        let nestField = null, nestCat = null, nestType = null;
+        if (!catField) {
+          for (const n of ["group", "style", "product", "lineItemGroup"]) {
+            const nm = lf[n];
+            if (nm && nm.kind === "OBJECT" && nm.typeName) {
+              await rlPause();
+              const nf = await fieldsOf(nm.typeName);
+              const ns = has(nf);
+              const nc = ns.category ? "category" : (ns.name ? "name" : null);
+              if (nc) { nestField = n; nestCat = nc; nestType = nm.typeName; break; }
+            }
+          }
+        }
+        if (catField || nameField || nestCat) {
+          plan.lineItems = { field: liField, catField, nameField, nestField, nestCat };
+        }
+      }
+    } catch (e) { plan.lineItems = null; }
+
+    return plan;
+  }
+
   // Build the GraphQL node selection string from a resolved plan.
   function buildFieldSelection(plan) {
     const subFields = [plan.idField];
     if (plan.nameField) subFields.push(plan.nameField);
     if (plan.contactNameField && plan.contactNameField !== plan.nameField) subFields.push(plan.contactNameField);
+
+    // Build the reachability selection for a contact-like object (email/phone/title
+    // and a usable name), using only the fields introspection confirmed exist.
+    function contactSel(cf) {
+      if (!cf) return "";
+      const parts = [];
+      if (cf.fullName) parts.push(cf.fullName);
+      if (cf.firstName) parts.push(cf.firstName);
+      if (cf.lastName) parts.push(cf.lastName);
+      if (cf.email) parts.push(cf.email);
+      if (cf.phone) parts.push(cf.phone);
+      if (cf.title) parts.push(cf.title);
+      return parts.join(" ");
+    }
+
     // If we found a parent company through the link, request it nested so we
     // can group by the company rather than the individual contact.
     if (plan.parent) {
       subFields.push(`${plan.parent.field}{${plan.parent.idField} ${plan.parent.nameField}}`);
     }
+    // When the LINK itself is the contact, fold reachability fields into its selection.
+    if (plan.linkField === "contact" && plan.contactFields) {
+      const extra = contactSel(plan.contactFields);
+      if (extra) extra.split(" ").forEach(f => { if (subFields.indexOf(f) === -1) subFields.push(f); });
+    }
     const link = `${plan.linkField}{${subFields.join(" ")}}`;
-    const contactExtra = plan.linkField === "contact" ? "" : "contact{fullName}";
-    return `nodes{id visualId createdAt total amountOutstanding status{id name}${contactExtra}${link}}pageInfo{hasNextPage endCursor}`;
+
+    // Separate contact object on the invoice (when the link is a Customer, not a Contact).
+    let contactExtra = "";
+    if (plan.linkField !== "contact") {
+      const sel = plan.contactFields ? contactSel(plan.contactFields) : "fullName";
+      contactExtra = `contact{${sel}}`;
+    }
+
+    // Line items for product-category mix, if the shape was discovered.
+    let itemsExtra = "";
+    if (plan.lineItems) {
+      const li = plan.lineItems;
+      const inner = [];
+      if (li.catField) inner.push(li.catField);
+      if (li.nameField) inner.push(li.nameField);
+      if (li.nestField && li.nestCat) inner.push(`${li.nestField}{${li.nestCat}}`);
+      if (inner.length) itemsExtra = `${li.field}{${inner.join(" ")}}`;
+    }
+
+    return `nodes{id visualId createdAt total amountOutstanding status{id name}${contactExtra}${itemsExtra}${link}}pageInfo{hasNextPage endCursor}`;
   }
 
   // Resolve a VALID sort field for the invoices query by introspecting the
@@ -414,6 +558,46 @@ export default async function handler(req, res) {
         if (!row.last_invoice_date || d > row.last_invoice_date) row.last_invoice_date = d;
       }
     }
+
+    // --- Contact reachability + product mix ---
+    // Collected only on count/both passes (NOT the revenue/PAID pass), so a
+    // two-pass reconcile doesn't double-count categories or duplicate contacts.
+    // The count pass sees every non-$0 invoice, so nothing is missed.
+    if (mode === "count" || mode === "both") {
+      const cf = plan.contactFields;
+      if (cf) {
+        const src = (plan.linkField === "contact") ? link : (inv.contact || null);
+        if (src) {
+          const name = (cf.fullName && src[cf.fullName]) ||
+            [cf.firstName && src[cf.firstName], cf.lastName && src[cf.lastName]].filter(Boolean).join(" ") || null;
+          const email = (cf.email && src[cf.email]) || null;
+          const phone = (cf.phone && src[cf.phone]) || null;
+          const title = (cf.title && src[cf.title]) || null;
+          if (name || email || phone) {
+            if (!row._contacts) row._contacts = [];
+            row._contacts.push({ name: name || null, email: email || null, phone: phone || null, title: title || null, date: d || null });
+          }
+        }
+      }
+
+      if (plan.lineItems) {
+        const li = plan.lineItems;
+        const items = inv[li.field];
+        if (Array.isArray(items)) {
+          if (!row._categories) row._categories = {};
+          items.forEach(it => {
+            if (!it) return;
+            let cat = (li.catField && it[li.catField]) ||
+              (li.nestField && li.nestCat && it[li.nestField] && it[li.nestField][li.nestCat]) ||
+              (li.nameField && it[li.nameField]) || null;
+            if (!cat) return;
+            cat = String(cat).trim();
+            if (!cat) return;
+            row._categories[cat] = (row._categories[cat] || 0) + 1;
+          });
+        }
+      }
+    }
   }
 
   // Fully-paid check for single-pass ("both") mode: outstanding within a cent of 0.
@@ -455,6 +639,101 @@ export default async function handler(req, res) {
     });
   }
 
+  // Resolve collected contacts + category counts into the persisted shape.
+  // Contacts: dedupe by email (falling back to lowercased name), keep the sighting
+  // with the most detail, tag each with the most recent invoice date it appeared on
+  // and how many invoices it appeared on, then sort most-recent-first. The first is
+  // marked primary. Categories: top 8 by count. Runs on BOTH incremental and
+  // reconcile so contact/category data stays fresh either way.
+  function finalizeContactsAndCategories(acc) {
+    Object.values(acc).forEach(row => {
+      // --- contacts ---
+      const raw = row._contacts || [];
+      delete row._contacts;
+      if (raw.length) {
+        const byKey = {};
+        raw.forEach(c => {
+          const key = (c.email ? c.email.toLowerCase() : (c.name ? c.name.toLowerCase().trim() : null));
+          if (!key) return;
+          if (!byKey[key]) {
+            byKey[key] = { name: c.name || null, email: c.email || null, phone: c.phone || null,
+              title: c.title || null, last_seen: c.date || null, invoice_count: 1 };
+          } else {
+            const e = byKey[key];
+            e.invoice_count += 1;
+            // Fill in any missing detail from later sightings.
+            if (!e.name && c.name) e.name = c.name;
+            if (!e.email && c.email) e.email = c.email;
+            if (!e.phone && c.phone) e.phone = c.phone;
+            if (!e.title && c.title) e.title = c.title;
+            if (c.date && (!e.last_seen || c.date > e.last_seen)) e.last_seen = c.date;
+          }
+        });
+        const list = Object.values(byKey).sort((a, b) => {
+          // Most recent first; ties broken by how often the contact appears.
+          const da = a.last_seen || "", db = b.last_seen || "";
+          if (da !== db) return db < da ? -1 : 1;
+          return (b.invoice_count || 0) - (a.invoice_count || 0);
+        });
+        if (list.length) {
+          row.contacts = list;
+          row.primary_contact = list[0];
+        }
+      }
+
+      // --- product category mix ---
+      const cats = row._categories || null;
+      delete row._categories;
+      if (cats) {
+        const top = Object.keys(cats).map(k => ({ name: k, count: cats[k] }))
+          .sort((a, b) => b.count - a.count).slice(0, 8);
+        if (top.length) row.top_categories = top;
+      }
+    });
+  }
+
+  // Union two contact lists (prior running set + this window's) by email/name,
+  // summing invoice_count and keeping the most recent last_seen. Returns
+  // { list (most-recent-first), primary }.
+  function mergeContactLists(a, b) {
+    const out = {};
+    function key(c) { return c.email ? c.email.toLowerCase() : (c.name ? c.name.toLowerCase().trim() : null); }
+    [a || [], b || []].forEach(list => {
+      list.forEach(c => {
+        const k = key(c);
+        if (!k) return;
+        if (!out[k]) {
+          out[k] = { name: c.name || null, email: c.email || null, phone: c.phone || null,
+            title: c.title || null, last_seen: c.last_seen || null, invoice_count: c.invoice_count || 1 };
+        } else {
+          const e = out[k];
+          e.invoice_count += (c.invoice_count || 1);
+          if (!e.name && c.name) e.name = c.name;
+          if (!e.email && c.email) e.email = c.email;
+          if (!e.phone && c.phone) e.phone = c.phone;
+          if (!e.title && c.title) e.title = c.title;
+          if (c.last_seen && (!e.last_seen || c.last_seen > e.last_seen)) e.last_seen = c.last_seen;
+        }
+      });
+    });
+    const list = Object.values(out).sort((x, y) => {
+      const dx = x.last_seen || "", dy = y.last_seen || "";
+      if (dx !== dy) return dy < dx ? -1 : 1;
+      return (y.invoice_count || 0) - (x.invoice_count || 0);
+    });
+    return { list: list.length ? list : undefined, primary: list.length ? list[0] : undefined };
+  }
+
+  // Add two category-count lists together, keep top 8.
+  function mergeCategoryLists(a, b) {
+    if (!a && !b) return undefined;
+    const m = {};
+    (a || []).forEach(c => { m[c.name] = (m[c.name] || 0) + (c.count || 0); });
+    (b || []).forEach(c => { m[c.name] = (m[c.name] || 0) + (c.count || 0); });
+    const top = Object.keys(m).map(k => ({ name: k, count: m[k] })).sort((x, y) => y.count - x.count).slice(0, 8);
+    return top.length ? top : undefined;
+  }
+
   // Merge freshly-aggregated Printavo rows into state.synced.
   //  - Protected (LEAD-/prospect) rows are preserved untouched.
   //  - For reconcile: real Printavo customers are fully replaced by rebuilt totals.
@@ -479,6 +758,8 @@ export default async function handler(req, res) {
       // Strip any scratch field that shouldn't be persisted.
       const cleanAgg = { ...agg };
       delete cleanAgg._dates;
+      delete cleanAgg._contacts;
+      delete cleanAgg._categories;
       if (!byId[id] || replace) {
         // Reconcile, or brand-new customer: take the aggregate, inheriting a
         // few durable fields from the prior row for the same id when present,
@@ -488,6 +769,11 @@ export default async function handler(req, res) {
         if ((cleanAgg.median_gap_days == null) && prev && prev.median_gap_days != null) {
           merged.median_gap_days = prev.median_gap_days;
         }
+        // On reconcile, the rebuilt aggregate is authoritative for contacts/categories.
+        // On a brand-new incremental customer, cleanAgg already carries them. But if a
+        // reconcile pass somehow produced none while a prior row had them, keep prior.
+        if (!cleanAgg.contacts && prev && prev.contacts) { merged.contacts = prev.contacts; merged.primary_contact = prev.primary_contact; }
+        if (!cleanAgg.top_categories && prev && prev.top_categories) merged.top_categories = prev.top_categories;
         byId[id] = merged;
       } else {
         // Incremental: add the delta onto the running totals. Median gap is NOT
@@ -509,6 +795,12 @@ export default async function handler(req, res) {
         Object.keys(cleanAgg.invoices_by_year || {}).forEach(y => {
           mergedInvByYear[y] = (Number(mergedInvByYear[y]) || 0) + (Number(cleanAgg.invoices_by_year[y]) || 0);
         });
+
+        // Contacts: union prior + new window by email/name, keeping the most-recent
+        // primary. Categories: add the delta counts onto the running mix.
+        const mergedContacts = mergeContactLists(cur.contacts, cleanAgg.contacts);
+        const mergedCats = mergeCategoryLists(cur.top_categories, cleanAgg.top_categories);
+
         byId[id] = {
           ...cur,
           company_name: cleanAgg.company_name && cleanAgg.company_name !== "Unknown" ? cleanAgg.company_name : cur.company_name,
@@ -518,6 +810,9 @@ export default async function handler(req, res) {
           invoices_by_year: mergedInvByYear,
           last_invoice_date: cleanAgg.last_invoice_date && (!cur.last_invoice_date || cleanAgg.last_invoice_date > cur.last_invoice_date)
             ? cleanAgg.last_invoice_date : cur.last_invoice_date,
+          contacts: mergedContacts.list,
+          primary_contact: mergedContacts.primary,
+          top_categories: mergedCats,
         };
       }
     });
@@ -537,6 +832,10 @@ export default async function handler(req, res) {
         error: "Could not find a client-linking field (customer/contact/owner with an id) on Printavo's Invoice type. Schema may have changed.",
       });
     }
+    // Second-stage discovery for contact reachability + product-category mix.
+    // Failures here degrade gracefully (no contact/category data) rather than
+    // breaking the revenue sync.
+    await enrichPlanWithContactAndItems(plan);
     const GQL_FIELDS = buildFieldSelection(plan);
     const sortPlan = await resolveInvoiceSort();
     const argPlan = await resolveInvoiceArgs();
@@ -549,7 +848,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         mode: "ping",
-        buildVersion: "paid-yearwindow-v7",
+        buildVersion: "contacts-categories-v8",
         paidRule: "paymentStatus:PAID per-year window (fully-paid only)",
         fetchesAmountOutstanding: /amountOutstanding/.test(GQL_FIELDS),
         sort: { sortOn: sortPlan.sortOn, desc: sortPlan.desc, source: sortPlan.source },
@@ -558,11 +857,14 @@ export default async function handler(req, res) {
         paymentStatus: { type: argPlan.paymentStatusType, values: argPlan.paymentStatusValues, usable: argPlan.hasPaymentStatus },
         dateFilters: { inProductionAfter: argPlan.hasInProductionAfter, inProductionBefore: argPlan.hasInProductionBefore },
         schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
-      });
-    }
-
-    // =====================================================================
-    // PROBE-HISTORY — read-only schema probe. Answers one question: does Printavo
+        // v8: confirm contact reachability + product mix were discovered. If these
+        // are null/absent, the schema didn't expose them under the probed names —
+        // check the fieldSelection to see what's actually requested.
+        contactDiscovery: plan.contactFields
+          ? { type: plan.contactFields.typeName, name: plan.contactFields.fullName || plan.contactFields.firstName || null, email: plan.contactFields.email, phone: plan.contactFields.phone, title: plan.contactFields.title }
+          : null,
+        lineItemDiscovery: plan.lineItems || null,
+        fieldSelection: GQL_FIELDS, — read-only schema probe. Answers one question: does Printavo
     // expose a per-quote status-change history with timestamps? That's the only way
     // to count "art declined N times THIS YEAR" (an event count) rather than
     // "N quotes are declined right now" (a snapshot). We DON'T guess field names —
@@ -683,6 +985,7 @@ export default async function handler(req, res) {
       }
 
       const state = (await kvGet(stateKey)) || { synced: [], enrichment: {}, lastSynced: null };
+      finalizeContactsAndCategories(acc);
       const synced = mergeIntoSynced(state.synced || [], acc, { replace: false });
       const nextState = { ...state, synced, lastSynced: new Date().toISOString() };
       await kvSet(stateKey, nextState);
@@ -839,6 +1142,7 @@ export default async function handler(req, res) {
       // Full pass complete — REPLACE real-customer aggregates authoritatively.
       // Compute median_gap_days now that we have each customer's FULL date set.
       finalizeMedianGaps(acc);
+      finalizeContactsAndCategories(acc);
       const state = (await kvGet(stateKey)) || { synced: [], enrichment: {}, lastSynced: null };
 
       // Safety backup: this reconcile PURGES stale non-protected rows, so snapshot
@@ -890,7 +1194,7 @@ export default async function handler(req, res) {
         purgedStaleRows: Math.max(0, beforeCount - synced.length),
         protectedRowsKept: protectedCount,
         backupKey: "backbone_data_backup",
-        buildVersion: "paid-yearwindow-v7",
+        buildVersion: "contacts-categories-v8",
         totalPaidRevenue: Math.round(totalPaid * 100) / 100,
         byYear: yearDiag,
         schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, companyNameFrom: plan.parent ? plan.parent.nameField : plan.nameField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
