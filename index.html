@@ -223,6 +223,68 @@ textarea.field{min-height:60px;resize:vertical}
 .brief-trend th:first-child,.brief-trend td:first-child{text-align:left;color:#6B7280;font-weight:600}
 .brief-trend thead th{color:#9CA3AF;font-weight:700;font-size:11px}
 .brief-trend-note{font-size:11.5px;font-weight:700;margin-top:6px}
+
+/* --- At-Risk brief: mirrors api/brief.js (the emailed Lead Brief) exactly, so the
+   two briefs are visually indistinguishable. Tier colours come in as CSS vars
+   (--bt-bar / --bt-bg / --bt-fg / --bt-uc) set inline on .brief-sheet. Scoped so
+   these generic class names don't collide with the rest of the app. */
+.brief-sheet{max-width:520px;margin:0 auto;font-family:Inter,-apple-system,system-ui,sans-serif;color:#111827;line-height:1.5}
+.brief-sheet .card{background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(16,24,40,.07);padding:20px;margin-bottom:12px}
+.brief-sheet .top{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.brief-sheet .badge{width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,#3D9A5C,#2F7D48);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:12px}
+.brief-sheet .top-t{font-weight:700;font-size:12px;letter-spacing:.02em;color:#6B7280}
+.brief-sheet .top-am{margin-left:auto;font-size:11px;color:#B7BEC7}
+.brief-sheet .hero{text-align:center;padding:22px 20px 20px}
+.brief-sheet .stars{font-size:19px;letter-spacing:3px;color:var(--bt-bar);margin-bottom:10px}
+.brief-sheet .stars .off{color:#E5E9ED}
+.brief-sheet .co{font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1.2}
+.brief-sheet .ind{font-size:13px;color:#9CA3AF;margin-top:4px}
+.brief-sheet .site-btn{display:inline-flex;align-items:center;gap:7px;margin-top:12px;padding:11px 18px;border-radius:11px;background:#fff;border:2px solid var(--bt-bar);color:var(--bt-bar);font-size:14px;font-weight:700;text-decoration:none}
+.brief-sheet .site-btn:hover{background:var(--bt-bg)}
+.brief-sheet .site-none{margin-top:12px;font-size:12px;color:#C3C9D0;font-weight:600}
+.brief-sheet .dial{margin-top:16px}
+.brief-sheet .dial-n{font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1;color:var(--bt-bar)}
+.brief-sheet .dial-n small{font-size:14px;font-weight:500;color:#B7BEC7}
+.brief-sheet .dial-bar{height:7px;border-radius:99px;background:#EEF1F4;margin:11px auto 10px;max-width:220px;overflow:hidden}
+.brief-sheet .dial-fill{height:100%;border-radius:99px;background:var(--bt-bar);width:var(--bt-pct,0)}
+.brief-sheet .tier{display:inline-block;padding:5px 13px;border-radius:99px;font-size:11.5px;font-weight:700;background:var(--bt-bg);color:var(--bt-fg)}
+.brief-sheet .sum{font-size:15px;line-height:1.6;text-align:center;color:#374151}
+.brief-sheet .call{background:#fff;border-radius:16px;padding:20px;margin-bottom:12px;box-shadow:0 2px 10px rgba(16,24,40,.10);border:2px solid var(--bt-bar)}
+.brief-sheet .call-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--bt-bar);margin-bottom:9px}
+.brief-sheet .call-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.brief-sheet .call-name{font-size:20px;font-weight:800;letter-spacing:-.01em}
+.brief-sheet .call-title{font-size:13.5px;color:#6B7280;margin-top:1px}
+.brief-sheet .call-acts{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.brief-sheet .act{display:flex;align-items:center;gap:9px;padding:13px 15px;border-radius:11px;font-size:14.5px;font-weight:600;text-decoration:none}
+.brief-sheet .act-i{font-size:15px;opacity:.85}
+.brief-sheet .act-primary{background:var(--bt-bar);color:#fff}
+.brief-sheet .act-secondary{background:#F4F6F8;color:#111827}
+.brief-sheet .act-none{background:#FEF3C7;color:#92400E;font-size:13px;font-weight:600}
+.brief-sheet .say-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.brief-sheet .say{font-size:15.5px;font-weight:600;line-height:1.55}
+.brief-sheet .say-m{font-size:12.5px;color:#9CA3AF;margin-top:10px}
+.brief-sheet .say-m b{color:#374151}
+.brief-sheet .pb{background:#fff;border-radius:16px;padding:20px;margin-bottom:12px;box-shadow:0 1px 3px rgba(16,24,40,.07);border-left:4px solid var(--bt-bar)}
+.brief-sheet .pb-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}
+.brief-sheet .pb-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--bt-bar)}
+.brief-sheet .pb-tag{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:3px 9px;border-radius:99px;background:var(--bt-bg);color:var(--bt-fg)}
+.brief-sheet .pb-read{font-size:14px;line-height:1.55;font-weight:600;margin-bottom:11px}
+.brief-sheet .pb-do,.brief-sheet .pb-dont{font-size:13px;line-height:1.5;padding:5px 0;color:#374151}
+.brief-sheet .pb-do b{color:#1F6B3D}.brief-sheet .pb-dont b{color:#B91C1C}
+.brief-sheet .pb-need{font-size:13px;color:#6B7280;line-height:1.55;padding-bottom:12px;margin-bottom:4px;border-bottom:1px solid #F4F6F8}
+.brief-sheet .pb-need b{color:#111827}
+.brief-sheet .fb{padding:10px 0;border-bottom:1px solid #F4F6F8}
+.brief-sheet .fb:last-of-type{border-bottom:none}
+.brief-sheet .fb-f{font-size:13.5px;font-weight:700}
+.brief-sheet .fb-b{font-size:12.5px;color:#6B7280;line-height:1.5;margin-top:2px}
+.brief-sheet .warn{background:#FEF2F2;border-radius:12px;padding:13px 16px;margin-bottom:12px}
+.brief-sheet .warn-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#B91C1C;margin-bottom:5px}
+.brief-sheet .warn p{font-size:13px;color:#7F1D1D;line-height:1.5}
+.brief-sheet .foot{text-align:center;font-size:11px;color:#C3C9D0;margin-top:16px}
+@media print{.brief-sheet .card,.brief-sheet .call,.brief-sheet .pb{box-shadow:none;border:1px solid #E5E7EB}}
+/* Grey backdrop behind the cards, bleeding to the modal-body edges, so it reads like
+   the standalone emailed brief (cards floating on #F4F6F8) rather than white-on-white. */
+#briefPrintArea:has(.brief-sheet){background:#F4F6F8;margin:-20px;padding:20px 14px}
 .brief-line{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid #F7F8FA}
 .brief-line:last-child{border-bottom:none}
 .brief-line .bl-name{font-weight:700}
@@ -6696,176 +6758,228 @@ function openDetail(customerId) {
 // Single-client dormant/at-risk brief, opened from the client record. Reuses the
 // same brief modal + mailto/copy plumbing as the roster-wide version, scoped to one
 // account and routed to its owning AM.
+// Tier -> the same {bg,fg,bar} colour language the lead brief (api/brief.js) uses,
+// so an At-Risk brief and a Lead brief are visually indistinguishable to an AM.
+function briefTierColors(tier) {
+  const t = String(tier || "");
+  if (t === "Platinum") return { bg: "#EAF5EE", fg: "#1F6B3D", bar: "#3D9A5C" };
+  if (t === "Gold")     return { bg: "#DBEAFE", fg: "#1D4ED8", bar: "#2563EB" };
+  if (t === "Silver")   return { bg: "#FEF3C7", fg: "#92400E", bar: "#D97706" };
+  if (t === "Bronze")   return { bg: "#F3F4F6", fg: "#4B5563", bar: "#6B7280" };
+  return { bg: "#FEE2E2", fg: "#991B1B", bar: "#DC2626" }; // Valuable Dirt / unscored
+}
+
 function openClientDormantBrief(customerId) {
   const rec = state.synced.find(function(c) { return c.customer_id === customerId; });
   if (!rec) return;
   const enr = state.enrichment[customerId] || {};
   const am = (enr.account_manager && ACCOUNT_MANAGERS.indexOf(enr.account_manager) !== -1) ? enr.account_manager : null;
+  const esc = escapeHtml;
 
-  // --- Core timing / behavior figures ---
+  // --- Core figures ---
   const days = daysSince(rec.last_invoice_date);
   const rev = Number(rec.total_revenue) || 0;
   const invoices = Number(rec.invoice_count) || 0;
-  const when = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   const mo = days != null ? Math.round(days / 30) : null;
   const avgOrder = invoices > 0 ? rev / invoices : null;
-
-  // median_gap_days of exactly 0 is a same-day-clustering artifact, not real cadence.
   const gap = (typeof rec.median_gap_days === "number" && rec.median_gap_days > 0) ? rec.median_gap_days : null;
-  const overdueBy = (gap != null && days != null) ? Math.round(days - gap) : null; // days past their own rhythm
+  const overdueBy = (gap != null && days != null) ? Math.round(days - gap) : null;
 
-  // Tier + score for this one client, matching the scorecard.
+  // Tier + score, matching the scorecard.
   let tier = "", score = null;
-  try { const sc = computeScorecard(rec, enr, "all"); tier = sc.tier || ""; score = sc.total != null ? sc.total : null; } catch (e) {}
-  const tierColor = TIER_COLORS[tier] || "#374151";
+  try { const sc = computeScorecard(rec, enr, "all"); tier = sc.tier || ""; score = (sc.total != null ? Math.round(sc.total) : null); } catch (e) {}
+  const tc = briefTierColors(tier);
+  const pct = score == null ? 0 : Math.max(0, Math.min(100, (score / 50) * 100));
+  const stars = score == null ? 0 : Math.max(1, Math.round(score / 10));
 
-  // --- Year-over-year trend ---
+  const company = rec.company_name || "Client";
+  const website = (function(){ var w = (enr.website_url || "").trim(); return w && !/^(not found|n\/a|none)$/i.test(w) ? w : ""; })();
+  const industry = (enr.industry || "").trim();
+
+  // --- YoY trend ---
   const rby = rec.revenue_by_year || {};
   const iby = rec.invoices_by_year || {};
   const years = Object.keys(rby).sort();
-  let trendHtml = "", trendPlain = "";
+  let trendRows = "", trendDir = "";
   if (years.length) {
-    trendHtml = '<table class="brief-trend"><thead><tr><th>Year</th>' +
-      years.map(function(y){ return '<th>' + y + '</th>'; }).join("") + '</tr></thead><tbody>' +
-      '<tr><td>Revenue</td>' + years.map(function(y){ return '<td>' + fmtMoney(rby[y] || 0) + '</td>'; }).join("") + '</tr>' +
-      '<tr><td>Invoices</td>' + years.map(function(y){ return '<td>' + (iby[y] || 0) + '</td>'; }).join("") + '</tr>' +
-      '</tbody></table>';
-    trendPlain = "Year-over-year:\n" + years.map(function(y){
-      return "  " + y + ": " + fmtMoney(rby[y] || 0) + " across " + (iby[y] || 0) + " invoices";
-    }).join("\n");
-    // Direction call: compare last two full years present.
+    trendRows = years.map(function(y){
+      return '<div class="fb"><div class="fb-f">' + y + '</div><div class="fb-b">' +
+        fmtMoney(rby[y] || 0) + ' \u00b7 ' + (iby[y] || 0) + ' invoice' + ((iby[y] || 0) === 1 ? '' : 's') + '</div></div>';
+    }).join("");
     if (years.length >= 2) {
       const a = rby[years[years.length - 2]] || 0, b = rby[years[years.length - 1]] || 0;
       if (a > 0) {
-        const pct = Math.round((b - a) / a * 100);
-        const dir = pct > 5 ? "up" : (pct < -5 ? "down" : "flat");
-        trendHtml += '<div class="brief-trend-note" style="color:' + (dir === "down" ? "#DC2626" : dir === "up" ? "#3D9A5C" : "#6B7280") + '">' +
-          years[years.length - 1] + ' revenue ' + dir + ' ' + Math.abs(pct) + '% vs ' + years[years.length - 2] + '</div>';
-        trendPlain += "\n  (" + years[years.length - 1] + " " + dir + " " + Math.abs(pct) + "% vs prior year)";
+        const p = Math.round((b - a) / a * 100);
+        trendDir = p > 5 ? ("up " + p + "%") : (p < -5 ? ("down " + Math.abs(p) + "%") : "flat");
       }
     }
   }
 
-  // --- Product history (renders when populated by a Printavo line-item sync; degrades otherwise) ---
-  // Expected shape: rec.product_history or enr.product_history = [{ name, qty, revenue?, deco? }, ...]
+  // --- Product history (populated by a future Printavo line-item sync) ---
   const prod = rec.product_history || enr.product_history || null;
-  let prodHtml, prodPlain;
+  let offerHtml;
   if (Array.isArray(prod) && prod.length) {
-    const top = prod.slice().sort(function(a,b){ return (b.qty||0) - (a.qty||0); }).slice(0, 8);
-    prodHtml = '<div class="brief-prod">' + top.map(function(p){
-      return '<div class="brief-prod-row">' +
-        '<span class="bp-name">' + escapeHtml(p.name || "Item") + '</span>' +
-        '<span class="bp-meta">' + (p.qty ? p.qty + ' units' : '') +
-          (p.deco ? ' · ' + escapeHtml(p.deco) : '') +
-          (p.revenue ? ' · ' + fmtMoney(p.revenue) : '') + '</span>' +
+    const top = prod.slice().sort(function(a,b){ return (b.qty||0)-(a.qty||0); }).slice(0, 8);
+    offerHtml =
+      '<div class="card">' +
+        '<div class="say-l" style="color:#9CA3AF">What they normally order</div>' +
+        top.map(function(p){
+          return '<div class="fb">' +
+            '<div class="fb-f">' + esc(p.name || "Item") + '</div>' +
+            '<div class="fb-b">' + (p.qty ? p.qty + ' units' : '') +
+              (p.deco ? ' \u00b7 ' + esc(p.deco) : '') + (p.revenue ? ' \u00b7 ' + fmtMoney(p.revenue) : '') + '</div>' +
+          '</div>';
+        }).join("") +
       '</div>';
-    }).join("") + '</div>';
-    prodPlain = "What they order:\n" + top.map(function(p){
-      return "  " + (p.name || "Item") + (p.qty ? " (" + p.qty + " units" + (p.deco ? ", " + p.deco : "") + ")" : "");
-    }).join("\n");
   } else {
-    prodHtml = '<div class="brief-empty">No line-item product history synced yet. Order size and cadence below are derived from invoice totals. ' +
-      'Connect the Printavo line-item sync (<code>?mode=products</code>) to populate actual garments and decoration.</div>';
-    prodPlain = "What they order: (no line-item data synced yet — see order profile below)";
+    offerHtml =
+      '<div class="card">' +
+        '<div class="say-l" style="color:#9CA3AF">What they normally order</div>' +
+        '<div class="pb-need" style="border-bottom:none;padding-bottom:0">No line-item history synced yet. Cadence and order size below are derived from invoice totals. Connect the Printavo line-item sync to populate actual garments and decoration.</div>' +
+      '</div>';
   }
 
-  // --- Contacts (from enrichment) ---
+  // --- Contacts ---
   const contactName = [enr.contact_first_name, enr.contact_last_name].filter(Boolean).join(" ");
-  const hasContact = contactName || enr.contact_email || enr.contact_phone;
-  let contactHtml = "";
-  if (hasContact) {
-    contactHtml = '<div class="brief-contact">' +
-      (contactName ? '<div class="bc-name">' + escapeHtml(contactName) + (enr.contact_title ? ' — ' + escapeHtml(enr.contact_title) : '') + '</div>' : '') +
-      (enr.contact_email ? '<div>\u2709 <a href="mailto:' + escapeHtml(enr.contact_email) + '" style="color:#3D9A5C;font-weight:600">' + escapeHtml(enr.contact_email) + '</a></div>' : '<div style="color:#B45309;font-weight:600">No contact email on file — needs lookup</div>') +
-      (enr.contact_phone ? '<div>\u260E ' + escapeHtml(enr.contact_phone) + '</div>' : '') +
-    '</div>';
+  const cEmail = (enr.contact_email || "").trim();
+  const cPhone = (enr.contact_phone || "").trim();
+  let callHtml;
+  if (contactName || cEmail || cPhone) {
+    callHtml =
+      '<div class="call-hd">' +
+        '<div class="call-name">' + (contactName ? esc(contactName) : "Contact on file") + '</div>' +
+      '</div>' +
+      (enr.contact_title ? '<div class="call-title">' + esc(enr.contact_title) + '</div>' : '') +
+      '<div class="call-acts">' +
+        (cEmail
+          ? '<a class="act act-primary" href="mailto:' + esc(cEmail) + '"><span class="act-i">\u2709</span> Email ' + esc(cEmail) + '</a>'
+          : '<div class="act act-none">No email found \u2014 needs manual lookup</div>') +
+        (cPhone
+          ? '<a class="act act-secondary" href="tel:' + esc(cPhone.replace(/[^\d+]/g,"")) + '"><span class="act-i">\u2706</span> Call ' + esc(cPhone) + '</a>'
+          : '') +
+      '</div>';
   } else {
-    contactHtml = '<div class="brief-empty">No contact on file for this account — first re-engagement step is finding the right person.</div>';
+    callHtml = '<div class="act act-none">No contact captured yet \u2014 first re-engagement step is finding the right person.</div>';
   }
 
-  // --- Recommended re-engagement action ---
-  let action;
+  // --- Recommended action + why-now ---
+  let action, whyNow;
   if (overdueBy != null && overdueBy > 0) {
-    action = "They typically reorder about every " + Math.round(gap) + " days and are now ~" + overdueBy +
-      " days past that rhythm. Reach out referencing their last order and offer a reorder or refresh.";
+    action = "They reorder about every " + Math.round(gap) + " days and are now ~" + overdueBy + " days past that rhythm. Reach out referencing their last order and offer a reorder or seasonal refresh.";
+    whyNow = "Overdue by ~" + overdueBy + " days against their own ordering cadence.";
   } else if (mo != null) {
     action = "Quiet for ~" + mo + " months. Open with a check-in on their program and what's coming up this season.";
+    whyNow = "No order in ~" + mo + " months.";
   } else {
     action = "No recent activity on record. Confirm the account is still active and re-establish the relationship.";
+    whyNow = "No recent activity on record.";
   }
+  const urgency = (mo != null && mo >= 9) ? "High" : (mo != null && mo >= 6 ? "Medium" : "Watch");
+  const uc = urgency === "High" ? "#DC2626" : (urgency === "Medium" ? "#D97706" : "#6B7280");
 
-  // --- Firmographics row (record data only) ---
+  // --- Firmographics (record data only) ---
   const firmo = [];
-  if (enr.industry) firmo.push(["Industry", enr.industry]);
+  if (industry) firmo.push(["Industry", industry]);
   if (enr.employees) firmo.push(["Size", enr.employees + " employees"]);
   if (enr.annual_revenue_range) firmo.push(["Annual revenue", enr.annual_revenue_range]);
   if (enr.persona) firmo.push(["Persona", enr.persona]);
-  if (enr.website_url) firmo.push(["Website", enr.website_url]);
-  if (enr.linkedin_company_page) firmo.push(["LinkedIn", enr.linkedin_company_page]);
   const firmoHtml = firmo.length
-    ? '<table class="brief-kv">' + firmo.map(function(kv){
-        const val = /^https?:/i.test(kv[1]) ? '<a href="' + escapeHtml(kv[1]) + '" target="_blank" rel="noopener" style="color:#3D9A5C">' + escapeHtml(kv[1]) + '</a>' : escapeHtml(String(kv[1]));
-        return '<tr><td>' + kv[0] + '</td><td>' + val + '</td></tr>';
-      }).join("") + '</table>'
-    : '<div class="brief-empty">No firmographic detail enriched yet (industry, size, website).</div>';
+    ? '<div class="card"><div class="say-l" style="color:#9CA3AF">Who they are</div>' +
+        firmo.map(function(kv){ return '<div class="fb"><div class="fb-f">' + esc(kv[0]) + '</div><div class="fb-b">' + esc(String(kv[1])) + '</div></div>'; }).join("") +
+      '</div>'
+    : '';
 
-  // ---- Assemble HTML ----
-  const html = '<div class="brief-doc">' +
-    '<h2>At-Risk Account Brief</h2>' +
-    '<div class="brief-meta">' + when + ' \u00b7 ' + escapeHtml(rec.company_name) +
-      (am ? ' \u00b7 ' + am : ' \u00b7 unassigned') + '</div>' +
+  const summaryLine = company + " has been quiet" + (mo != null ? " for about " + mo + " month" + (mo === 1 ? "" : "s") : "") +
+    " \u2014 " + invoices + " lifetime invoice" + (invoices === 1 ? "" : "s") + ", " + fmtMoney(rev) + " lifetime" +
+    (avgOrder != null ? ", ~" + fmtMoney(avgOrder) + " per order" : "") + ".";
 
-    '<div class="brief-hero">' +
-      (tier ? '<span class="brief-tier" style="background:#F3F4F6;color:' + tierColor + '">' + tier + (score != null ? ' \u00b7 ' + score : '') + '</span>' : '') +
-      (mo != null ? '<span class="brief-stat"><b>' + mo + 'mo</b> quiet</span>' : '') +
-      '<span class="brief-stat"><b>' + invoices + '</b> lifetime invoices</span>' +
-      '<span class="brief-stat"><b>' + fmtMoney(rev) + '</b> lifetime</span>' +
-      (avgOrder != null ? '<span class="brief-stat"><b>' + fmtMoney(avgOrder) + '</b> avg order</span>' : '') +
-    '</div>' +
+  // ---- Assemble the standalone-brief HTML (same classes as api/brief.js) ----
+  const html =
+    '<div class="brief-sheet" style="--bt-bar:' + tc.bar + ';--bt-bg:' + tc.bg + ';--bt-fg:' + tc.fg + ';--bt-uc:' + uc + ';--bt-pct:' + pct + '%">' +
+      '<div class="top">' +
+        '<div class="badge">B</div><div class="top-t">AT-RISK BRIEF</div>' +
+        '<div class="top-am">' + esc(am || "Unassigned") + '</div>' +
+      '</div>' +
 
-    '<div class="brief-sec"><div class="brief-sec-l">Who they are</div>' + firmoHtml + '</div>' +
-    '<div class="brief-sec"><div class="brief-sec-l">Primary contact</div>' + contactHtml + '</div>' +
-    '<div class="brief-sec"><div class="brief-sec-l">What they normally order</div>' + prodHtml + '</div>' +
+      // hero
+      '<div class="card hero">' +
+        '<div class="stars">' + "\u2605".repeat(stars) + '<span class="off">' + "\u2605".repeat(5 - stars) + '</span></div>' +
+        '<div class="co">' + esc(company) + '</div>' +
+        '<div class="ind">' + (industry ? esc(industry) : "Industry not set") + '</div>' +
+        (website
+          ? '<a class="site-btn" href="' + esc(website) + '" target="_blank" rel="noopener"><span class="act-i">\u2197</span> Visit ' + esc(website.replace(/^https?:\/\//, "").replace(/\/$/, "")) + '</a>'
+          : '<div class="site-none">No website on file</div>') +
+        '<div class="dial">' +
+          '<div class="dial-n">' + (score == null ? "\u2014" : score) + '<small>/50</small></div>' +
+          '<div class="dial-bar"><div class="dial-fill"></div></div>' +
+          (tier ? '<span class="tier">' + esc(tier) + '</span>' : '') +
+        '</div>' +
+      '</div>' +
 
-    '<div class="brief-sec"><div class="brief-sec-l">Order profile</div>' +
-      '<table class="brief-kv">' +
-        '<tr><td>Reorder cadence</td><td>' + (gap != null ? 'about every ' + Math.round(gap) + ' days' : 'not enough data') + '</td></tr>' +
-        '<tr><td>Last order</td><td>' + (rec.last_invoice_date ? fmtDate(rec.last_invoice_date) + (mo != null ? ' (' + mo + ' months ago)' : '') : 'unknown') + '</td></tr>' +
-        (overdueBy != null && overdueBy > 0 ? '<tr><td>Past their rhythm by</td><td style="color:#DC2626;font-weight:700">' + overdueBy + ' days</td></tr>' : '') +
-        '<tr><td>Typical order size</td><td>' + (avgOrder != null ? fmtMoney(avgOrder) : '—') + '</td></tr>' +
-      '</table>' +
-      (trendHtml ? '<div style="margin-top:10px">' + trendHtml + '</div>' : '') +
-    '</div>' +
+      // one-liner
+      '<div class="card"><div class="sum">' + esc(summaryLine) + '</div></div>' +
 
-    '<div class="brief-sec"><div class="brief-sec-l">Why now &amp; recommended action</div>' +
-      '<div style="font-size:13px;line-height:1.6;color:#111827">' + action + '</div>' +
-    '</div>' +
+      // the call
+      '<div class="call"><div class="call-l">Contact first</div>' + callHtml + '</div>' +
 
-    (enr.notes ? '<div class="brief-sec"><div class="brief-sec-l">Notes</div><div style="font-size:13px;color:#374151;white-space:pre-wrap">' + escapeHtml(enr.notes) + '</div></div>' : '') +
-  '</div>';
+      firmoHtml +
+
+      // Order profile — styled as the green "How to sell" playbook slot
+      '<div class="pb">' +
+        '<div class="pb-hd"><span class="pb-l">Order profile</span>' +
+          (trendDir ? '<span class="pb-tag">' + esc(trendDir) + ' YoY</span>' : '') +
+        '</div>' +
+        '<div class="pb-read">' +
+          (gap != null ? "Reorders about every " + Math.round(gap) + " days." : "Not enough order history to establish a cadence.") +
+          (avgOrder != null ? " Typical order ~" + fmtMoney(avgOrder) + "." : "") +
+        '</div>' +
+        '<div class="pb-do"><b>Last order:</b> ' + (rec.last_invoice_date ? esc(fmtDate(rec.last_invoice_date)) + (mo != null ? " (" + mo + " months ago)" : "") : "unknown") + '</div>' +
+        (overdueBy != null && overdueBy > 0 ? '<div class="pb-dont"><b>Past their rhythm by:</b> ' + overdueBy + ' days</div>' : '') +
+        '<div class="pb-do"><b>Lifetime:</b> ' + fmtMoney(rev) + ' across ' + invoices + ' invoice' + (invoices === 1 ? '' : 's') + '</div>' +
+        (trendRows ? '<div style="margin-top:6px">' + trendRows + '</div>' : '') +
+      '</div>' +
+
+      offerHtml +
+
+      // the angle
+      '<div class="card">' +
+        '<div class="say-l" style="color:' + uc + '">The angle</div>' +
+        '<div class="say">' + esc(action) + '</div>' +
+        (enr.notes ? '<div class="say-m">Notes: <b>' + esc(enr.notes) + '</b></div>' : '') +
+        '<div class="say-m">Urgency: <b>' + urgency + '</b></div>' +
+      '</div>' +
+
+      // watch out
+      '<div class="warn"><div class="warn-l">Why now</div><p>' + esc(whyNow) + '</p></div>' +
+
+      '<div class="foot">BackBone \u00b7 P&amp;M Apparel</div>' +
+    '</div>';
 
   // ---- Plain-text (email / copy) ----
-  const plain = "AT-RISK ACCOUNT BRIEF\n" + when + "\n" +
-    rec.company_name + (am ? " — " + am : " — unassigned") + (tier ? " — " + tier + (score != null ? " (" + score + ")" : "") : "") + "\n\n" +
-    (mo != null ? mo + " months quiet · " : "") + invoices + " lifetime invoices · " + fmtMoney(rev) + " lifetime" +
-      (avgOrder != null ? " · " + fmtMoney(avgOrder) + " avg order" : "") + "\n\n" +
-    "WHO THEY ARE\n" + (firmo.length ? firmo.map(function(kv){ return "  " + kv[0] + ": " + kv[1]; }).join("\n") : "  (not enriched yet)") + "\n\n" +
-    "CONTACT\n  " + (contactName || "(none on file)") + (enr.contact_title ? " — " + enr.contact_title : "") +
-      (enr.contact_email ? "\n  " + enr.contact_email : "") + (enr.contact_phone ? "\n  " + enr.contact_phone : "") + "\n\n" +
-    prodPlain + "\n\n" +
+  const plain = "AT-RISK BRIEF\n" + company + (am ? " — " + am : " — unassigned") +
+    (tier ? " — " + tier + (score != null ? " (" + score + "/50)" : "") : "") + "\n\n" +
+    summaryLine + "\n\n" +
+    "CONTACT FIRST\n  " + (contactName || "(none on file)") + (enr.contact_title ? " — " + enr.contact_title : "") +
+      (cEmail ? "\n  " + cEmail : "\n  No email found — needs lookup") + (cPhone ? "\n  " + cPhone : "") + "\n\n" +
+    (firmo.length ? "WHO THEY ARE\n" + firmo.map(function(kv){ return "  " + kv[0] + ": " + kv[1]; }).join("\n") + "\n\n" : "") +
     "ORDER PROFILE\n" +
-      "  Reorder cadence: " + (gap != null ? "about every " + Math.round(gap) + " days" : "not enough data") + "\n" +
+      "  " + (gap != null ? "Reorders ~every " + Math.round(gap) + " days" : "Cadence: not enough data") + "\n" +
       "  Last order: " + (rec.last_invoice_date ? fmtDate(rec.last_invoice_date) : "unknown") + "\n" +
       (overdueBy != null && overdueBy > 0 ? "  Past their rhythm by: " + overdueBy + " days\n" : "") +
-      "  Typical order size: " + (avgOrder != null ? fmtMoney(avgOrder) : "—") + "\n" +
-      (trendPlain ? "  " + trendPlain.replace(/\n/g, "\n  ") + "\n" : "") + "\n" +
-    "RECOMMENDED ACTION\n  " + action + "\n" +
-    (enr.notes ? "\nNOTES\n  " + enr.notes.replace(/\n/g, "\n  ") + "\n" : "");
+      "  Typical order: " + (avgOrder != null ? fmtMoney(avgOrder) : "—") + "\n" +
+      "  Lifetime: " + fmtMoney(rev) + " across " + invoices + " invoices\n" +
+      (years.length ? years.map(function(y){ return "    " + y + ": " + fmtMoney(rby[y]||0) + " · " + (iby[y]||0) + " inv"; }).join("\n") + "\n" : "") + "\n" +
+    (Array.isArray(prod) && prod.length
+      ? "WHAT THEY ORDER\n" + prod.slice(0,8).map(function(p){ return "  - " + (p.name||"Item") + (p.qty ? " (" + p.qty + " units)" : ""); }).join("\n") + "\n\n"
+      : "WHAT THEY ORDER\n  (no line-item data synced yet)\n\n") +
+    "THE ANGLE\n  " + action + "\n  Urgency: " + urgency + "\n" +
+    (enr.notes ? "\nNOTES\n  " + enr.notes.replace(/\n/g, "\n  ") + "\n" : "") +
+    "\nWHY NOW\n  " + whyNow + "\n";
 
   const bmt = document.getElementById("briefModalTitle");
-  if (bmt) bmt.textContent = "At-Risk Account Brief";
+  if (bmt) bmt.textContent = "At-Risk Brief";
   document.getElementById("briefPrintArea").innerHTML = html;
-  const subj = encodeURIComponent("At-Risk: " + rec.company_name);
+  const subj = encodeURIComponent("At-Risk: " + company);
   const mailBtn = document.getElementById("briefMailBtn");
   mailBtn.href = "mailto:" + (am ? encodeURIComponent(amEmail(am)) : "") + "?subject=" + subj + "&body=" + encodeURIComponent(plain);
   mailBtn.style.display = "";
