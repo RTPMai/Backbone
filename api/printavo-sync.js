@@ -823,19 +823,37 @@ export default async function handler(req, res) {
   try {
     const stateKey = "backbone_data";
 
-    // Resolve the schema plan once per invocation. This is 2-3 tiny
-    // introspection queries; cheap, and it makes the sync immune to the
-    // field-name guessing that broke the earlier version.
-    const plan = await introspectInvoicePlan();
+    // Resolve the schema plan ONCE and cache it in Upstash. Reconcile is
+    // resumable — Vercel re-invokes this function many times via nextUrl — and
+    // re-running the full introspection (link discovery + contact/line-item
+    // probes, each paced under the rate limit) on every resume added many seconds
+    // of latency per call and could tip a page batch over Vercel's function
+    // timeout (which surfaces as a non-JSON "A server error has occurred" page).
+    // The schema doesn't change mid-run, so cache it with a short TTL.
+    const PLAN_CACHE_KEY = "backbone_sync_plan";
+    const forceFreshPlan = (mode === "ping" || mode === "refresh-plan");
+    let plan = null;
+    try {
+      const cached = await kvGet(PLAN_CACHE_KEY);
+      if (!forceFreshPlan && cached && cached.plan && cached.cachedAt && (Date.now() - cached.cachedAt) < 6 * 3600 * 1000) {
+        plan = cached.plan;
+      }
+    } catch (e) { /* fall through to fresh introspection */ }
+
     if (!plan) {
-      return res.status(500).json({
-        error: "Could not find a client-linking field (customer/contact/owner with an id) on Printavo's Invoice type. Schema may have changed.",
-      });
+      plan = await introspectInvoicePlan();
+      if (!plan) {
+        return res.status(500).json({
+          error: "Could not find a client-linking field (customer/contact/owner with an id) on Printavo's Invoice type. Schema may have changed.",
+        });
+      }
+      // Second-stage discovery for contact reachability + product-category mix.
+      // Failures here degrade gracefully (no contact/category data) rather than
+      // breaking the revenue sync.
+      await enrichPlanWithContactAndItems(plan);
+      try { await kvSet(PLAN_CACHE_KEY, { plan, cachedAt: Date.now() }); } catch (e) { /* non-fatal */ }
     }
-    // Second-stage discovery for contact reachability + product-category mix.
-    // Failures here degrade gracefully (no contact/category data) rather than
-    // breaking the revenue sync.
-    await enrichPlanWithContactAndItems(plan);
+
     const GQL_FIELDS = buildFieldSelection(plan);
     const sortPlan = await resolveInvoiceSort();
     const argPlan = await resolveInvoiceArgs();
@@ -864,7 +882,31 @@ export default async function handler(req, res) {
           ? { type: plan.contactFields.typeName, name: plan.contactFields.fullName || plan.contactFields.firstName || null, email: plan.contactFields.email, phone: plan.contactFields.phone, title: plan.contactFields.title }
           : null,
         lineItemDiscovery: plan.lineItems || null,
-        fieldSelection: GQL_FIELDS, — read-only schema probe. Answers one question: does Printavo
+        fieldSelection: GQL_FIELDS,
+      });
+    }
+
+    // =====================================================================
+    // REFRESH-PLAN — force fresh schema discovery and re-cache it. Use after a
+    // deploy to confirm the plan resolved and prime the cache before a reconcile.
+    // =====================================================================
+    if (mode === "refresh-plan") {
+      try { await kvSet(PLAN_CACHE_KEY, { plan, cachedAt: Date.now() }); } catch (e) { /* non-fatal */ }
+      return res.status(200).json({
+        ok: true,
+        mode: "refresh-plan",
+        cached: true,
+        schema: { groupedBy: plan.parent ? (plan.linkField + "." + plan.parent.field) : plan.linkField, linkedType: plan.parent ? plan.parent.typeName : plan.linkedType, viaParent: !!plan.parent },
+        contactDiscovery: plan.contactFields
+          ? { type: plan.contactFields.typeName, name: plan.contactFields.fullName || plan.contactFields.firstName || null, email: plan.contactFields.email, phone: plan.contactFields.phone, title: plan.contactFields.title }
+          : null,
+        lineItemDiscovery: plan.lineItems || null,
+        fieldSelection: GQL_FIELDS,
+      });
+    }
+
+    // =====================================================================
+    // PROBE-HISTORY — read-only schema probe. Answers one question: does Printavo
     // expose a per-quote status-change history with timestamps? That's the only way
     // to count "art declined N times THIS YEAR" (an event count) rather than
     // "N quotes are declined right now" (a snapshot). We DON'T guess field names —
