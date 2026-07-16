@@ -1018,7 +1018,7 @@ export default async function handler(req, res) {
       const catRx = /(categ|product|style|garment|color|item ?name|^name$|descrip|mockup|imprint|decor)/i;
 
       async function fieldsOf(typeName) {
-        const d = await gql(`query{__type(name:"${typeName}"){fields{name type{name kind ofType{name kind ofType{name kind}}}}}}`);
+        const d = await gql(`query{__type(name:"${typeName}"){fields{name type{name kind ofType{name kind ofType{name kind ofType{name kind ofType{name kind}}}}}}}}`);
         return (d.__type && d.__type.fields) || [];
       }
 
