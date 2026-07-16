@@ -974,6 +974,81 @@ export default async function handler(req, res) {
 
 
     // =====================================================================
+    // PROBE-LINEITEMS — read-only. Finds what Printavo actually calls the invoice
+    // line-item field and which sub-field carries the product/category, so we can
+    // wire product mix. The v8 auto-probe guessed lineItems/lineItemGroups/items
+    // and came back empty, so this reports the REAL names to plug in. Hit
+    // /api/printavo-sync?mode=probe-lineitems
+    // =====================================================================
+    if (mode === "probe-lineitems") {
+      const out = { ok: true, mode: "probe-lineitems", invoiceFields: [], candidates: [], notes: [] };
+
+      function unwrap(t) {
+        let cur = t, name = null, kind = null, isList = false, depth = 0;
+        while (cur && depth < 6) {
+          if (cur.kind === "LIST") isList = true;
+          if (cur.name) { name = cur.name; kind = cur.kind; }
+          cur = cur.ofType; depth++;
+        }
+        return { name, kind, isList };
+      }
+
+      // 1. List every field on Invoice, with its resolved type + whether it's a list.
+      let invFields = [];
+      try {
+        const d = await gql(`query{__type(name:"Invoice"){fields{name type{name kind ofType{name kind ofType{name kind ofType{name kind}}}}}}}`);
+        invFields = (d.__type && d.__type.fields) || [];
+      } catch (e) { out.notes.push("Invoice introspection failed: " + e.message); return res.status(200).json(out); }
+
+      // Heuristic: a line-item container is usually a LIST-typed field whose name
+      // mentions item/line/product, OR any list of an object type worth inspecting.
+      const nameRx = /(line ?item|lineitem|^items$|product|group)/i;
+      invFields.forEach(f => {
+        const u = unwrap(f.type);
+        out.invoiceFields.push({ field: f.name, typeName: u.name, kind: u.kind, isList: u.isList });
+        if ((u.isList && u.kind === "OBJECT") || (nameRx.test(f.name) && u.kind === "OBJECT")) {
+          out.candidates.push({ field: f.name, typeName: u.name, isList: u.isList });
+        }
+      });
+
+      // 2. For each candidate container, introspect its element type's sub-fields
+      // and flag anything category/product/name-shaped. Also peek one nested object
+      // level down (e.g. a lineItemGroup -> style/product with the real category).
+      const catRx = /(categ|product|style|garment|item ?name|^name$|descrip)/i;
+      for (const c of out.candidates.slice(0, 6)) {
+        if (!c.typeName) continue;
+        try {
+          await rlPause();
+          const d = await gql(`query{__type(name:"${c.typeName}"){fields{name type{name kind ofType{name kind}}}}}`);
+          const fs = (d.__type && d.__type.fields) || [];
+          c.subFields = fs.map(sf => sf.name);
+          c.categoryLikeFields = fs.filter(sf => catRx.test(sf.name)).map(sf => sf.name);
+          // Nested objects that might hold the category (dig one level).
+          c.nested = [];
+          for (const sf of fs) {
+            const u = unwrap(sf.type);
+            if (u.kind === "OBJECT" && /(group|style|product|categor|item)/i.test(sf.name) && u.name) {
+              try {
+                await rlPause();
+                const nd = await gql(`query{__type(name:"${u.name}"){fields{name}}}`);
+                const nfs = ((nd.__type && nd.__type.fields) || []).map(x => x.name);
+                c.nested.push({ field: sf.name, typeName: u.name, subFields: nfs, categoryLikeFields: nfs.filter(n => catRx.test(n)) });
+              } catch (e) { /* skip */ }
+            }
+          }
+        } catch (e) { c.probeError = e.message; }
+      }
+
+      if (!out.candidates.length) {
+        out.notes.push("No list-of-object or item/product/group-named fields on Invoice. Line items may live on a different type (e.g. Quote), or require a different query shape.");
+      } else {
+        out.notes.push("Check each candidate's 'categoryLikeFields' (and 'nested[].categoryLikeFields'). Tell me the container field + the category sub-field name and I'll wire it into the discovery probe.");
+      }
+      return res.status(200).json(out);
+    }
+
+
+    // =====================================================================
     // INCREMENTAL — pull only invoices created after the high-water mark.
     // =====================================================================
     if (mode === "incremental") {
