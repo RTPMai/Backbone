@@ -6816,7 +6816,11 @@ function openClientDormantBrief(customerId) {
   }
 
   // --- Product history (populated by a future Printavo line-item sync) ---
+  // "What they normally order": prefer detailed line-item product_history if a
+  // future sync populates it; otherwise use the category mix the Printavo sync now
+  // captures (top_categories: [{name, count}]). Falls back to a placeholder.
   const prod = rec.product_history || enr.product_history || null;
+  const cats = Array.isArray(rec.top_categories) ? rec.top_categories : null;
   let offerHtml;
   if (Array.isArray(prod) && prod.length) {
     const top = prod.slice().sort(function(a,b){ return (b.qty||0)-(a.qty||0); }).slice(0, 8);
@@ -6831,25 +6835,48 @@ function openClientDormantBrief(customerId) {
           '</div>';
         }).join("") +
       '</div>';
+  } else if (cats && cats.length) {
+    const topCat = cats.slice(0, 8);
+    const maxC = topCat.reduce(function(x,c){ return Math.max(x, c.count||0); }, 0) || 1;
+    offerHtml =
+      '<div class="card">' +
+        '<div class="say-l" style="color:#9CA3AF">What they normally order</div>' +
+        topCat.map(function(c){
+          const w = Math.round((c.count||0)/maxC*100);
+          return '<div class="fb">' +
+            '<div class="fb-f">' + esc(c.name || "Category") + '</div>' +
+            '<div class="fb-b">' + (c.count||0) + ' order line' + ((c.count||0)===1?'':'s') +
+              '<div style="height:4px;border-radius:99px;background:#EEF1F4;margin-top:5px;max-width:220px;overflow:hidden"><div style="height:100%;width:' + w + '%;background:var(--bt-bar);border-radius:99px"></div></div>' +
+            '</div>' +
+          '</div>';
+        }).join("") +
+        '<div class="say-m" style="margin-top:8px">Category mix from invoice line items. Specific garments appear once detailed line-item sync is enabled.</div>' +
+      '</div>';
   } else {
     offerHtml =
       '<div class="card">' +
         '<div class="say-l" style="color:#9CA3AF">What they normally order</div>' +
-        '<div class="pb-need" style="border-bottom:none;padding-bottom:0">No line-item history synced yet. Cadence and order size below are derived from invoice totals. Connect the Printavo line-item sync to populate actual garments and decoration.</div>' +
+        '<div class="pb-need" style="border-bottom:none;padding-bottom:0">No product mix synced yet. Cadence and order size below are derived from invoice totals. A Printavo reconcile with the updated sync will populate category mix.</div>' +
       '</div>';
   }
 
   // --- Contacts ---
-  const contactName = [enr.contact_first_name, enr.contact_last_name].filter(Boolean).join(" ");
-  const cEmail = (enr.contact_email || "").trim();
-  const cPhone = (enr.contact_phone || "").trim();
+  // Contact: a hand-entered enrichment contact always wins (an AM curated it);
+  // otherwise fall back to the primary contact the Printavo sync captured (the
+  // person on the most recent invoice).
+  const sc = rec.primary_contact || null;
+  const contactName = [enr.contact_first_name, enr.contact_last_name].filter(Boolean).join(" ").trim()
+    || (sc && sc.name) || "";
+  const cEmail = (enr.contact_email || (sc && sc.email) || "").trim();
+  const cPhone = (enr.contact_phone || (sc && sc.phone) || "").trim();
+  const cTitle = (enr.contact_title || (sc && sc.title) || "").trim();
   let callHtml;
   if (contactName || cEmail || cPhone) {
     callHtml =
       '<div class="call-hd">' +
         '<div class="call-name">' + (contactName ? esc(contactName) : "Contact on file") + '</div>' +
       '</div>' +
-      (enr.contact_title ? '<div class="call-title">' + esc(enr.contact_title) + '</div>' : '') +
+      (cTitle ? '<div class="call-title">' + esc(cTitle) + '</div>' : '') +
       '<div class="call-acts">' +
         (cEmail
           ? '<a class="act act-primary" href="mailto:' + esc(cEmail) + '"><span class="act-i">\u2709</span> Email ' + esc(cEmail) + '</a>'
@@ -6922,6 +6949,30 @@ function openClientDormantBrief(customerId) {
       // the call
       '<div class="call"><div class="call-l">Contact first</div>' + callHtml + '</div>' +
 
+      // Also at [company] — other contacts the Printavo sync saw on this account,
+      // beyond the primary. Only shown when the sync captured more than one.
+      (function(){
+        const all = Array.isArray(rec.contacts) ? rec.contacts : [];
+        // Drop whoever is already shown as primary (by email, else name).
+        const primaryKey = (cEmail || contactName || "").toLowerCase();
+        const others = all.filter(function(c){
+          const k = ((c.email || c.name || "")).toLowerCase();
+          return k && k !== primaryKey;
+        }).slice(0, 4);
+        if (!others.length) return "";
+        return '<div class="card"><div class="say-l" style="color:#9CA3AF">Also at ' + esc(company) + '</div>' +
+          others.map(function(c){
+            const bits = [];
+            if (c.email) bits.push('<a href="mailto:' + esc(c.email) + '" style="color:#1F6B3D;font-weight:600">\u2709 ' + esc(c.email) + '</a>');
+            if (c.phone) bits.push('\u2706 ' + esc(c.phone));
+            return '<div class="fb">' +
+              '<div class="fb-f">' + esc(c.name || "Contact") + (c.title ? ' \u00b7 <span style="font-weight:500;color:#9CA3AF">' + esc(c.title) + '</span>' : '') + '</div>' +
+              (bits.length ? '<div class="fb-b">' + bits.join(' &nbsp; ') + '</div>' : '<div class="fb-b" style="color:#B45309">No email found</div>') +
+            '</div>';
+          }).join("") +
+        '</div>';
+      })() +
+
       firmoHtml +
 
       // Order profile — styled as the green "How to sell" playbook slot
@@ -6971,7 +7022,9 @@ function openClientDormantBrief(customerId) {
       (years.length ? years.map(function(y){ return "    " + y + ": " + fmtMoney(rby[y]||0) + " · " + (iby[y]||0) + " inv"; }).join("\n") + "\n" : "") + "\n" +
     (Array.isArray(prod) && prod.length
       ? "WHAT THEY ORDER\n" + prod.slice(0,8).map(function(p){ return "  - " + (p.name||"Item") + (p.qty ? " (" + p.qty + " units)" : ""); }).join("\n") + "\n\n"
-      : "WHAT THEY ORDER\n  (no line-item data synced yet)\n\n") +
+      : (cats && cats.length
+          ? "WHAT THEY ORDER (category mix)\n" + cats.slice(0,8).map(function(c){ return "  - " + (c.name||"Category") + " (" + (c.count||0) + " order lines)"; }).join("\n") + "\n\n"
+          : "WHAT THEY ORDER\n  (no product mix synced yet)\n\n")) +
     "THE ANGLE\n  " + action + "\n  Urgency: " + urgency + "\n" +
     (enr.notes ? "\nNOTES\n  " + enr.notes.replace(/\n/g, "\n  ") + "\n" : "") +
     "\nWHY NOW\n  " + whyNow + "\n";
