@@ -257,13 +257,20 @@ export default async function handler(req, res) {
     async function fieldsOf(typeName) {
       if (!typeName) return {};
       try {
-        const td = await gql(`query{__type(name:"${typeName}"){fields{name type{name kind ofType{name kind}}}}}`);
+        const td = await gql(`query{__type(name:"${typeName}"){fields{name type{name kind ofType{name kind ofType{name kind ofType{name kind ofType{name kind}}}}}}}}`);
         const map = {};
+        function unwrapType(t) {
+          // Climb the ofType chain to the innermost named type; note if a LIST is present.
+          let cur = t, nm = null, kd = null, isList = false, depth = 0;
+          while (cur && depth < 6) {
+            if (cur.kind === "LIST") isList = true;
+            if (cur.name) { nm = cur.name; kd = cur.kind; }
+            cur = cur.ofType; depth++;
+          }
+          return { typeName: nm, kind: kd, isList };
+        }
         ((td.__type && td.__type.fields) || []).forEach(f => {
-          const t = f.type || {};
-          const nm = t.name || (t.ofType && t.ofType.name) || null;
-          const kd = t.kind === "OBJECT" ? "OBJECT" : (t.ofType && t.ofType.kind) || t.kind;
-          map[f.name] = { typeName: nm, kind: kd };
+          map[f.name] = unwrapType(f.type || {});
         });
         return map;
       } catch (e) { return {}; }
@@ -310,38 +317,63 @@ export default async function handler(req, res) {
     // Discover Invoice.lineItems (a list of line-item objects) and which sub-field
     // carries the category/product name. Printavo schemas vary, so we probe a set
     // of likely names and store whichever exists.
+    // --- Product category mix (from invoice line items) ---
+    // Printavo's shape (confirmed via probe-lineitems):
+    //   Invoice.lineItemGroups (Connection) -> nodes -> LineItemGroup
+    //     .lineItems (Connection) -> nodes -> LineItem { category, product, ... }
+    // So category mix lives two connections deep. We verify that chain exists (rather
+    // than hardcoding blind) and record the field names for the query builder +
+    // extractor. Falls back to a flatter shape if a future schema simplifies it.
     try {
       await rlPause();
       const invFields = await fieldsOf("Invoice");
-      const liCandidates = ["lineItems", "lineItemGroups", "items"];
-      let liField = null, liType = null;
-      for (const c of liCandidates) {
-        const m = invFields[c];
-        if (m && m.typeName) { liField = c; liType = m.typeName; break; }
-      }
-      if (liField && liType) {
+      // Outer container: prefer lineItemGroups, else a direct lineItems.
+      const groupsField = invFields.lineItemGroups ? "lineItemGroups"
+                        : (invFields.lineItems ? "lineItems" : null);
+      if (groupsField && invFields[groupsField] && invFields[groupsField].typeName) {
+        const groupsConnType = invFields[groupsField].typeName;
         await rlPause();
-        const lf = await fieldsOf(liType);
-        const s = has(lf);
-        // A line item may hold the category directly, or nest a group/product.
-        const catField = s.category ? "category" : (s.categoryName ? "categoryName" : null);
-        const nameField = s.name ? "name" : (s.productName ? "productName" : (s.description ? "description" : null));
-        // A nested group object (e.g. lineItemGroups -> style) sometimes holds it.
-        let nestField = null, nestCat = null, nestType = null;
-        if (!catField) {
-          for (const n of ["group", "style", "product", "lineItemGroup"]) {
-            const nm = lf[n];
-            if (nm && nm.kind === "OBJECT" && nm.typeName) {
+        const groupsConn = await fieldsOf(groupsConnType);
+        // Follow the connection's nodes to the element type.
+        const groupNodeType = groupsConn.nodes ? groupsConn.nodes.typeName : null;
+
+        if (groupsField === "lineItems" && groupNodeType) {
+          // Simple case: Invoice.lineItems -> nodes -> LineItem{category,...}
+          await rlPause();
+          const li = await fieldsOf(groupNodeType);
+          const s = has(li);
+          plan.lineItems = {
+            outer: groupsField, outerIsConn: true,
+            inner: null,
+            catField: s.category ? "category" : null,
+            productField: s.product ? "product" : (s.description ? "description" : null),
+          };
+        } else if (groupNodeType) {
+          // Nested case: group -> lineItems (connection) -> nodes -> LineItem
+          await rlPause();
+          const groupFields = await fieldsOf(groupNodeType);
+          const innerField = groupFields.lineItems ? "lineItems"
+                           : (groupFields.items ? "items" : null);
+          if (innerField && groupFields[innerField] && groupFields[innerField].typeName) {
+            await rlPause();
+            const innerConn = await fieldsOf(groupFields[innerField].typeName);
+            const itemType = innerConn.nodes ? innerConn.nodes.typeName : groupFields[innerField].typeName;
+            if (itemType) {
               await rlPause();
-              const nf = await fieldsOf(nm.typeName);
-              const ns = has(nf);
-              const nc = ns.category ? "category" : (ns.name ? "name" : null);
-              if (nc) { nestField = n; nestCat = nc; nestType = nm.typeName; break; }
+              const li = await fieldsOf(itemType);
+              const s = has(li);
+              plan.lineItems = {
+                outer: groupsField, outerIsConn: true,
+                inner: innerField, innerIsConn: !!innerConn.nodes,
+                catField: s.category ? "category" : null,
+                productField: s.product ? "product" : (s.description ? "description" : null),
+              };
             }
           }
         }
-        if (catField || nameField || nestCat) {
-          plan.lineItems = { field: liField, catField, nameField, nestField, nestCat };
+        // Only keep it if we actually found something to read.
+        if (plan.lineItems && !plan.lineItems.catField && !plan.lineItems.productField) {
+          plan.lineItems = null;
         }
       }
     } catch (e) { plan.lineItems = null; }
@@ -389,14 +421,24 @@ export default async function handler(req, res) {
     }
 
     // Line items for product-category mix, if the shape was discovered.
+    // Printavo nests connections: lineItemGroups{nodes{ lineItems{nodes{ category product }}}}
     let itemsExtra = "";
     if (plan.lineItems) {
       const li = plan.lineItems;
-      const inner = [];
-      if (li.catField) inner.push(li.catField);
-      if (li.nameField) inner.push(li.nameField);
-      if (li.nestField && li.nestCat) inner.push(`${li.nestField}{${li.nestCat}}`);
-      if (inner.length) itemsExtra = `${li.field}{${inner.join(" ")}}`;
+      const leaf = [];
+      if (li.catField) leaf.push(li.catField);
+      if (li.productField) leaf.push(li.productField);
+      if (leaf.length) {
+        const leafSel = leaf.join(" ");
+        if (li.inner) {
+          // group(connection).inner(connection).leaf
+          const innerSel = li.innerIsConn ? `${li.inner}{nodes{${leafSel}}}` : `${li.inner}{${leafSel}}`;
+          itemsExtra = li.outerIsConn ? `${li.outer}{nodes{${innerSel}}}` : `${li.outer}{${innerSel}}`;
+        } else {
+          // outer(connection).leaf directly
+          itemsExtra = li.outerIsConn ? `${li.outer}{nodes{${leafSel}}}` : `${li.outer}{${leafSel}}`;
+        }
+      }
     }
 
     return `nodes{id visualId createdAt total amountOutstanding status{id name}${contactExtra}${itemsExtra}${link}}pageInfo{hasNextPage endCursor}`;
@@ -582,20 +624,34 @@ export default async function handler(req, res) {
 
       if (plan.lineItems) {
         const li = plan.lineItems;
-        const items = inv[li.field];
-        if (Array.isArray(items)) {
-          if (!row._categories) row._categories = {};
-          items.forEach(it => {
-            if (!it) return;
-            let cat = (li.catField && it[li.catField]) ||
-              (li.nestField && li.nestCat && it[li.nestField] && it[li.nestField][li.nestCat]) ||
-              (li.nameField && it[li.nameField]) || null;
-            if (!cat) return;
-            cat = String(cat).trim();
-            if (!cat) return;
-            row._categories[cat] = (row._categories[cat] || 0) + 1;
-          });
+        // Walk the (possibly doubly-nested) connection response to the leaf line items.
+        //   inv[outer].nodes[] -> [inner].nodes[] -> { category, product }
+        function connNodes(v) {
+          if (!v) return [];
+          if (Array.isArray(v)) return v;               // already a plain list
+          if (Array.isArray(v.nodes)) return v.nodes;   // connection with nodes
+          if (Array.isArray(v.edges)) return v.edges.map(e => e && e.node).filter(Boolean);
+          return [];
         }
+        function bump(leaf) {
+          if (!leaf) return;
+          let cat = (li.catField && leaf[li.catField]) || (li.productField && leaf[li.productField]) || null;
+          // product may itself be an object (e.g. {itemNumber, description}); take a label.
+          if (cat && typeof cat === "object") cat = cat.name || cat.description || cat.itemNumber || null;
+          if (!cat) return;
+          cat = String(cat).trim();
+          if (!cat) return;
+          if (!row._categories) row._categories = {};
+          row._categories[cat] = (row._categories[cat] || 0) + 1;
+        }
+        const outerNodes = connNodes(inv[li.outer]);
+        outerNodes.forEach(g => {
+          if (li.inner) {
+            connNodes(g[li.inner]).forEach(bump);
+          } else {
+            bump(g);
+          }
+        });
       }
     }
   }
