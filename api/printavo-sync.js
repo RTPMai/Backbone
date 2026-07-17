@@ -254,7 +254,7 @@ export default async function handler(req, res) {
   async function enrichPlanWithContactAndItems(plan) {
     if (!plan) return plan;
 
-    async function fieldsOf(typeName) {
+    async function fieldsOf(typeName, _retry) {
       if (!typeName) return {};
       try {
         const td = await gql(`query{__type(name:"${typeName}"){fields{name type{name kind ofType{name kind ofType{name kind ofType{name kind ofType{name kind}}}}}}}}`);
@@ -273,7 +273,16 @@ export default async function handler(req, res) {
           map[f.name] = unwrapType(f.type || {});
         });
         return map;
-      } catch (e) { return {}; }
+      } catch (e) {
+        // Most failures here are the Printavo rate limit (10 req / 5s) tripping during
+        // the long discovery chain. Back off once and retry before giving up, so a
+        // transient throttle doesn't silently drop contact/zip discovery.
+        if (!_retry) {
+          await new Promise(r => setTimeout(r, 5500));
+          return fieldsOf(typeName, true);
+        }
+        return {};
+      }
     }
     function has(m) { const o = {}; Object.keys(m).forEach(k => o[k] = true); return o; }
     function pickEmail(s){ return s.email?"email":s.emailAddress?"emailAddress":null; }
@@ -401,26 +410,33 @@ export default async function handler(req, res) {
     // an event venue). We introspect to confirm the address field + zip field names
     // rather than hardcode, so a schema rename degrades to "no zip" not a broken query.
     plan.customerZip = null;
+    plan._zipDebug = null;
     try {
       const custType = plan.parent ? plan.parent.typeName : plan.linkedType;
       if (custType) {
         await rlPause();
         const cf = await fieldsOf(custType);
+        const dbg = { custType, sawFields: Object.keys(cf).length, hasBilling: !!cf.billingAddress, hasShipping: !!cf.shippingAddress };
         // Prefer billingAddress, then shippingAddress, then a flat zip on the customer.
         const flatZip = cf.zipCode ? "zipCode" : (cf.zip ? "zip" : (cf.postalCode ? "postalCode" : null));
         if (flatZip) {
           plan.customerZip = { flat: flatZip };
         } else {
           const addrField = cf.billingAddress ? "billingAddress" : (cf.shippingAddress ? "shippingAddress" : null);
+          dbg.addrField = addrField;
+          dbg.addrType = addrField && cf[addrField] ? cf[addrField].typeName : null;
           if (addrField && cf[addrField] && cf[addrField].typeName) {
             await rlPause();
             const af = await fieldsOf(cf[addrField].typeName);
+            dbg.addrSawFields = Object.keys(af).length;
             const zf = af.zipCode ? "zipCode" : (af.zip ? "zip" : (af.postalCode ? "postalCode" : null));
+            dbg.zipField = zf;
             if (zf) plan.customerZip = { addressField, zipField: zf };
           }
         }
+        plan._zipDebug = dbg;
       }
-    } catch (e) { plan.customerZip = null; }
+    } catch (e) { plan.customerZip = null; plan._zipDebug = { error: e.message }; }
 
     return plan;
   }
@@ -1017,6 +1033,7 @@ export default async function handler(req, res) {
           : null,
         lineItemDiscovery: plan.lineItems || null,
         customerZipDiscovery: plan.customerZip || null,
+        customerZipDebug: plan._zipDebug || null,
         fieldSelection: GQL_FIELDS,
       });
     }
@@ -1037,6 +1054,7 @@ export default async function handler(req, res) {
           : null,
         lineItemDiscovery: plan.lineItems || null,
         customerZipDiscovery: plan.customerZip || null,
+        customerZipDebug: plan._zipDebug || null,
         fieldSelection: GQL_FIELDS,
       });
     }
