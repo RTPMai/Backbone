@@ -1176,6 +1176,66 @@ export default async function handler(req, res) {
 
 
     // =====================================================================
+    // PROBE-ADDRESS — read-only. Finds which field on the invoice's address (and/or
+    // the Customer) carries the ZIP/postal code, so we can pull it for distance
+    // scoring without guessing. Hit /api/printavo-sync?mode=probe-address
+    // =====================================================================
+    if (mode === "probe-address") {
+      const out = { ok: true, mode: "probe-address", found: {}, notes: [] };
+      const zipRx = /(zip|postal|postcode)/i;
+
+      async function fieldNames(typeName) {
+        try {
+          const d = await gql(`query{__type(name:"${typeName}"){fields{name type{name kind ofType{name kind}}}}}`);
+          return (d.__type && d.__type.fields) || [];
+        } catch (e) { return null; }
+      }
+
+      // Invoice-level address objects (billingAddress / shippingAddress → CustomerAddress).
+      for (const addrField of ["billingAddress", "shippingAddress"]) {
+        await rlPause();
+        // Resolve the address type from Invoice, then its fields.
+        const invF = await fieldNames("Invoice");
+        const meta = (invF || []).find(f => f.name === addrField);
+        const typeName = meta && (meta.type.name || (meta.type.ofType && meta.type.ofType.name));
+        if (!typeName) { out.found[addrField] = null; continue; }
+        await rlPause();
+        const af = await fieldNames(typeName);
+        const names = (af || []).map(f => f.name);
+        const zipField = names.find(n => zipRx.test(n)) || null;
+        out.found[addrField] = { type: typeName, zipField, allFields: names };
+      }
+
+      // Also check the Customer type directly, in case the ZIP lives there.
+      await rlPause();
+      const custType = plan.parent ? plan.parent.typeName : plan.linkedType;
+      if (custType) {
+        const cf = await fieldNames(custType);
+        const names = (cf || []).map(f => f.name);
+        // Customer may hold an address object rather than a flat zip.
+        const addrLike = names.find(n => /address/i.test(n)) || null;
+        const flatZip = names.find(n => zipRx.test(n)) || null;
+        out.found.customer = { type: custType, flatZip, addressField: addrLike, allFields: names };
+        if (addrLike && !flatZip) {
+          const am = (cf || []).find(f => f.name === addrLike);
+          const at = am && (am.type.name || (am.type.ofType && am.type.ofType.name));
+          if (at) {
+            await rlPause();
+            const af = await fieldNames(at);
+            const anames = (af || []).map(f => f.name);
+            out.found.customer.addressType = at;
+            out.found.customer.addressZipField = anames.find(n => zipRx.test(n)) || null;
+            out.found.customer.addressFields = anames;
+          }
+        }
+      }
+
+      out.notes.push("Tell me which zipField to use (billingAddress usually best for company location). I'll wire it into the sync so each customer's ZIP is stored and Distance auto-scores.");
+      return res.status(200).json(out);
+    }
+
+
+    // =====================================================================
     // INCREMENTAL — pull only invoices created after the high-water mark.
     // =====================================================================
     if (mode === "incremental") {
