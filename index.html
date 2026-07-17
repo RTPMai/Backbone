@@ -6671,6 +6671,37 @@ function openDetail(customerId) {
 
   const grid = document.getElementById("enrichGrid");
   grid.innerHTML = "";
+
+  // Synced-contact banner: shows the contact(s) the Printavo reconcile captured for
+  // this customer, so the AM can see them even though the editable fields below are
+  // blank until someone types (a manual entry always overrides the synced value).
+  (function() {
+    const pc = rec.primary_contact || null;
+    const others = Array.isArray(rec.contacts) ? rec.contacts.filter(function(c) {
+      const pk = pc ? ((pc.email || pc.name || "")).toLowerCase() : "";
+      const k = ((c.email || c.name || "")).toLowerCase();
+      return k && k !== pk;
+    }) : [];
+    if (!pc && !others.length) return;
+    const banner = document.createElement("div");
+    banner.className = "enrich-field wide";
+    banner.style.cssText = "background:#EAF5EE;border:1px solid #CDE9D6;border-radius:6px;padding:8px 10px;font-size:12px;color:#1F6B3D;margin-bottom:4px";
+    let html = "";
+    if (pc) {
+      const bits = [];
+      if (pc.name) bits.push("<b>" + escapeHtml(pc.name) + "</b>");
+      if (pc.title) bits.push(escapeHtml(pc.title));
+      if (pc.email) bits.push('<a href="mailto:' + escapeHtml(pc.email) + '" style="color:#1F6B3D;font-weight:600">' + escapeHtml(pc.email) + "</a>");
+      if (pc.phone) bits.push(escapeHtml(pc.phone));
+      html += "From Printavo sync: " + bits.join(" · ");
+    }
+    if (others.length) {
+      html += (pc ? "<br>" : "From Printavo sync: ") + "+" + others.length + " other contact" + (others.length === 1 ? "" : "s") + " on file (see the At-risk brief).";
+    }
+    banner.innerHTML = html;
+    grid.appendChild(banner);
+  })();
+
   ENRICHMENT_FIELDS.forEach(function(f) {
     if (f.section) {
       const sec = document.createElement("div");
@@ -6698,6 +6729,24 @@ function openDetail(customerId) {
       });
     }
     input.value = enrichment[f.key] || "";
+    // Surface the Printavo-synced contact as a placeholder when the AM hasn't
+    // hand-entered one. The field stays editable (manual entry overrides), but the
+    // synced value is visible instead of a blank box. primary_contact.name is a
+    // full name; split it for the first/last placeholders.
+    var _pc = rec.primary_contact || null;
+    if (_pc && !enrichment[f.key]) {
+      var _nameParts = (_pc.name || "").trim().split(/\s+/);
+      var _phFor = {
+        contact_first_name: _nameParts[0] || "",
+        contact_last_name: _nameParts.length > 1 ? _nameParts.slice(1).join(" ") : "",
+        contact_email: _pc.email || "",
+        contact_phone: _pc.phone || "",
+        contact_title: _pc.title || "",
+      };
+      if (_phFor[f.key]) {
+        input.placeholder = _phFor[f.key] + "  (from Printavo)";
+      }
+    }
     wrapDiv.appendChild(label);
     wrapDiv.appendChild(input);
     grid.appendChild(wrapDiv);
