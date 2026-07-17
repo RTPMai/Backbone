@@ -395,6 +395,33 @@ export default async function handler(req, res) {
       }
     } catch (e) { plan.lineItems = null; }
 
+    // --- Customer ZIP (for distance scoring) ---
+    // The Customer has a billingAddress (Address type) with a zipCode. Pulling one
+    // ZIP per company is cleaner than reading a per-invoice ship-to (which could be
+    // an event venue). We introspect to confirm the address field + zip field names
+    // rather than hardcode, so a schema rename degrades to "no zip" not a broken query.
+    plan.customerZip = null;
+    try {
+      const custType = plan.parent ? plan.parent.typeName : plan.linkedType;
+      if (custType) {
+        await rlPause();
+        const cf = await fieldsOf(custType);
+        // Prefer billingAddress, then shippingAddress, then a flat zip on the customer.
+        const flatZip = cf.zipCode ? "zipCode" : (cf.zip ? "zip" : (cf.postalCode ? "postalCode" : null));
+        if (flatZip) {
+          plan.customerZip = { flat: flatZip };
+        } else {
+          const addrField = cf.billingAddress ? "billingAddress" : (cf.shippingAddress ? "shippingAddress" : null);
+          if (addrField && cf[addrField] && cf[addrField].typeName) {
+            await rlPause();
+            const af = await fieldsOf(cf[addrField].typeName);
+            const zf = af.zipCode ? "zipCode" : (af.zip ? "zip" : (af.postalCode ? "postalCode" : null));
+            if (zf) plan.customerZip = { addressField, zipField: zf };
+          }
+        }
+      }
+    } catch (e) { plan.customerZip = null; }
+
     return plan;
   }
 
@@ -421,7 +448,15 @@ export default async function handler(req, res) {
     // If we found a parent company through the link, request it nested so we
     // can group by the company rather than the individual contact.
     if (plan.parent) {
-      subFields.push(`${plan.parent.field}{${plan.parent.idField} ${plan.parent.nameField}}`);
+      let parentSel = `${plan.parent.idField} ${plan.parent.nameField}`;
+      // Pull the company ZIP for distance scoring, if discovered.
+      if (plan.customerZip) {
+        if (plan.customerZip.flat) parentSel += ` ${plan.customerZip.flat}`;
+        else if (plan.customerZip.addressField && plan.customerZip.zipField) {
+          parentSel += ` ${plan.customerZip.addressField}{${plan.customerZip.zipField}}`;
+        }
+      }
+      subFields.push(`${plan.parent.field}{${parentSel}}`);
     }
     // When the LINK itself is the contact, fold reachability fields into its selection.
     if (plan.linkField === "contact" && plan.contactFields) {
@@ -556,10 +591,20 @@ export default async function handler(req, res) {
     if (!link) return;
 
     let id, companyName;
+    let _pendingZip = null;
     if (plan.parent && link[plan.parent.field] && link[plan.parent.field][plan.parent.idField]) {
       const p = link[plan.parent.field];
       id = String(p[plan.parent.idField]);
       companyName = p[plan.parent.nameField] || null;
+      // Company ZIP for distance scoring (stored as row.zip; the app's distance calc
+      // reads a synced `zip` field as a fallback to manual enrichment.customer_zip).
+      if (plan.customerZip && !_pendingZip) {
+        if (plan.customerZip.flat) _pendingZip = p[plan.customerZip.flat] || null;
+        else if (plan.customerZip.addressField && plan.customerZip.zipField) {
+          const a = p[plan.customerZip.addressField];
+          _pendingZip = (a && a[plan.customerZip.zipField]) || null;
+        }
+      }
     } else if (link[plan.idField]) {
       id = String(link[plan.idField]);
       companyName =
@@ -596,6 +641,8 @@ export default async function handler(req, res) {
     if ((!row.company_name || row.company_name === "Unknown") && companyName !== "Unknown") {
       row.company_name = companyName;
     }
+    // Store the company ZIP once we have one (any pass). Never blank an existing value.
+    if (_pendingZip && !row.zip) row.zip = String(_pendingZip).trim();
 
     if (mode === "revenue" || (mode === "both" && isPaidInvoice(inv))) {
       const paid = amount;
@@ -884,6 +931,7 @@ export default async function handler(req, res) {
         byId[id] = {
           ...cur,
           company_name: cleanAgg.company_name && cleanAgg.company_name !== "Unknown" ? cleanAgg.company_name : cur.company_name,
+          zip: cleanAgg.zip || cur.zip || undefined,
           invoice_count: (Number(cur.invoice_count) || 0) + cleanAgg.invoice_count,
           total_revenue: (Number(cur.total_revenue) || 0) + cleanAgg.total_revenue,
           revenue_by_year: mergedRevByYear,
@@ -968,6 +1016,7 @@ export default async function handler(req, res) {
           ? { type: plan.contactFields.typeName, name: plan.contactFields.fullName || plan.contactFields.firstName || null, email: plan.contactFields.email, phone: plan.contactFields.phone, title: plan.contactFields.title }
           : null,
         lineItemDiscovery: plan.lineItems || null,
+        customerZipDiscovery: plan.customerZip || null,
         fieldSelection: GQL_FIELDS,
       });
     }
@@ -987,6 +1036,7 @@ export default async function handler(req, res) {
           ? { type: plan.contactFields.typeName, name: plan.contactFields.fullName || plan.contactFields.firstName || null, email: plan.contactFields.email, phone: plan.contactFields.phone, title: plan.contactFields.title }
           : null,
         lineItemDiscovery: plan.lineItems || null,
+        customerZipDiscovery: plan.customerZip || null,
         fieldSelection: GQL_FIELDS,
       });
     }
