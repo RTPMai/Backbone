@@ -431,7 +431,7 @@ export default async function handler(req, res) {
             dbg.addrSawFields = Object.keys(af).length;
             const zf = af.zipCode ? "zipCode" : (af.zip ? "zip" : (af.postalCode ? "postalCode" : null));
             dbg.zipField = zf;
-            if (zf) plan.customerZip = { addressField, zipField: zf };
+            if (zf) plan.customerZip = { addressField: addrField, zipField: zf };
           }
         }
         plan._zipDebug = dbg;
